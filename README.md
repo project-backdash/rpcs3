@@ -50,9 +50,9 @@ the code the fork adds: `python -m pip install clang-format==20.1.8`, then `pyth
 
 ## How changes are checked
 
-The PBD workflow checks formatting. Eligible inherited pull-request jobs build and run unit tests; their event
-conditions do not run a native test build on every fork push. Online matches compare confirmed-frame state hashes
-on both peers and stop on a mismatch. Native behavior changes need that online check as well as the touched tests.
+The PBD workflows check formatting and build Windows Release x64 with PBD and tools tests on pushes to main and
+pull requests. Online matches compare confirmed-frame state hashes on both peers and stop on a mismatch. Native
+behavior changes need that online check as well as the touched tests.
 
 [CODE-BAR.md](CODE-BAR.md) lists the executable checks and review guidance. [KNOWN-DEBT.md](KNOWN-DEBT.md) records open
 structural work; [SOURCE.md](SOURCE.md) gives current file and patch counts.
