@@ -350,6 +350,26 @@ PBD_TEST(PbdOutputGain, HeldMatchRejectsCachedSelectAndUnprovedOrOldVsImages)
 	check(presentation.play_image(token, 42, true));
 }
 
+PBD_TEST(PbdOutputGain, HeldLobbySelectShowsAfterAdmissionButFixedPicksWaitForVs)
+{
+	namespace held = pbd::held_presentation;
+	held::lifecycle lobby(held::purpose::match);
+	lobby.play(0);
+	check(!lobby.can_show(), "a parked game stays hidden before admission");
+	check(lobby.bound_match(false));
+	check(!lobby.can_show(), "admission alone does not show the parked game");
+	lobby.play(0);
+	check(lobby.can_show(), "in-game picks must be visible at the first live boundary");
+	check(lobby.hold_audio(), "sound waits for a visible picture");
+	lobby.picture(true);
+	check(!lobby.hold_audio());
+
+	held::lifecycle fixed(held::purpose::match);
+	check(fixed.bound_match(true));
+	fixed.play(0);
+	check(!fixed.can_show(), "fixed picks continue hiding the cached character select");
+}
+
 PBD_TEST(PbdOutputGain, AStandbyAdmittedAsASpectatorCanJoinDuringAFight)
 {
 	namespace held = pbd::held_presentation;

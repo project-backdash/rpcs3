@@ -170,7 +170,8 @@ struct pbd::rollback_session::match_standby_steps : boundary_call
 				data.peer.input_delay, data.peer.max_prediction, data.peer.delay, data.peer.link.relayed});
 		require(!data.session.failstop || data.peer.rx.enabled, "session_failstop_requires_receiver_thread");
 		session_runtime.start_peer_receiver();
-		if (!pbd::held_presentation::output().bound(pbd::held_presentation::purpose::match))
+		// Fixed picks hide the checkpoint select until VS; lobby picks must show the select as soon as play resumes.
+		if (!pbd::held_presentation::output().bound_match(data.lobby.preselect))
 			return end("match_presentation_bind_failed", guard_failed);
 		if (!pbd::spectator_standby::publish(root / "match-bound.json", pbd::match_bind::bound_text(expected, bound.value->set_id, &*bound.value)))
 			return end("match_bind_report_failed", guard_failed);

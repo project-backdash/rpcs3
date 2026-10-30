@@ -98,6 +98,11 @@ namespace pbd::held_presentation
 			m_wait_vs.store(wait_for_vs, std::memory_order_release);
 			return m_phase.compare_exchange_strong(expected, phase::loading, std::memory_order_acq_rel);
 		}
+		// Fixed picks conceal the checkpoint select; a lobby with in-game picks must show it.
+		bool bound_match(bool fixed_picks) noexcept
+		{
+			return bound(purpose::match, fixed_picks);
+		}
 		void play(std::uint64_t boundary) noexcept
 		{
 			// A matched game's boundary 0 still carries the checkpoint's character-select image.
