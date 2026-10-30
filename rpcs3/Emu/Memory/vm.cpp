@@ -1,4 +1,6 @@
 #include "stdafx.h"
+#include "Emu/CPU/pbd_ordinary_metrics.h"
+#include "Emu/Cell/pbd_rollback_session.h"
 #include "vm_locking.h"
 #include "vm_ptr.h"
 #include "vm_reservation.h"
@@ -800,6 +802,7 @@ namespace vm
 			}
 		}
 
+		pbd::ordinary_metrics::producer("vm_mapping_pre_map", addr, size, flags);
 		// Notify rsx that range has become valid
 		// Note: This must be done *before* memory gets mapped while holding the vm lock, otherwise
 		//       the RSX might try to invalidate memory that got unmapped and remapped
@@ -864,6 +867,8 @@ namespace vm
 			}
 		}
 
+		pbd_tick_pages_remapped(addr, size, !is_noop && (flags & page_writable) != 0); // PBD write-fault capture
+
 		range_lock->release(0);
 	}
 
@@ -878,6 +883,7 @@ namespace vm
 			fmt::throw_exception("Invalid arguments (addr=0x%x, size=0x%x)", addr, size);
 		}
 
+		pbd::ordinary_metrics::producer("vm_page_protect_attempt", addr, size, (u64{flags_set} << 8) | flags_clear);
 		const u8 flags_both = flags_set & flags_clear;
 
 		flags_test  |= page_allocated;
@@ -933,6 +939,7 @@ namespace vm
 					{
 						const auto protection = start_value & page_writable ? utils::protection::rw : (start_value & page_readable ? utils::protection::ro : utils::protection::no);
 						utils::memory_protect(g_base_addr + start * 4096, page_size, protection);
+						pbd_tick_pages_remapped(start * 4096, page_size, (start_value & page_writable) != 0); // PBD write-fault capture
 					}
 
 					range_lock->release(0);
@@ -1005,6 +1012,7 @@ namespace vm
 			g_pages[i].release(0);
 		}
 
+		pbd::ordinary_metrics::producer("vm_pre_unmap_pages_cleared", addr, size, 0);
 		// Notify rsx to invalidate range
 		// Note: This must be done *before* memory gets unmapped while holding the vm lock, otherwise
 		//       the RSX might try to call VirtualProtect on memory that is already unmapped
@@ -1017,6 +1025,8 @@ namespace vm
 		ppu_remove_hle_instructions(addr, size);
 
 		// Actually unmap memory
+		pbd_tick_pages_remapped(addr, size, false); // PBD write-fault capture: the pages leave the armed set
+
 		if (is_block_termination && (!shm || is_noop))
 		{
 			// We can skip it if the block is freed
@@ -2098,7 +2108,7 @@ namespace vm
 		return _map(addr, area_size, flags);
 	}
 
-	static bool try_access_internal(u32 addr, void* ptr, u32 size, bool is_write)
+	static bool try_access_internal(u32 addr, void* ptr, u32 size, bool is_write, bool stream = false)
 	{
 		if (vm::check_addr(addr, is_write ? page_writable : page_readable, size))
 		{
@@ -2125,6 +2135,23 @@ namespace vm
 				}
 			}
 
+			if (stream && !is_write && !(size & 63) && !(reinterpret_cast<uptr>(dst) & 15))
+			{
+				// PBD: non-temporal destination (see vm::try_read_stream).
+				auto* to = static_cast<__m128i*>(dst);
+				auto* from = static_cast<const __m128i*>(src);
+				for (u32 i = 0; i < size / 64; i++, to += 4, from += 4)
+				{
+					_mm_prefetch(reinterpret_cast<const char*>(from) + 512, _MM_HINT_T0);
+					_mm_stream_si128(to + 0, _mm_loadu_si128(from + 0));
+					_mm_stream_si128(to + 1, _mm_loadu_si128(from + 1));
+					_mm_stream_si128(to + 2, _mm_loadu_si128(from + 2));
+					_mm_stream_si128(to + 3, _mm_loadu_si128(from + 3));
+				}
+				_mm_sfence();
+				return true;
+			}
+
 			std::memcpy(dst, src, size);
 			return true;
 		}
@@ -2132,8 +2159,21 @@ namespace vm
 		return false;
 	}
 
+	static bool try_access_locked(u32 begin, void* ptr, u32 size, bool is_write, bool stream);
+
 	bool try_access(u32 begin, void* ptr, u32 size, bool is_write)
 	{
+		return try_access_locked(begin, ptr, size, is_write, false);
+	}
+
+	bool try_read_stream(u32 begin, void* ptr, u32 size)
+	{
+		return try_access_locked(begin, ptr, size, false, true);
+	}
+
+	static bool try_access_locked(u32 begin, void* ptr, u32 size, bool is_write, bool stream)
+	{
+		pbd::stall_metrics::scope measure_lock("vm_range_lock_wait", size, begin, stream, 1'000'000, pbd::stall_metrics::sampling::elapsed);
 		auto* range_lock = alloc_range_lock(); // Released at the end of function
 
 		auto mem_lock = &*std::prev(std::end(vm::g_range_lock_set));
@@ -2200,7 +2240,9 @@ namespace vm
 			busy_wait(200);
 		}
 
-		const bool result = try_access_internal(begin, ptr, size, is_write);
+		measure_lock.finish();
+		pbd::stall_metrics::scope measure_copy("vm_page_copy", size, begin, stream, 1'000'000, pbd::stall_metrics::sampling::elapsed);
+		const bool result = try_access_internal(begin, ptr, size, is_write, stream);
 		free_range_lock(range_lock);
 		return result;
 	}

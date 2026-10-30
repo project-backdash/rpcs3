@@ -4,6 +4,9 @@
 #include "Emu/Cell/Common.h"
 #include "Emu/Cell/lv2/sys_sync.h"
 #include "PPUTranslator.h"
+#include "pbd_rollback_session.h"
+#include "pbd_fn_hook.h"
+#include "pbd_ppu_object_name.h"
 #include "PPUThread.h"
 #include "SPUThread.h"
 
@@ -33,6 +36,10 @@ PPUTranslator::PPUTranslator(LLVMContext& context, Module* _module, const ppu_mo
 	, m_info(info)
 	, m_pure_attr()
 {
+	// PBD: decide write capture once per compilation, before any block is translated, so every object in a
+	// module agrees and the choice can be baked into the object namespace.
+	m_pbd_undo = pbd_llvm_undo_requested() && !info.is_relocatable;
+
 	// Bind context
 	cpu_translator::initialize(context, engine);
 
@@ -237,6 +244,13 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 	m_gpr[0] = m_function->getArg(4);
 	m_gpr[1] = m_function->getArg(5);
 	m_gpr[2] = m_function->getArg(6);
+	m_pbd_on = m_pbd_bits = nullptr;
+	if (m_pbd_undo)
+	{
+		// Capture flag and page bitmap addresses, fetched once per function (link-table functions resolve; data symbols do not).
+		m_pbd_on = m_ir->CreateIntToPtr(Call(GetType<u64>(), "__dr2026_undo_on_ptr"), GetType<u8*>());
+		m_pbd_bits = m_ir->CreateIntToPtr(Call(GetType<u64>(), "__dr2026_undo_bits_ptr"), GetType<u8*>());
+	}
 
 	const auto body = BasicBlock::Create(m_context, "__body", m_function);
 
@@ -299,6 +313,145 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 			m_may_be_mmio = true;
 
 			const u32 op = *ensure(m_info.get_ptr<u32>(::narrow<u32>(m_addr + base)));
+
+			if (!m_reloc)
+			{
+				const int slot = InputSlotAt(static_cast<u32>(m_addr));
+				if (slot >= 0 && op == pbd::rollback_session::opcodes[slot])
+				{
+					// r0-r2 travel as LLVM arguments; ordinary FlushRegisters need not
+					// store them. Materialize them explicitly for the native checks.
+					for (u32 reg = 0; reg < 3; reg++)
+						RegStore(GetGpr(reg), m_gpr[reg]);
+					// Every cached vector register is stored as well, so the restore inside the callback is followed by a
+					// true reload. Register differences after a round trip come from restoring the write set against
+					// concurrent writers (the interpreter shows the same differences), not from generated code.
+					// Any change to this emitted sequence needs a new input tag in the PPU object name (input1-,
+					// pbd_ppu_object_name.h run_tags_before), or objects cached under the old name are reused.
+					for (u32 reg = 0; reg < 32; reg++)
+						if (m_vr[reg])
+							RegStore(GetVr(reg, VrType::vi32), m_vr[reg]);
+					RegStore(m_ir->getInt32(static_cast<u32>(m_addr)), m_cia);
+					FlushRegisters();
+					Call(GetType<void>(), "__dr2026_update_latch", m_thread, m_ir->getInt32(static_cast<u32>(m_addr)));
+					// In particular, discard the old r3 SSA value after input injection.
+					// Reload every cached register, including any prefetched LR.
+					std::fill(std::begin(m_locals), std::end(m_locals), nullptr);
+				}
+			}
+
+			// PBD: probes and replay skips at configured guest addresses, including the default voice-health and pick-transition probes.
+			// PBD JIT COPY16 (OFF unless PBD_JIT_COPY16=1): the game's two 16-byte copy
+			// loops (0x355c80: lbz r11,0(r4) / stb r11,0(r3); 0x355b4c: lbz r11,0(r3) / stb r11,0(r10); CTR = 16, ~7400 calls per frame)
+			// cost one tail call + state check per byte, because every bdnz target is its own recompiled function. When CTR == 16 at the
+			// loop head, the SAME six body instructions are emitted 16 times through this translator's own decoder (same loads and stores
+			// in the same order, same memory helpers and instrumentation, same final registers), CTR is set to 0 and control continues
+			// after the bdnz. Any other CTR runs the original loop. The loop words are verified before the fast path is emitted.
+			if (!m_reloc && pbd_jit_copy16_enabled())
+			{
+				const u32 here = static_cast<u32>(m_addr + base);
+				// The object namer reads the same loop table: an object holding a loop head is named as rewritten.
+				const u32 exit_addr = pbd::ppu_object_name::copy16_end(here);
+				static constexpr u32 loop_c80[7] = {0x89640000, 0x38030001, 0x39240001, 0x99630000, 0x78030020, 0x79240020, 0x4200ffe8};
+				static constexpr u32 loop_b4c[7] = {0x89630000, 0x380a0001, 0x39230001, 0x996a0000, 0x780a0020, 0x79230020, 0x4200ffe8};
+				const u32* expected = here == 0x355c80 ? loop_c80 : loop_b4c;
+				bool match = exit_addr != 0;
+				for (u32 i = 0; match && i < 7; i++)
+				{
+					const auto word = m_info.get_ptr<u32>(here + i * 4);
+					match = word && static_cast<u32>(*word) == expected[i];
+					// Never fold a relocated instruction or one that carries a
+					// PBD hook (update latch slot, fn probe or skippable entry); those run the original loop.
+					const u32 at = here + i * 4;
+					if (match && (m_relocs.count(at) || HookAt(at)))
+					{
+						match = false;
+					}
+				}
+				if (match)
+				{
+					m_hook_hits.push_back({here, pbd::ppu_object_name::hit_kind::copy_loop});
+					FlushRegisters();
+					llvm::Value* saved_locals[std::size(m_locals)];
+					llvm::Value* saved_globals[std::size(m_globals)];
+					std::copy(std::begin(m_locals), std::end(m_locals), saved_locals);
+					std::copy(std::begin(m_globals), std::end(m_globals), saved_globals);
+					const auto fast = BasicBlock::Create(m_context, "pbd_copy16", m_function);
+					const auto slow = BasicBlock::Create(m_context, "pbd_copy16_loop", m_function);
+					m_ir->CreateCondBr(m_ir->CreateICmpEQ(RegLoad(m_ctr), m_ir->getInt64(16)), fast, slow);
+					m_ir->SetInsertPoint(fast);
+					const u64 saved_addr = m_addr;
+					for (u32 iteration = 0; iteration < 16; iteration++)
+					{
+						for (u32 i = 0; i < 6; i++)
+						{
+							m_addr = here + i * 4 - base;
+							m_rel = nullptr;
+							m_may_be_mmio = true;
+							(this->*(s_ppu_decoder.decode(expected[i])))({expected[i]});
+						}
+					}
+					RegStore(m_ir->getInt64(0), m_ctr);
+					m_addr = saved_addr;
+					FlushRegisters();
+					CallFunction(exit_addr);
+					std::copy(std::begin(saved_locals), std::end(saved_locals), m_locals);
+					std::copy(std::begin(saved_globals), std::end(saved_globals), m_globals);
+					m_ir->SetInsertPoint(slow);
+					m_rel = nullptr;
+					m_may_be_mmio = true;
+				}
+			}
+
+			if (!m_reloc)
+			{
+				const u32 here = static_cast<u32>(m_addr);
+				const bool skippable = SkippableAt(here);
+				if (skippable || ObserveAt(here))
+				{
+					// r0-r2 travel as LLVM arguments (see the latch hook above): materialize them so the callback sees
+					// a complete register file when it records an identity register. Unlike the latch hook this one
+					// retains cached locals afterwards, except the logical GPU sample's r3 result below;
+					// clearing m_gpr[0..2] would make later GetGpr() emit loads in a block that does not dominate the
+					// tail calls the translator creates for the function's branch targets (LLVM: "Instruction does not
+					// dominate all uses", the whole module then fails to load).
+					for (u32 reg = 0; reg < 3; reg++)
+						RegStore(GetGpr(reg), m_gpr[reg]);
+					RegStore(m_ir->getInt32(here), m_cia);
+					// The return address must be materialized in THIS block for the same reason.
+					const auto link = skippable ? RegLoad(m_lr) : nullptr;
+					FlushRegisters();
+					const auto answer = Call(GetType<u32>(), "__dr2026_fn_probe", m_thread, m_ir->getInt32(here));
+					if (here == pbd::t5dr::gpu_load_probe)
+					{
+						// This sample replaces r3. Materialize its reload here, before the fatal/continue split,
+						// so every later use is dominated by it. Keep the r0-r2 LLVM arguments intact.
+						m_gpr[3] = nullptr;
+						RegLoad(m_gpr[3]);
+					}
+					const auto fatal_block = BasicBlock::Create(m_context, "pbd_fn_fatal", m_function);
+					const auto answer_block = BasicBlock::Create(m_context, "pbd_fn_answer", m_function);
+					m_ir->CreateCondBr(m_ir->CreateICmpEQ(answer, m_ir->getInt32(static_cast<u32>(pbd::fn_hook::hook_action::fatal))),
+						fatal_block, answer_block);
+					m_ir->SetInsertPoint(fatal_block);
+					// The host callback has set cpu_flag::exit. Reuse the established check/tail-return shape and make even
+					// an unexpected cleared state terminal; this path never decodes the guest instruction or follows guest LR.
+					TestAborted();
+					m_ir->CreateRetVoid();
+					m_ir->SetInsertPoint(answer_block);
+					if (skippable)
+					{
+						// "Return immediately" = the function's own blr: continue at LR with the register file as it is.
+						const auto skip_block = BasicBlock::Create(m_context, "pbd_fn_skip", m_function);
+						const auto keep_block = BasicBlock::Create(m_context, "pbd_fn_keep", m_function);
+						m_ir->CreateCondBr(m_ir->CreateICmpEQ(answer, m_ir->getInt32(static_cast<u32>(pbd::fn_hook::hook_action::skip))),
+							skip_block, keep_block);
+						m_ir->SetInsertPoint(skip_block);
+						CallFunction(0, link);
+						m_ir->SetInsertPoint(keep_block);
+					}
+				}
+			}
 
 			(this->*(s_ppu_decoder.decode(op)))({op});
 
@@ -938,10 +1091,45 @@ Value* PPUTranslator::ReadMemory(Value* addr, Type* type, bool is_be, u32 align)
 	return r;
 }
 
+void PPUTranslator::EmitUndoCapture(Value* addr, u32 bytes)
+{
+	// PBD: the capture callee (pbd_tick_undo_store) does nothing while capture is off and skips
+	// every page whose bit is set in the latch's static|marked bitmap, so those two tests are made inline and the
+	// out-of-line call is taken only for the FIRST store into a page this tick (or for a span crossing a page, which
+	// calls unconditionally). The callee re-checks everything; this is a filter, not a policy change. An unconditional
+	// call raises the main thread's CPU time from about 3.2 to 7.9 ms per tick.
+	const auto addr64 = ZExt(addr, GetType<u64>());
+	if (!m_pbd_on || !m_pbd_bits)
+	{
+		// A translation path without the per-function fetch: keep the unconditional call.
+		Call(GetType<void>(), "__dr2026_undo", m_thread, addr64, m_ir->getInt32(bytes));
+		return;
+	}
+	const auto on_ptr = m_pbd_on;
+	const auto on = m_ir->CreateLoad(GetType<u8>(), on_ptr, true);
+	const auto page = m_ir->CreateLShr(addr64, 12);
+	const auto last = m_ir->CreateLShr(m_ir->CreateAdd(addr64, m_ir->getInt64(bytes - 1)), 12);
+	const auto bits = m_pbd_bits;
+	const auto word = m_ir->CreateLoad(GetType<u64>(), m_ir->CreateGEP(GetType<u64>(), bits, m_ir->CreateLShr(page, 6)), true);
+	const auto bit = m_ir->CreateAnd(m_ir->CreateLShr(word, m_ir->CreateAnd(page, m_ir->getInt64(63))), m_ir->getInt64(1));
+	const auto need = m_ir->CreateOr(m_ir->CreateICmpEQ(bit, m_ir->getInt64(0)), m_ir->CreateICmpNE(page, last));
+	const auto cond = m_ir->CreateAnd(m_ir->CreateICmpNE(on, m_ir->getInt8(0)), need);
+	const auto call_bb = BasicBlock::Create(m_context, "pbd_undo_call", m_function);
+	const auto cont_bb = BasicBlock::Create(m_context, "pbd_undo_cont", m_function);
+	m_ir->CreateCondBr(cond, call_bb, cont_bb);
+	m_ir->SetInsertPoint(call_bb);
+	Call(GetType<void>(), "__dr2026_undo", m_thread, addr64, m_ir->getInt32(bytes));
+	m_ir->CreateBr(cont_bb);
+	m_ir->SetInsertPoint(cont_bb);
+}
+
 void PPUTranslator::WriteMemory(Value* addr, Value* value, bool is_be, u32 align)
 {
 	const auto type = value->getType();
 	const u32 size = ::narrow<u32>(+type->getPrimitiveSizeInBits());
+	// PBD: report the span before the store, matching the interpreter's PPU_WRITE* ordering.
+	if (m_pbd_undo)
+		EmitUndoCapture(addr, size / 8);
 
 	if (is_be ^ m_is_be && size > 8)
 	{
@@ -2340,6 +2528,147 @@ void PPUTranslator::SC(ppu_opcode_t op)
 	m_ir->CreateRetVoid();
 }
 
+int PPUTranslator::InputSlotAt(u32 at)
+{
+	const int slot = pbd::rollback_session::requested() ? pbd::rollback_session::slot_for(at) : -1;
+	if (slot >= 0)
+		m_hook_hits.push_back({at, pbd::ppu_object_name::hit_kind::input});
+	return slot;
+}
+
+bool PPUTranslator::ObserveAt(u32 at)
+{
+	const bool found = pbd::fn_hook::requested() && pbd::fn_hook::observe_at(at);
+	if (found)
+		m_hook_hits.push_back({at, pbd::ppu_object_name::hit_kind::observe});
+	return found;
+}
+
+bool PPUTranslator::SkippableAt(u32 at)
+{
+	const bool found = pbd::fn_hook::requested() && pbd::fn_hook::skippable_at(at);
+	if (found)
+		m_hook_hits.push_back({at, pbd::ppu_object_name::hit_kind::skippable});
+	return found;
+}
+
+bool PPUTranslator::HookAt(u32 at)
+{
+	return InputSlotAt(at) >= 0 || ObserveAt(at) || SkippableAt(at);
+}
+
+bool PPUTranslator::InlineVectorLeaf(u64 target)
+{
+	// Decode the same bounded straight-line leaf, without an intermediate register spill and return lookup.
+	// A branch, relocation or instrumented instruction keeps the ordinary call.
+	// The window is shared with the object namer, which names every object after the hooks inside it.
+	using pbd::ppu_object_name::leaf_window_begin, pbd::ppu_object_name::leaf_window_end;
+	const u32 mode = pbd_jit_inline_leaf_mode();
+	const bool outside_window = target < leaf_window_begin || target >= leaf_window_end;
+	if (m_reloc || g_cfg.core.ppu_prof || target >= u32{umax} || !mode || (mode == 1 && outside_window))
+		return false;
+	std::array<u32, 64> body{};
+	u32 count = 0;
+	bool returned = false;
+	for (u32 at = static_cast<u32>(target); count < body.size() && (mode == 2 || at < leaf_window_end); at += 4)
+	{
+		const auto word = m_info.get_ptr<u32>(at);
+		if (!word || m_relocs.count(at) || ppu_get_far_jump(at) || std::count(m_info.excluded_funcs.begin(), m_info.excluded_funcs.end(), at) ||
+			HookAt(at))
+			return false;
+		const u32 instruction = *word;
+		if (instruction == ppu_instructions::BLR())
+		{
+			returned = true;
+			break;
+		}
+		switch (g_ppu_itype.decode(instruction))
+		{
+		case ppu_itype::LBZ:
+		case ppu_itype::LHZ:
+		case ppu_itype::LWZ:
+		case ppu_itype::LD:
+		case ppu_itype::STB:
+		case ppu_itype::STH:
+		case ppu_itype::STW:
+		case ppu_itype::STD:
+		case ppu_itype::LFD:
+		case ppu_itype::STFD:
+		case ppu_itype::AND:
+		case ppu_itype::ANDC:
+		case ppu_itype::NAND:
+		case ppu_itype::NOR:
+		case ppu_itype::XOR:
+		case ppu_itype::XORI:
+		case ppu_itype::RLWINM:
+		case ppu_itype::RLDICR:
+		case ppu_itype::SLW:
+		case ppu_itype::SRW:
+		case ppu_itype::SRAWI:
+		case ppu_itype::SRAW:
+		case ppu_itype::EXTSB:
+		case ppu_itype::EXTSH:
+		case ppu_itype::EXTSW:
+		case ppu_itype::NEG:
+		case ppu_itype::SUBF:
+		case ppu_itype::CMP:
+		case ppu_itype::CMPL:
+		case ppu_itype::CMPI:
+		case ppu_itype::CMPLI:
+		case ppu_itype::MULLW:
+			if (mode != 2)
+				return false;
+			body[count++] = instruction;
+			break;
+		case ppu_itype::ADDI:
+		case ppu_itype::ADDIS:
+		case ppu_itype::ADD:
+		case ppu_itype::OR:
+		case ppu_itype::ORI:
+		case ppu_itype::RLDICL:
+		case ppu_itype::LFS:
+		case ppu_itype::STFS:
+		case ppu_itype::LVX:
+		case ppu_itype::STVX:
+		case ppu_itype::VADDFP:
+		case ppu_itype::VSUBFP:
+		case ppu_itype::VMADDFP:
+		case ppu_itype::VNMSUBFP:
+		case ppu_itype::VAND:
+		case ppu_itype::VOR:
+		case ppu_itype::VXOR:
+		case ppu_itype::VPERM:
+		case ppu_itype::VSPLTW:
+		case ppu_itype::VSLDOI:
+		case ppu_itype::VMRGHW:
+		case ppu_itype::VMRGLW:
+			body[count++] = instruction;
+			break;
+		default:
+			return false;
+		}
+	}
+	if (!returned || !count)
+		return false;
+	const u64 caller = m_addr;
+	const auto saved_relocation = m_rel;
+	const bool saved_mmio = m_may_be_mmio;
+	for (u32 i = 0; i < count; i++)
+	{
+		m_addr = target + i * 4;
+		m_rel = nullptr;
+		m_may_be_mmio = true;
+		(this->*(s_ppu_decoder.decode(body[i])))({body[i]});
+	}
+	m_addr = caller;
+	m_rel = saved_relocation;
+	m_may_be_mmio = saved_mmio;
+	FlushRegisters();
+	CallFunction(caller + 4);
+	ppu_log.notice("LLVM: inlined vector leaf 0x%x at 0x%x (%u instructions)", target, caller, count);
+	return true;
+}
+
 void PPUTranslator::B(ppu_opcode_t op)
 {
 	const s32 bt24 = op.bt24; // Workaround for VS 16.5
@@ -2353,6 +2682,8 @@ void PPUTranslator::B(ppu_opcode_t op)
 	if (op.lk)
 	{
 		RegStore(GetAddr(+4), m_lr);
+		if (InlineVectorLeaf(target))
+			return;
 	}
 
 	FlushRegisters();
@@ -3433,7 +3764,8 @@ void PPUTranslator::MFTB(ppu_opcode_t op)
 	switch (const u32 n = (op.spr >> 5) | ((op.spr & 0x1f) << 5))
 	{
 	case 0x10C: // MFTB
-		result = Call(GetType<u64>(), m_pure_attr, "__get_tb");
+		// The thread-aware timebase policy helper (reads latch state: no pure/readonly attributes).
+		result = Call(GetType<u64>(), "__dr2026_get_tb", m_thread, m_ir->getInt32(static_cast<u32>(m_addr)));
 		break;
 	case 0x10D: // MFTBU
 		result = m_ir->CreateLShr(Call(GetType<u64>(), m_pure_attr, "__get_tb"), 32);
@@ -3707,6 +4039,9 @@ void PPUTranslator::STVLX(ppu_opcode_t op)
 	const auto addr = op.ra ? m_ir->CreateAdd(GetGpr(op.ra), GetGpr(op.rb)) : GetGpr(op.rb);
 	const auto data = pshufb(get_vr<u8[16]>(op.vs), build<u8[16]>(127, 126, 125, 124, 123, 122, 121, 120, 119, 118, 117, 116, 115, 114, 113, 112) + vsplat<u8[16]>(trunc<u8>(value<u64>(addr) & 0xf)));
 	const auto mask = bitcast<bool[16]>(splat<u16>(0xffff) << trunc<u16>(value<u64>(addr) & 0xf));
+	// PBD: a masked store touches the aligned 16-byte line; report the whole line conservatively.
+	if (m_pbd_undo)
+		EmitUndoCapture(m_ir->CreateAnd(addr, ~0xfull), 16);
 	m_ir->CreateMaskedStore(data.eval(m_ir), GetMemory(m_ir->CreateAnd(addr, ~0xfull)), llvm::Align(16), mask.eval(m_ir));
 }
 
@@ -3735,6 +4070,9 @@ void PPUTranslator::STVRX(ppu_opcode_t op)
 	const auto addr = op.ra ? m_ir->CreateAdd(GetGpr(op.ra), GetGpr(op.rb)) : GetGpr(op.rb);
 	const auto data = pshufb(get_vr<u8[16]>(op.vs), build<u8[16]>(255, 254, 253, 252, 251, 250, 249, 248, 247, 246, 245, 244, 243, 242, 241, 240) + vsplat<u8[16]>(trunc<u8>(value<u64>(addr) & 0xf)));
 	const auto mask = bitcast<bool[16]>(trunc<u16>(splat<u64>(0xffff) << (value<u64>(addr) & 0xf) >> 16));
+	// PBD: same conservative aligned-line report as STVLX.
+	if (m_pbd_undo)
+		EmitUndoCapture(m_ir->CreateAnd(addr, ~0xfull), 16);
 	m_ir->CreateMaskedStore(data.eval(m_ir), GetMemory(m_ir->CreateAnd(addr, ~0xfull)), llvm::Align(16), mask.eval(m_ir));
 }
 
@@ -3909,6 +4247,10 @@ void PPUTranslator::ICBI(ppu_opcode_t)
 void PPUTranslator::DCBZ(ppu_opcode_t op)
 {
 	const auto addr = m_ir->CreateAnd(op.ra ? m_ir->CreateAdd(GetGpr(op.ra), GetGpr(op.rb)) : GetGpr(op.rb), -128);
+
+	// PBD: cache-line zeroing writes 128 bytes through either path.
+	if (m_pbd_undo)
+		EmitUndoCapture(addr, 128);
 
 	if (g_cfg.core.accurate_cache_line_stores)
 	{

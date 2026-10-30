@@ -134,6 +134,13 @@ error_code _sys_lwmutex_destroy(ppu_thread& ppu, u32 lwmutex_id)
 
 error_code _sys_lwmutex_lock(ppu_thread& ppu, u32 lwmutex_id, u64 timeout)
 {
+	// IDs outside this object type cannot resolve. Reject them before setting
+	// scheduler wait state; the existing missing-resource result is unchanged.
+	if (lwmutex_id >> 24 != lv2_lwmutex::id_base >> 24)
+	{
+		return {CELL_ESRCH, "Invalid ID"};
+	}
+
 	ppu.state += cpu_flag::wait;
 
 	sys_lwmutex.trace("_sys_lwmutex_lock(lwmutex_id=0x%x, timeout=0x%llx)", lwmutex_id, timeout);

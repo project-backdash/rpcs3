@@ -1,4 +1,6 @@
 #include "stdafx.h"
+#include "Emu/CPU/pbd_ordinary_metrics.h"
+#include "Emu/PBD/pbd_env.h"
 #include "sys_rsx.h"
 
 #include "Emu/System.h"
@@ -14,6 +16,53 @@
 #include "sys_vm.h"
 
 LOG_CHANNEL(sys_rsx);
+
+#include <mutex>
+// PBD: FLIP COMPLETIONS ARE COUNTED, NOT LEVELLED. The guest's present (0x34ba30) polls bit 31 of head[1].flipFlags
+// (LLE cellGcmGetFlipStatus), resets it and only then flushes its own flip command, so one completion normally meets
+// one reset. When libgcm's segment-full callback flushes inside the present AFTER the flip command was written (332
+// bytes follow it; a 32 KiB segment ends there in about 1 % of presents) and the renderer runs that flip while the bit
+// is still set for the previous one (a withheld re-executed frame costs microseconds), a level bit would absorb the
+// second completion; the single reset would clear both and the next present would poll forever. Instead a completion
+// that finds the bit set is owed, and the reset that would clear the bit re-delivers it.
+// PBD_FLIP_DONE_COUNT=0 restores the level behaviour (the evidence counters still count).
+// Test switch: PBD_TEST_FLIP_RESET_DELAY_US=<us> sleeps in the reset while a rollback window re-executes.
+static std::mutex s_pbd_flip_mtx;
+static u32 s_pbd_flip_owed = 0; // guarded by the mutex
+std::atomic<u32> g_pbd_flip_double_done{0}, g_pbd_flip_redelivered{0}, g_pbd_flip_dropped{0}, g_pbd_flip_resets{0};
+static const bool s_pbd_flip_count = []
+{
+#ifdef _WIN32
+	const wchar_t* v = pbd::env::find_wide("PBD_FLIP_DONE_COUNT");
+	return !v || std::wstring_view(v) != L"0";
+#else
+	return true;
+#endif
+}();
+#ifdef PBD_DIAGNOSTIC_BUILD
+static const u32 s_pbd_test_reset_delay_us = []() -> u32
+{
+#ifdef _WIN32
+	const wchar_t* v = pbd::env::find_wide("PBD_TEST_FLIP_RESET_DELAY_US");
+	return v && *v ? static_cast<u32>(std::wcstoul(v, nullptr, 10)) : 0u;
+#else
+	return 0;
+#endif
+}();
+#endif
+extern std::atomic<bool> g_pbd_replay_timing;
+// A reused game starts its next match with no completion owed from the last one.
+void pbd_flip_reset_for_boot()
+{
+	std::lock_guard lock(s_pbd_flip_mtx);
+	s_pbd_flip_owed = 0;
+}
+std::string pbd_flip_debug_state()
+{
+	std::lock_guard lock(s_pbd_flip_mtx);
+	return fmt::format("completions absorbed %u, re-delivered %u, dropped %u, resets %u, owed %u, counting %d",
+		g_pbd_flip_double_done.load(), g_pbd_flip_redelivered.load(), g_pbd_flip_dropped.load(), g_pbd_flip_resets.load(), s_pbd_flip_owed, s_pbd_flip_count ? 1 : 0);
+}
 
 // Unknown error code returned by sys_rsx_context_attribute
 enum sys_rsx_error : s32
@@ -576,6 +625,7 @@ error_code sys_rsx_context_attribute(u32 context_id, u32 package_id, u64 a3, u64
 	case 0x102: // Display flip
 	{
 		u32 flip_idx = ~0u;
+		render->pbd_note_flip_head(static_cast<u32>(a4)); // PBD: no-op unless PBD_PRESENT_IDENTITY_QUEUE_TAG=1
 
 		// high bit signifys grabbing a queued buffer
 		// otherwise it contains a display buffer offset
@@ -708,9 +758,27 @@ error_code sys_rsx_context_attribute(u32 context_id, u32 package_id, u64 a3, u64
 		// NOTE: There currently seem to only be 2 active heads on PS3
 		ensure(a3 < 2);
 
+
+#ifdef PBD_DIAGNOSTIC_BUILD
+		if (s_pbd_test_reset_delay_us && g_pbd_replay_timing.load(std::memory_order_relaxed))
+			std::this_thread::sleep_for(std::chrono::microseconds(s_pbd_test_reset_delay_us)); // test switch: widen the race
+#endif
+		std::lock_guard pbd_flip_lock(s_pbd_flip_mtx);
+		u32 pbd_redeliver = 0;
+		if (a3 == 1 && !(a4 & 0x80000000ull) && !(a5 & 0x80000000ull))
+		{
+			// The guest clears DONE. A completion absorbed since the last reset is delivered now instead.
+			g_pbd_flip_resets++;
+			if (s_pbd_flip_owed)
+			{
+				s_pbd_flip_owed--;
+				pbd_redeliver = 0x80000000u;
+				g_pbd_flip_redelivered++;
+			}
+		}
 		driverInfo.head[a3].flipFlags.atomic_op([&](be_t<u32>& flipStatus)
 		{
-			flipStatus = (flipStatus & static_cast<u32>(a4)) | static_cast<u32>(a5);
+			flipStatus = (flipStatus & static_cast<u32>(a4)) | static_cast<u32>(a5) | pbd_redeliver;
 		});
 		break;
 	}
@@ -882,13 +950,35 @@ error_code sys_rsx_context_attribute(u32 context_id, u32 package_id, u64 a3, u64
 	case 0xFEC: // hack: flip event notification
 	{
 		// we only ever use head 1 for now
-		driverInfo.head[1].flipFlags |= 0x80000000;
+		{
+			std::lock_guard pbd_flip_lock(s_pbd_flip_mtx);
+			const bool was_done = driverInfo.head[1].flipFlags.atomic_op([](be_t<u32>& f)
+				{
+					const bool d = (f & 0x80000000u) != 0;
+					f = f | 0x80000000u;
+					return d;
+				});
+			if (was_done)
+			{
+				g_pbd_flip_double_done++;
+				// At most 2 owed: a present path that never resets (none is known in this game) cannot bank more than two frames
+				// of un-throttled presents for the path that does.
+				if (s_pbd_flip_count)
+				{
+					if (s_pbd_flip_owed < 2)
+						s_pbd_flip_owed++;
+					else
+						g_pbd_flip_dropped++;
+				}
+			}
+		}
 		driverInfo.head[1].lastFlipTime = rsx_timeStamp(); // should rsxthread set this?
 		driverInfo.head[1].flipBufferId = static_cast<u32>(a3);
 
 		// seems gcmSysWaitLabel uses this offset, so lets set it to 0 every flip
 		// NOTE: Realhw resets 16 bytes of this semaphore for some reason
 		vm::_ptr<atomic_t<u128>>(render->label_addr + 0x10)->store(u128{});
+		pbd::ordinary_metrics::producer("flip_label_cleared", render->label_addr + 0x10, 16, a3);
 
 		render->send_event(0, SYS_RSX_EVENT_FLIP_BASE << 1, 0);
 		break;
@@ -920,6 +1010,7 @@ error_code sys_rsx_context_attribute(u32 context_id, u32 package_id, u64 a3, u64
 		driverInfo.head[a3].lastVTimeHigh = static_cast<u32>(current_time >> 32);
 
 		driverInfo.head[a3].vBlankCount++;
+		pbd::ordinary_metrics::producer("vblank_driver_written", vm::get_addr(&driverInfo.head[a3]), sizeof(driverInfo.head[a3]), a4);
 
 		u64 event_flags = SYS_RSX_EVENT_VBLANK;
 

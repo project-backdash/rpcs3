@@ -17,6 +17,10 @@
 #include "Emu/System.h"
 #include "PPUThread.h"
 #include "PPUInterpreter.h"
+#include "pbd_rollback_session.h"
+#include "Emu/PBD/pbd_env.h"
+#include "pbd_fn_hook.h"
+#include "pbd_ppu_object_name.h"
 #include "PPUAnalyser.h"
 #include "PPUModule.h"
 #include "PPUDisAsm.h"
@@ -39,11 +43,16 @@
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #endif
 #include <llvm/IR/Verifier.h>
+#include <llvm/IR/Operator.h>
 #include <llvm/Transforms/Utils/BasicBlockUtils.h>
 #include <llvm/Analysis/CGSCCPassManager.h>
 #include <llvm/Analysis/LoopAnalysisManager.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Transforms/Scalar/EarlyCSE.h>
+#include <llvm/Transforms/InstCombine/InstCombine.h>
+#include <llvm/Transforms/Scalar/GVN.h>
+#include <llvm/Transforms/Scalar/SimplifyCFG.h>
+#include <llvm/Transforms/IPO/Inliner.h>
 #ifdef _MSC_VER
 #pragma warning(pop)
 #else
@@ -478,6 +487,27 @@ static inline u8* ppu_seg_ptr(u32 addr)
 	return vm::g_exec_addr + vm::g_exec_addr_seg_offset + (addr >> 1);
 }
 
+// PBD (diagnostic; called by the fn hook writer when PBD_OWNER_TIMELINE=1): host entry -> guest function map of the
+// recompiled PPU code, so host IP samples in generated code can be attributed to guest functions (nearest entry below the sample).
+extern void pbd_dump_ppu_jit_map(const std::string& path)
+{
+	std::string text = "host,guest\n";
+	const uptr fallback = std::bit_cast<uptr>(ppu_recompiler_fallback_ghc);
+	for (u64 page = 0; page < 0x30000000; page += 0x1000)
+	{
+		if (!vm::check_addr(static_cast<u32>(page), vm::page_executable))
+			continue;
+		for (u32 addr = static_cast<u32>(page); addr < page + 0x1000; addr += 4)
+		{
+			const uptr ptr = read_from_ptr_unsafe<uptr>(ppu_ptr(addr));
+			if (ptr && ptr != fallback)
+				fmt::append(text, "0x%x,0x%x\n", ptr, addr);
+		}
+	}
+	if (fs::file out(path, fs::rewrite); out)
+		out.write(text.data(), text.size());
+}
+
 static inline ppu_intrp_func_t ppu_read(u32 addr)
 {
 	return read_from_ptr_unsafe<ppu_intrp_func_t>(ppu_ptr(addr));
@@ -500,6 +530,95 @@ static ppu_intrp_func ppu_ret = {[](ppu_thread& ppu, ppu_opcode_t, be_t<u32>* th
 	ppu.cia = vm::get_addr(this_op);
 	return;
 }};
+
+static void ppu_pbd_update(ppu_thread& ppu, ppu_opcode_t op, be_t<u32>* this_op, ppu_intrp_func* next_fn)
+{
+	const u32 actual_pc = vm::get_addr(this_op);
+	ppu.cia = actual_pc;
+	if (ppu.state && (ppu.check_state() || actual_pc != atomic_storage<u32>::load(ppu.cia)))
+		return;
+	auto& latch = g_fxo->get<pbd::rollback_session>();
+	const int slot = pbd::rollback_session::slot_for(actual_pc);
+	if (auto current = ppu_read(actual_pc); current != &ppu_pbd_update)
+	{
+		latch.invalidate();
+		return (current ? current : ppu_cache(actual_pc))(ppu, {*this_op}, this_op, ppu.state ? &ppu_ret : next_fn);
+	}
+	if (slot < 0 || u32{*this_op} != pbd::rollback_session::opcodes[slot])
+	{
+		latch.invalidate();
+		return ppu_cache(actual_pc)(ppu, {*this_op}, this_op, ppu.state ? &ppu_ret : next_fn);
+	}
+	latch.observe(ppu, actual_pc);
+	// A read-only checkpoint hold may have released this thread's passive VM marker.
+	// Restore normal owner state before executing even this first instruction.
+	if (ppu.state && (ppu.check_state() || actual_pc != atomic_storage<u32>::load(ppu.cia)))
+		return;
+	return latch.original(slot)(ppu, op, this_op, ppu.state ? &ppu_ret : next_fn);
+}
+
+// LLVM materializes its registers before this callback and reloads them after.
+// This is an input diagnostic, not a checkpoint or a CPU parking boundary.
+static void ppu_pbd_update_llvm(ppu_thread& ppu, u32 pc)
+{
+	auto& latch = g_fxo->get<pbd::rollback_session>();
+	const int slot = pbd::rollback_session::slot_for(pc);
+	if (slot < 0 || !vm::check_addr(pc, vm::page_executable) ||
+		vm::read32(pc) != pbd::rollback_session::opcodes[slot])
+	{
+		latch.invalidate();
+		return;
+	}
+	latch.observe(ppu, pc);
+}
+
+u64 pbd_tick_timebase(ppu_thread&, u32, u64) noexcept;
+
+// Compiled MFTB reads go through the same timebase policy as the interpreter (battle clock, journals).
+static u64 ppu_pbd_get_tb(ppu_thread& ppu, u32 pc)
+{
+	return pbd_tick_timebase(ppu, pc, get_timebased_time());
+}
+
+// Compiled store sites report their span here before writing, exactly as the interpreter's PPU_WRITE* macros
+// do. The enable flag is only set while a correction ring is configured, so a capture-namespaced run that is not
+// correcting pays one relaxed load per store and nothing else.
+// Compiled stores read these two objects inline (EmitUndoCapture) before deciding to call __dr2026_undo.
+extern u64 g_pbd_undo_skip_bits[16384];
+
+static u64 ppu_pbd_undo_on_ptr()
+{
+	return reinterpret_cast<u64>(&g_pbd_tick_undo_enabled);
+}
+static u64 ppu_pbd_undo_bits_ptr()
+{
+	return reinterpret_cast<u64>(g_pbd_undo_skip_bits);
+}
+
+static void ppu_pbd_undo_llvm(ppu_thread& ppu, u64 addr, u32 bytes)
+{
+	if (g_pbd_tick_undo_enabled.load(std::memory_order_relaxed))
+		pbd_tick_undo_store(ppu, addr, bytes);
+}
+
+static void ppu_pbd_invalidate_range(u32 addr, u32 size)
+{
+	if (size && g_fxo->is_init<pbd::rollback_session>())
+	{
+		auto& latch = g_fxo->get<pbd::rollback_session>();
+		if (pbd::rollback_session::requested())
+		{
+			for (u32 pc : pbd::rollback_session::pcs)
+			{
+				if (addr <= pc && u64{addr} + size > pc)
+				{
+					latch.invalidate();
+					break;
+				}
+			}
+		}
+	}
+}
 
 static void ppu_fallback(ppu_thread& ppu, ppu_opcode_t op, be_t<u32>* this_op, ppu_intrp_func* next_fn)
 {
@@ -787,6 +906,7 @@ extern void ppu_register_range(u32 addr, u32 size)
 	}
 
 	const u64 seg_base = addr;
+	ppu_pbd_invalidate_range(addr, size);
 
 	while (size)
 	{
@@ -814,6 +934,7 @@ extern void ppu_register_function_at(u32 addr, u32 size, ppu_intrp_func_t ptr = 
 	// Initialize specific function
 	if (ptr)
 	{
+		ppu_pbd_invalidate_range(addr, 4);
 		write_to_ptr_unsafe<uptr>(ppu_ptr(addr), std::bit_cast<uptr>(ptr));
 		return;
 	}
@@ -841,7 +962,14 @@ extern void ppu_register_function_at(u32 addr, u32 size, ppu_intrp_func_t ptr = 
 	{
 		if (auto old = ppu_read(addr); old != ppu_break && old != ppu_far_jump)
 		{
-			write_to_ptr_unsafe<ppu_intrp_func_t>(ppu_ptr(addr), ppu_cache(addr));
+			const int latch_slot = old == &ppu_pbd_update ? pbd::rollback_session::slot_for(addr) : -1;
+			const bool keep_latch = old == &ppu_pbd_update && latch_slot >= 0 && vm::read32(addr) == pbd::rollback_session::opcodes[latch_slot];
+			if (!keep_latch)
+			{
+				if (old == &ppu_pbd_update)
+					ppu_pbd_invalidate_range(addr, 4);
+				write_to_ptr_unsafe<ppu_intrp_func_t>(ppu_ptr(addr), ppu_cache(addr));
+			}
 		}
 
 		addr += 4;
@@ -1173,6 +1301,7 @@ bool ppu_form_branch_to_code(u32 entry, u32 target)
 
 void ppu_remove_hle_instructions(u32 addr, u32 size)
 {
+	ppu_pbd_invalidate_range(addr, size);
 	if (Emu.IsStopped() || !g_fxo->is_init<ppu_far_jumps_t>())
 	{
 		return;
@@ -1259,6 +1388,11 @@ extern bool ppu_breakpoint(u32 addr, bool is_adding)
 
 	if (is_adding)
 	{
+		if (ppu_read(addr) == &ppu_pbd_update)
+		{
+			ppu_log.error("Breakpoint at 0x%08x conflicts with an opt-in PBD diagnostic hook.", addr);
+			return false;
+		}
 		if (ppu_read(addr) == ppu_fallback)
 		{
 			ppu_log.error("Unregistered instruction replaced with a breakpoint at 0x%08x", addr);
@@ -1311,6 +1445,7 @@ extern bool ppu_patch(u32 addr, u32 value)
 	}
 
 	*vm::get_super_ptr<u32>(addr) = value;
+	ppu_pbd_invalidate_range(addr, 4);
 
 	if (is_exec)
 	{
@@ -3809,11 +3944,18 @@ static bool ppu_store_reservation(ppu_thread& ppu, u32 addr, u64 reg_value)
 
 extern bool ppu_stwcx(ppu_thread& ppu, u32 addr, u32 reg_value)
 {
+	// PBD: conditional stores reach memory inside this helper, so compiled and interpreted execution both
+	// report the span here. A failed reservation writes nothing, but the span is reported first for the same reason
+	// the interpreter reports before writing: marking is conservative, an unpublished execution stays terminal.
+	if (g_pbd_tick_undo_enabled.load(std::memory_order_relaxed))
+		pbd_tick_undo_store(ppu, addr, 4);
 	return ppu_store_reservation<u32>(ppu, addr, reg_value);
 }
 
 extern bool ppu_stdcx(ppu_thread& ppu, u32 addr, u64 reg_value)
 {
+	if (g_pbd_tick_undo_enabled.load(std::memory_order_relaxed))
+		pbd_tick_undo_store(ppu, addr, 8);
 	return ppu_store_reservation<u64>(ppu, addr, reg_value);
 }
 
@@ -4848,6 +4990,44 @@ extern void ppu_initialize()
 
 		ppu_initialize(*ptr);
 	}
+
+	if (pbd::rollback_session::requested())
+	{
+		std::array<ppu_intrp_func_t, 4> originals{};
+		const char* failure = nullptr;
+		const bool compiled = g_cfg.core.ppu_decoder == ppu_decoder_type::llvm;
+		if (Emu.GetTitleID() != pbd::t5dr::title_id || (!compiled && g_cfg.core.ppu_decoder != ppu_decoder_type::_static))
+		{
+			failure = "requires_NPUB30009_static_or_LLVM_PPU";
+		}
+		else
+		{
+			for (u32 index = 0; index < originals.size(); index++)
+			{
+				const u32 address = pbd::rollback_session::pcs[index];
+				if (!vm::check_addr(address, vm::page_executable) || vm::read32(address) != pbd::rollback_session::opcodes[index])
+				{
+					failure = "update_hook_opcode_or_mapping_mismatch";
+					break;
+				}
+				if (compiled)
+					continue; // Separate-cache LLVM callbacks, no dispatch-slot replacement.
+				originals[index] = ppu_read(address);
+				if (originals[index] != ppu_cache(address) && originals[index] != &ppu_check_toc)
+				{
+					failure = "update_hook_dispatch_conflict";
+					break;
+				}
+			}
+		}
+		// configure records a setup failure when a valid fresh trace path exists;
+		// install all four slots only after every setup/scene guard has passed.
+		if (g_fxo->get<pbd::rollback_session>().configure(originals, failure, compiled) && !compiled)
+		{
+			for (u32 address : pbd::rollback_session::pcs)
+				write_to_ptr_unsafe<ppu_intrp_func_t>(ppu_ptr(address), &ppu_pbd_update);
+		}
+	}
 }
 
 bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_size)
@@ -4901,6 +5081,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			if (g_cfg.core.ppu_debug && func.size && func.toc != umax && !ppu_get_far_jump(func.addr))
 			{
 				ppu_toc[func.addr] = func.toc;
+				ppu_pbd_invalidate_range(func.addr, 4);
 				write_to_ptr_unsafe<ppu_intrp_func_t>(ppu_ptr(func.addr), &ppu_check_toc);
 			}
 		}
@@ -4918,13 +5099,22 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			{ "__error", reinterpret_cast<u64>(&ppu_error) },
 			{ "__check", reinterpret_cast<u64>(&ppu_check) },
 			{ "__trace", reinterpret_cast<u64>(&ppu_trace) },
+			{"__dr2026_update_latch", reinterpret_cast<u64>(&ppu_pbd_update_llvm)},
+			{"__dr2026_fn_probe", reinterpret_cast<u64>(&ppu_pbd_fn_observe)},
 			{ "__syscall", reinterpret_cast<u64>(ppu_execute_syscall) },
 			{ "__get_tb", reinterpret_cast<u64>(get_timebased_time) },
+			{"__dr2026_get_tb", reinterpret_cast<u64>(&ppu_pbd_get_tb)},
+			{"__dr2026_undo", reinterpret_cast<u64>(&ppu_pbd_undo_llvm)},
+			{"__dr2026_undo_on_ptr", reinterpret_cast<u64>(&ppu_pbd_undo_on_ptr)},
+			{"__dr2026_undo_bits_ptr", reinterpret_cast<u64>(&ppu_pbd_undo_bits_ptr)},
 			{ "__lwarx", reinterpret_cast<u64>(ppu_lwarx) },
 			{ "__ldarx", reinterpret_cast<u64>(ppu_ldarx) },
 			{ "__stwcx", reinterpret_cast<u64>(ppu_stwcx) },
 			{ "__stdcx", reinterpret_cast<u64>(ppu_stdcx) },
-			{ "__dcbz", reinterpret_cast<u64>(+[](u32 addr){ alignas(64) static constexpr u8 z[128]{}; do_cell_atomic_128_store(addr, z); }) },
+			// PBD write-fault capture: dcbz zeroes through the sudo alias (do_cell_atomic_128_store) and cannot fault,
+		    // so its span is reported host-side like the reservation stores. Instrumented (abi7) objects report it again before
+		    // the call; the second report is a no-op for an already captured page.
+			{"__dcbz", reinterpret_cast<u64>(+[](u32 addr){ if (g_pbd_tick_undo_enabled.load(std::memory_order_relaxed)) { if (const auto cpu = get_current_cpu_thread()) if (cpu->get_class() == thread_class::ppu) pbd_tick_undo_store(*static_cast<ppu_thread*>(cpu), addr & ~u32{127}, 128); } alignas(64) static constexpr u8 z[128]{}; do_cell_atomic_128_store(addr, z); })},
 			{ "__resupdate", reinterpret_cast<u64>(vm::reservation_update) },
 			{ "__resinterp", reinterpret_cast<u64>(ppu_reservation_fallback) },
 			{ "__escape", reinterpret_cast<u64>(+ppu_escape) },
@@ -5549,8 +5739,9 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			if (g_cfg.core.set_daz_and_ftz)
 				settings += ppu_settings::daz_and_ftz;
 
-			// Write version, hash, CPU, settings
-			fmt::append(obj_name, "v8-kusa-%s-%s-%s.obj", fmt::base57(output, 16), fmt::base57(settings), jit_compiler::cpu(g_cfg.core.llvm_cpu.to_string()));
+			// Write version, hash, CPU, settings; the PBD tags name the code-shaping switches and hooks (pbd_ppu_object_name.h)
+			fmt::append(obj_name, "%s%s%s-%s-%s.obj", pbd::ppu_object_name::build_prefix(), pbd::ppu_object_name::part_tags(part),
+				fmt::base57(output, 16), fmt::base57(settings), jit_compiler::cpu(g_cfg.core.llvm_cpu.to_string()));
 		}
 
 		if (cpu ? cpu->state.all_of(cpu_flag::exit) : Emu.IsStopped())
@@ -6016,6 +6207,17 @@ static void ppu_initialize2(jit_compiler& jit, const ppu_module<lv2_obj>& module
 		FunctionPassManager fpm;
 		// Basic optimizations
 		fpm.addPass(EarlyCSEPass());
+		const u32 scalar_mode = module_part.is_relocatable ? 0u : pbd_jit_scalar_mode();
+		if (scalar_mode)
+		{
+			// Retain the translator's arithmetic flags and observable calls. Simplify the emitted IR without inlining
+			// guest control flow, adding fast-math assumptions or moving state checks to another guest boundary.
+			fpm.addPass(InstCombinePass());
+			fpm.addPass(SimplifyCFGPass());
+			fpm.addPass(GVNPass());
+			fpm.addPass(InstCombinePass());
+			fpm.addPass(SimplifyCFGPass());
+		}
 
 		u32 guest_code_size = 0;
 		u32 min_addr = umax;
@@ -6077,6 +6279,75 @@ static void ppu_initialize2(jit_compiler& jit, const ppu_module<lv2_obj>& module
 			}
 		}
 
+#ifdef ARCH_X64
+		if (scalar_mode >= 2)
+		{
+			const auto inline_calls = [&]
+			{
+				// Join profitable direct calls using the emitted IR, including its volatile state checks and callbacks.
+				// Keep the same small budget for hinted/hot calls; recursive calls keep their original boundary.
+				auto parameters = getInlineParams(80);
+				parameters.HintThreshold = 80;
+				parameters.HotCallSiteThreshold = 80;
+				parameters.LocallyHotCallSiteThreshold = 80;
+				parameters.ColdCallSiteThreshold = 0;
+				parameters.AllowRecursiveCall = false;
+				ModulePassManager pipeline;
+				pipeline.addPass(ModuleInlinerWrapperPass(parameters, false));
+				FunctionPassManager cleanup;
+				cleanup.addPass(InstCombinePass());
+				cleanup.addPass(SimplifyCFGPass());
+				cleanup.addPass(GVNPass());
+				cleanup.addPass(InstCombinePass());
+				pipeline.addPass(createModuleToFunctionPassAdaptor(std::move(cleanup)));
+				pipeline.run(*_module, mam);
+			};
+			inline_calls();
+			if (scalar_mode == 3 && !g_cfg.core.ppu_debug && !g_cfg.core.ppu_prof)
+			{
+				// Inlining can expose a constant LR. Apply the ordinary direct-branch rule only to a known, translated
+				// target in this module; relocated, replaced, volatile and unknown dispatch entries keep their lookup.
+				u32 folded = 0;
+				for (auto& function : *_module)
+					for (auto& block : function)
+						for (auto& instruction : block)
+						{
+							auto* call = dyn_cast<CallInst>(&instruction);
+							if (!call || call->getCallingConv() != CallingConv::GHC || call->arg_size() != 7 || call->getCalledFunction())
+								continue;
+							Value* value = call->getCalledOperand();
+							if (auto* cast = dyn_cast<IntToPtrInst>(value))
+								value = cast->getOperand(0);
+							auto* load = dyn_cast<LoadInst>(value);
+							if (!load || load->isVolatile() || load->isAtomic())
+								continue;
+							auto* pointer = dyn_cast<GEPOperator>(load->getPointerOperand()->stripPointerCasts());
+							if (!pointer || pointer->getPointerOperand()->stripPointerCasts() != call->getArgOperand(0)->stripPointerCasts())
+								continue;
+							APInt offset(64, 0);
+							if (!pointer->accumulateConstantOffset(_module->getDataLayout(), offset) || offset.isNegative() || (offset.getZExtValue() & 7))
+								continue;
+							const u64 target = offset.getZExtValue() / 2; // One 8-byte dispatch slot per 4-byte guest instruction.
+							if (target >= u32{umax} || ppu_get_far_jump(static_cast<u32>(target)) ||
+								std::count(module_part.excluded_funcs.begin(), module_part.excluded_funcs.end(), target))
+								continue;
+							auto* destination = _module->getFunction(fmt::format("__0x%x", target));
+							if (!destination || destination->isDeclaration() || destination->getFunctionType() != call->getFunctionType() ||
+								destination->getCallingConv() != CallingConv::GHC)
+								continue;
+							call->setCalledFunction(destination);
+							folded++;
+						}
+				if (folded)
+				{
+					ppu_log.notice("LLVM: resolved %u constant return targets", folded);
+					mam.invalidate(*_module, PreservedAnalyses::none());
+					inline_calls();
+				}
+			}
+		}
+#endif
+
 		//legacy::PassManager mpm;
 
 		// Remove unused functions, structs, global variables, etc
@@ -6100,6 +6371,21 @@ static void ppu_initialize2(jit_compiler& jit, const ppu_module<lv2_obj>& module
 			out.flush();
 			ppu_log.error("LLVM: Verification failed for %s:\n%s", obj_name, result);
 			Emu.CallFromMainThread([]{ Emu.GracefulShutdown(false, true); });
+			return;
+		}
+
+		// The cache reuses an object by its name alone: one whose code reaches a hook its name does not list must never be written.
+		const auto unnamed = pbd::ppu_object_name::unnamed_hit(module_part, translator.GetHookHits());
+		if (unnamed || !pbd::ppu_object_name::calls_only_named_hooks(*_module, module_part))
+		{
+			if (unnamed)
+				ppu_log.error("LLVM: %s was built with a hook or rewrite at 0x%x (kind %u) its name does not list; the object is not written", obj_name, unnamed->site, static_cast<u32>(unnamed->kind));
+			else
+				ppu_log.error("LLVM: %s calls a function hook its name does not list; the object is not written", obj_name);
+			Emu.CallFromMainThread([]
+				{
+					Emu.GracefulShutdown(false, true);
+				});
 			return;
 		}
 

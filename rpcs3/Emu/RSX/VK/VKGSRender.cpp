@@ -1,5 +1,6 @@
 #include "Emu/RSX/VK/vkutils/descriptors.h"
 #include "stdafx.h"
+#include "Emu/PBD/pbd_stall_metrics.h"
 #include "../Overlays/overlay_compile_notification.h"
 #include "../Overlays/Shaders/shader_loading_dialog_native.h"
 
@@ -789,6 +790,7 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 
 VKGSRender::~VKGSRender()
 {
+	m_clip_copies.stop();
 	// Force-release ZCULL-ctrl since it is a pointer to self.
 	zcull_ctrl.release();
 
@@ -806,6 +808,7 @@ VKGSRender::~VKGSRender()
 
 	//Wait for device to finish up with resources
 	vkDeviceWaitIdle(*m_device);
+	m_clip_readbacks.clear();
 
 	// Globals. TODO: Refactor lifetime management
 	if (auto async_scheduler = g_fxo->try_get<vk::AsyncTaskScheduler>())
@@ -1528,6 +1531,7 @@ void VKGSRender::clear_surface(u32 mask)
 
 void VKGSRender::flush_command_queue(bool hard_sync, bool do_not_switch)
 {
+	::pbd::stall_metrics::scope measure_flush("vulkan_flush_command_queue", 0, hard_sync, true, 200000);
 	close_and_submit_command_buffer();
 
 	if (hard_sync)
@@ -1792,6 +1796,7 @@ void VKGSRender::do_local_task(rsx::FIFO::state state)
 
 bool VKGSRender::load_program()
 {
+	::pbd::stall_metrics::scope measure_program("vulkan_load_program", 0, 0, true, 200000);
 	const auto shadermode = g_cfg.video.shadermode.get();
 
 	// TODO: EXT_dynamic_state should get rid of this sillyness soon (kd)

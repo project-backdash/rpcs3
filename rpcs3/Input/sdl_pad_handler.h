@@ -3,6 +3,7 @@
 #ifdef HAVE_SDL3
 
 #include "Emu/Io/PadHandler.h"
+#include "Emu/Cell/pbd_practice_controls.h"
 
 #ifndef _MSC_VER
 #pragma GCC diagnostic push
@@ -69,6 +70,7 @@ public:
 	};
 
 	sdl_info sdl{};
+	pbd::practice::controls::touchpad_click practice_touchpad;
 
 	std::array<f32, 3> values_accel{};
 	std::array<f32, 3> values_gyro{};

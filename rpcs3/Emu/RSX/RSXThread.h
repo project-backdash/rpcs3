@@ -2,6 +2,7 @@
 
 #include <queue>
 #include <deque>
+#include <mutex>
 
 #include "RSXFIFO.h"
 #include "RSXOffload.h"
@@ -111,10 +112,45 @@ namespace rsx
 		display_flip_info_t m_queued_flip{};
 
 		void cpu_task() override;
+		// Only the renderer samples its mutable state. The freeze writer copies this snapshot without waiting for a frame.
+		struct pbd_diagnostic_snapshot
+		{
+			u32 get = 0, put = 0, ref = 0, label = 0;
+			u32 flip_status = 0, flip_index = 0, withhold_left = 0, marker_read = 0, marker_age = 0;
+			bool queued = false, queued_skip = false, skip = false, replay_skip = false;
+		};
+		mutable std::mutex m_pbd_diagnostic_mutex;
+		pbd_diagnostic_snapshot m_pbd_diagnostic;
+		void pbd_publish_debug_state();
+
+	public:
+		std::string pbd_debug_state() const;
+		// PBD (PBD_PRESENT_IDENTITY_QUEUE_TAG=1 only): the FLIP_HEAD header this RSX thread is executing, set by
+		// sys_rsx 0x102 immediately before the flip it requests, consumed once by handle_emu_flip.
+		void pbd_note_flip_head(u32 arg);
+
+	protected:
+		::pbd::frame_presentation::frame_tag_queue::record pbd_pop_flip_token(u32 buffer, bool forced);
+		int pbd_fifo_chain(u32 from, u32 to, bool allow_methods, u32* stop_pos = nullptr, u32* stop_word = nullptr) const;
+		u32 m_pbd_flip_head_address = ~0u;
+		u32 m_pbd_flip_head_arg = 0;
+
+	public:
+		// The last JUMP the FIFO executed (IO offsets), cleared at each DRIVER_QUEUE; the DRIVER_QUEUE execution ordinal and
+		// its value when the last FLIP_HEAD executed. RSX thread only.
+		u32 m_pbd_jump_src = ~0u, m_pbd_jump_dst = ~0u;
+		u32 m_pbd_dq_seq = 0, m_pbd_fh_dq_seq = 0;
 	protected:
 
 		s32 m_skip_frame_ctr = 0;
 		bool skip_current_frame = false;
+		u32 m_pbd_marker_read = 0;      // exact withhold: markers consumed (RSX thread only)
+		u32 m_pbd_withhold_left = 0;    // frames still to withhold
+		u32 m_pbd_marker_age = 0;       // frame ends seen while the oldest marker has not been reached
+		bool m_pbd_replay_skip = false; // skip_current_frame was set for a replayed window (pbd::replay_pacing::skip_draws)
+		// Black-frame probe tags (RSX thread only): the last window's marker id (slot + 1), live frames ended since that
+		// window's last withheld frame (1.. = post-window live frame index, 0 = none pending), live frame ends for the baseline sample.
+		u32 m_pbd_bp_marker = 0, m_pbd_bp_after = 0, m_pbd_bp_live = 0;
 
 		primitive_class m_current_draw_mode = primitive_class::polygon;
 
@@ -434,6 +470,12 @@ namespace rsx
 		 * Notify to check internal state during semaphore wait
 		 */
 		virtual void on_semaphore_acquire_wait() {}
+
+		// Only nv406e calls this after checking the paused viewer and completed frame-handshake boundary.
+		void refresh_native_ui_at_frame_handshake()
+		{
+			do_local_task(FIFO::state::empty);
+		}
 
 		/**
 		 * Load an image from memory with optional scaling and rotation.

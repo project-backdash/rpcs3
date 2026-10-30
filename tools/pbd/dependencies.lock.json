@@ -1,0 +1,69 @@
+{
+  "source": "https://github.com/RPCS3/rpcs3/blob/028d1e8f4a42df2292cdbcd35e540c9e71fc47aa/.ci/setup-windows.sh",
+  "rpcs3_commit": "028d1e8f4a42df2292cdbcd35e540c9e71fc47aa",
+  "artifacts": [
+    {
+      "name": "qtbase",
+      "version": "6.11.2",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112_msvc2022_64/qt.qt6.6112.win64_msvc2022_64/6.11.2-0-202608131017qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+      "sha256": "fd984b7264361b4dd3fd2a417702ca1258e4086268f2ee6a69b9a393d9c3f6bb",
+      "destination": "build/deps/Qt/6.11.2/msvc2022_64"
+    },
+    {
+      "name": "qtdeclarative",
+      "version": "6.11.2",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112_msvc2022_64/qt.qt6.6112.win64_msvc2022_64/6.11.2-0-202608131017qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+      "sha256": "5591ca564c1a9299a45a15b6b1d324c86e0aaed7cf6c47b7e6fe464aecae2587",
+      "destination": "build/deps/Qt/6.11.2/msvc2022_64"
+    },
+    {
+      "name": "qttools",
+      "version": "6.11.2",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112_msvc2022_64/qt.qt6.6112.win64_msvc2022_64/6.11.2-0-202608131017qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+      "sha256": "5f2b387a1f8055102b1388ff4ea743124ed6389d442f75c659728bb5c2a56946",
+      "destination": "build/deps/Qt/6.11.2/msvc2022_64"
+    },
+    {
+      "name": "qtmultimedia",
+      "version": "6.11.2",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112_msvc2022_64/qt.qt6.6112.addons.qtmultimedia.win64_msvc2022_64/6.11.2-0-202608131017qtmultimedia-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+      "sha256": "24d73c45fefe5e260aa9a99eea1aea48adcad54f93bddaa3ec5b0574b55f57c7",
+      "destination": "build/deps/Qt/6.11.2/msvc2022_64"
+    },
+    {
+      "name": "qtsvg",
+      "version": "6.11.2",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112_msvc2022_64/qt.qt6.6112.win64_msvc2022_64/6.11.2-0-202608131017qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+      "sha256": "417f44499c835b2303f3ff78043179bb23442f33d5d2816fbf7e8dbf275b1c89",
+      "destination": "build/deps/Qt/6.11.2/msvc2022_64"
+    },
+    {
+      "name": "qttranslations",
+      "version": "6.11.2",
+      "url": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112_msvc2022_64/qt.qt6.6112.win64_msvc2022_64/6.11.2-0-202608131017qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+      "sha256": "1c9516ce25d286ecf97e7aaaa5c8fa395823f21af5fa3dcb7bd06f648453dd77",
+      "destination": "build/deps/Qt/6.11.2/msvc2022_64"
+    },
+    {
+      "name": "llvm",
+      "version": "22.1.8",
+      "url": "https://github.com/RPCS3/llvm-mirror/releases/download/custom-build-win-22.1.8/llvmlibs_mt.7z",
+      "sha256": "6e6dcdf0216ea5c95262e7bed9ffcff60d5994ac6091376be43852b63e9bb9e9",
+      "destination": "build/lib_ext/Release-x64"
+    },
+    {
+      "name": "7zr",
+      "version": "26.03",
+      "url": "https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe",
+      "sha256": "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d",
+      "destination": "build/deps/7zr.exe"
+    },
+    {
+      "name": "googletest",
+      "version": "1.8.1.8",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.googletest.v140.windesktop.msvcstl.static.rt-static/1.8.1.8/microsoft.googletest.v140.windesktop.msvcstl.static.rt-static.1.8.1.8.nupkg",
+      "sha512Base64": "0TdaYkSE7euaU+aSNT6/URH8dtduMxm3E+CoBJVUAW4rU7LL52QV9C4beNKmIRcR4yjwoYEpoWgwcjbfCfI9/Q==",
+      "destination": "packages/Microsoft.googletest.v140.windesktop.msvcstl.static.rt-static.1.8.1.8"
+    }
+  ]
+}

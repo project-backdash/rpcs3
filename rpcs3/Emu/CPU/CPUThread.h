@@ -51,6 +51,8 @@ constexpr bool is_paused(bs_t<cpu_flag> state)
 
 class cpu_thread
 {
+	std::atomic<void*> diagnostic_suspend_slot{nullptr}, diagnostic_suspend_stamp{nullptr};
+
 public:
 	u64 block_hash = 0;
 

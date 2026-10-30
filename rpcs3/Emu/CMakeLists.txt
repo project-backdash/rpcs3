@@ -67,6 +67,7 @@ target_sources(rpcs3_emu PRIVATE
     ../util/emu_utils.cpp
     ../util/media_utils.cpp
     ../util/video_provider.cpp
+    ../util/pbd_clips.cpp
     ../util/logs.cpp
     ../util/yaml.cpp
     ../util/vm_native.cpp
@@ -106,7 +107,75 @@ set_source_files_properties("../../Utilities/JITLLVM.cpp" "../../Utilities/JITAS
     SKIP_PRECOMPILE_HEADERS ON
 )
 
-set_source_files_properties("../util/yaml.cpp" PROPERTIES
+set_source_files_properties("../util/yaml.cpp" "Cell/Modules/cellPad.cpp" "Cell/Modules/pbd_pad_read.cpp" "Cell/Modules/pbd_pad_words.cpp" "GDB.cpp" "Cell/PPUTranslator.cpp" "Cell/pbd_rollback_session.cpp"
+    "PBD/pbd_session_setup.cpp"
+    "PBD/pbd_checkpoint_setup.cpp"
+    "PBD/pbd_boundary_completion.cpp"
+    "PBD/pbd_boundary_dispatch.cpp"
+    "PBD/pbd_correction_execution.cpp"
+    "PBD/pbd_correction_memory.cpp"
+    "PBD/pbd_dummy_contact_observation.cpp"
+    "PBD/pbd_dummy_native_route.cpp"
+    "PBD/pbd_exit_gate.cpp"
+    "PBD/pbd_input_selection.cpp"
+    "PBD/pbd_lobby_start.cpp"
+    "PBD/pbd_peer_timing.cpp"
+    "PBD/pbd_practice_boundary_commands.cpp"
+    "PBD/pbd_practice_frame_observation.cpp"
+    "PBD/pbd_practice_lesson_boundary.cpp"
+    "PBD/pbd_practice_menu_navigation.cpp"
+    "PBD/pbd_practice_move_observation.cpp"
+    "PBD/pbd_practice_opening.cpp"
+    "PBD/pbd_practice_option_commands.cpp"
+    "PBD/pbd_practice_pad_actions.cpp"
+    "PBD/pbd_practice_restart.cpp"
+    "PBD/pbd_replay_control_boundary.cpp"
+    "PBD/pbd_replay_viewer_commands.cpp"
+    "PBD/pbd_segment_barrier.cpp"
+    "PBD/pbd_tick_checkpoint.cpp"
+    "PBD/pbd_tick_entry.cpp"
+    "PBD/pbd_tick_input.cpp"
+    "PBD/pbd_tick_state.cpp"
+    "PBD/pbd_tick_verification.cpp"
+    "PBD/pbd_session_practice_setup.cpp"
+    "PBD/pbd_fighter_side.cpp"
+    "PBD/pbd_practice_collision.cpp"
+    "PBD/pbd_practice_frame_events.cpp"
+    "PBD/pbd_practice_placement.cpp"
+    "PBD/pbd_practice_reset.cpp"
+    "PBD/pbd_replay_native.cpp"
+    "PBD/pbd_boot_dispatch.cpp"
+    "PBD/pbd_direct_replay_configuration.cpp"
+    "PBD/pbd_direct_replay_input.cpp"
+    "PBD/pbd_direct_replay_rounds.cpp"
+    "PBD/pbd_function_hook_configuration.cpp"
+    "PBD/pbd_function_hook_dispatch.cpp"
+    "PBD/pbd_function_hook_gates.cpp"
+    "PBD/pbd_function_hook_random.cpp"
+    "PBD/pbd_function_hook_report.cpp"
+    "PBD/pbd_function_hook_voice.cpp"
+    "PBD/pbd_practice_menu_builder.cpp"
+    "PBD/pbd_practice_menu_rows.cpp"
+    "Cell/pbd_rollback_session_capture.cpp" "Cell/pbd_rollback_session_configure.cpp" "Cell/pbd_rollback_session_configure_link.cpp"
+    "Cell/pbd_rollback_session_correction.cpp" "Cell/pbd_rollback_session_lobby.cpp" "Cell/pbd_rollback_session_peer.cpp"
+    "Cell/pbd_rollback_session_practice.cpp" "Cell/pbd_rollback_session_practice_controls.cpp" "Cell/pbd_rollback_session_practice_dummy.cpp"
+    "Cell/pbd_rollback_session_practice_menu.cpp" "Cell/pbd_rollback_session_practice_pad.cpp"
+    "Cell/pbd_rollback_session_practice_publish.cpp" "Cell/pbd_rollback_session_replay.cpp" "Cell/pbd_rollback_session_rows.cpp"
+    "Cell/pbd_rollback_session_rewind.cpp" "Cell/pbd_rollback_session_run.cpp" "Cell/pbd_rollback_session_run_steps.cpp" "Cell/pbd_rollback_session_takeover.cpp"
+    "Cell/pbd_rollback_session_tick.cpp" "Cell/pbd_rollback_session_tick_record.cpp" "Cell/pbd_practice_native.cpp" "Cell/pbd_hidden_selection.cpp" "Cell/pbd_versus_native.cpp" "Cell/pbd_sound_options.cpp" "Cell/pbd_boot_request.cpp" "Cell/pbd_write_watch.cpp" "Cell/pbd_fn_hook.cpp" "CPU/pbd_ordinary_metrics.cpp" PROPERTIES
+    COMPILE_FLAGS "$<IF:$<CXX_COMPILER_ID:MSVC>,/EHsc,-fexceptions>"
+    SKIP_PRECOMPILE_HEADERS ON
+)
+
+set_source_files_properties("PBD/pbd_practice_paint.cpp" "PBD/pbd_practice_position.cpp" "PBD/pbd_practice_commands.cpp" PROPERTIES
+    COMPILE_FLAGS "$<IF:$<CXX_COMPILER_ID:MSVC>,/EHsc,-fexceptions>"
+    SKIP_PRECOMPILE_HEADERS ON
+)
+set_source_files_properties("PBD/pbd_practice_sets.cpp" PROPERTIES
+    COMPILE_FLAGS "$<IF:$<CXX_COMPILER_ID:MSVC>,/EHsc,-fexceptions>"
+    SKIP_PRECOMPILE_HEADERS ON
+)
+set_source_files_properties("PBD/pbd_anchor_dump.cpp" "PBD/pbd_replay_restore.cpp" PROPERTIES
     COMPILE_FLAGS "$<IF:$<CXX_COMPILER_ID:MSVC>,/EHsc,-fexceptions>"
     SKIP_PRECOMPILE_HEADERS ON
 )
@@ -187,6 +256,106 @@ target_sources(rpcs3_emu PRIVATE
     Cell/PPUInterpreter.cpp
     Cell/PPUModule.cpp
     Cell/PPUThread.cpp
+    Cell/pbd_ppu_object_name.cpp
+    Cell/pbd_write_watch.cpp
+    Cell/pbd_fn_hook.cpp
+    Cell/pbd_rollback_session.cpp
+    PBD/pbd_session_setup.cpp
+    PBD/pbd_checkpoint_setup.cpp
+    PBD/pbd_boundary_completion.cpp
+    PBD/pbd_boundary_dispatch.cpp
+    PBD/pbd_correction_execution.cpp
+    PBD/pbd_correction_memory.cpp
+    PBD/pbd_dummy_contact_observation.cpp
+    PBD/pbd_dummy_native_route.cpp
+    PBD/pbd_exit_gate.cpp
+    PBD/pbd_input_selection.cpp
+    PBD/pbd_lobby_start.cpp
+    PBD/pbd_peer_timing.cpp
+    PBD/pbd_practice_boundary_commands.cpp
+    PBD/pbd_practice_frame_observation.cpp
+    PBD/pbd_practice_lesson_boundary.cpp
+    PBD/pbd_practice_menu_navigation.cpp
+    PBD/pbd_practice_move_observation.cpp
+    PBD/pbd_practice_opening.cpp
+    PBD/pbd_practice_option_commands.cpp
+    PBD/pbd_practice_pad_actions.cpp
+    PBD/pbd_practice_restart.cpp
+    PBD/pbd_replay_control_boundary.cpp
+    PBD/pbd_replay_viewer_commands.cpp
+    PBD/pbd_segment_barrier.cpp
+    PBD/pbd_tick_checkpoint.cpp
+    PBD/pbd_tick_entry.cpp
+    PBD/pbd_tick_input.cpp
+    PBD/pbd_tick_state.cpp
+    PBD/pbd_tick_verification.cpp
+    PBD/pbd_session_practice_setup.cpp
+    PBD/pbd_fighter_side.cpp
+    PBD/pbd_practice_collision.cpp
+    PBD/pbd_practice_frame_events.cpp
+    PBD/pbd_practice_placement.cpp
+    PBD/pbd_practice_reset.cpp
+    PBD/pbd_replay_native.cpp
+    PBD/pbd_boot_dispatch.cpp
+    PBD/pbd_direct_replay_configuration.cpp
+    PBD/pbd_direct_replay_input.cpp
+    PBD/pbd_direct_replay_rounds.cpp
+    PBD/pbd_function_hook_configuration.cpp
+    PBD/pbd_function_hook_dispatch.cpp
+    PBD/pbd_function_hook_gates.cpp
+    PBD/pbd_function_hook_random.cpp
+    PBD/pbd_function_hook_report.cpp
+    PBD/pbd_function_hook_voice.cpp
+    PBD/pbd_practice_menu_builder.cpp
+    PBD/pbd_practice_menu_rows.cpp
+    Cell/pbd_rollback_session_capture.cpp
+    Cell/pbd_rollback_session_configure.cpp
+    Cell/pbd_rollback_session_configure_link.cpp
+    Cell/pbd_rollback_session_correction.cpp
+    Cell/pbd_rollback_session_lobby.cpp
+    Cell/pbd_rollback_session_peer.cpp
+    Cell/pbd_rollback_session_practice.cpp
+    Cell/pbd_rollback_session_practice_controls.cpp
+    Cell/pbd_rollback_session_practice_dummy.cpp
+    Cell/pbd_rollback_session_practice_menu.cpp
+    Cell/pbd_rollback_session_practice_pad.cpp
+    Cell/pbd_rollback_session_practice_publish.cpp
+    Cell/pbd_rollback_session_replay.cpp
+    Cell/pbd_rollback_session_rewind.cpp
+    Cell/pbd_rollback_session_rows.cpp
+    Cell/pbd_rollback_session_run.cpp
+    Cell/pbd_rollback_session_run_steps.cpp
+    Cell/pbd_rollback_session_takeover.cpp
+    Cell/pbd_rollback_session_tick.cpp
+    Cell/pbd_rollback_session_tick_record.cpp
+    Cell/pbd_practice_native.cpp
+    PBD/pbd_practice_paint.cpp
+    PBD/pbd_practice_position.cpp
+    PBD/pbd_practice_sets.cpp
+    PBD/pbd_practice_commands.cpp
+    Cell/pbd_hidden_selection.cpp
+    Cell/pbd_versus_native.cpp
+    Cell/pbd_sound_options.cpp
+    Cell/pbd_boot_request.cpp
+    Cell/pbd_live_replay.cpp
+    Cell/pbd_direct_match.cpp
+    PBD/pbd_anchor_dump.cpp
+    PBD/pbd_memory_dump_native.cpp
+    PBD/pbd_replay_bone_segments.cpp
+    PBD/pbd_replay_boot.cpp
+    PBD/pbd_replay_carry.cpp
+    PBD/pbd_replay_game_carry.cpp
+    PBD/pbd_replay_hit_contacts.cpp
+    PBD/pbd_replay_reaction.cpp
+    PBD/pbd_replay_reaction_result.cpp
+    PBD/pbd_replay_resource_cursor.cpp
+    PBD/pbd_replay_restore.cpp
+    PBD/pbd_replay_retained_terms.cpp
+    PBD/pbd_rematch_native.cpp
+    PBD/pbd_character_rule_native.cpp
+    PBD/pbd_stage_rule_native.cpp
+    PBD/pbd_pick_transition.cpp
+    PBD/pbd_rank_screens.cpp
     Cell/PPUTranslator.cpp
     Cell/RawSPUThread.cpp
     Cell/SPUAnalyser.cpp
@@ -295,6 +464,8 @@ target_sources(rpcs3_emu PRIVATE
     Cell/Modules/cellOskDialog.cpp
     Cell/Modules/cellOvis.cpp
     Cell/Modules/cellPad.cpp
+    Cell/Modules/pbd_pad_read.cpp
+    Cell/Modules/pbd_pad_words.cpp
     Cell/Modules/cellPamf.cpp
     Cell/Modules/cellPesmUtility.cpp
     Cell/Modules/cellPhotoDecode.cpp
@@ -402,6 +573,7 @@ endif()
 # CPU
 target_sources(rpcs3_emu PRIVATE
     CPU/CPUThread.cpp
+    CPU/pbd_ordinary_metrics.cpp
     CPU/CPUTranslator.cpp
 )
 
@@ -547,6 +719,13 @@ target_sources(rpcs3_emu PRIVATE
     RSX/Overlays/overlay_osk.cpp
     RSX/Overlays/overlay_osk_panel.cpp
     RSX/Overlays/overlay_perf_metrics.cpp
+    RSX/Overlays/pbd/pbd_overlays.cpp
+    RSX/Overlays/pbd/pbd_status_overlay.cpp
+    RSX/Overlays/pbd/pbd_menu_overlay.cpp
+    RSX/Overlays/pbd/pbd_practice_overlay.cpp
+    RSX/Overlays/pbd/pbd_spectator_overlay.cpp
+    RSX/Overlays/pbd/pbd_lobby_set_overlay.cpp
+    RSX/Overlays/pbd/pbd_settings_overlay.cpp
     RSX/Overlays/overlay_progress_bar.cpp
     RSX/Overlays/overlay_save_dialog.cpp
     RSX/Overlays/overlay_select.cpp

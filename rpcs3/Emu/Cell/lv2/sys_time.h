@@ -13,3 +13,8 @@ u64 sys_time_get_timebase_frequency();
 error_code sys_time_get_rtc(vm::ptr<u64> rtc);
 
 extern u64 g_timebase_offs;
+extern u64 g_pbd_restored_timebase;
+extern bool g_pbd_restored_timebase_valid;
+
+// Immutable process launch policy; cancellation must never bypass reader exclusion.
+bool pbd_clock_guarded() noexcept;

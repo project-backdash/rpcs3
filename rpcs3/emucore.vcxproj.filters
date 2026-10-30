@@ -145,6 +145,9 @@
     <Filter Include="Emu\GPU\RSX\Overlays\BigPicture">
       <UniqueIdentifier>{37ae1158-fac7-4a4c-929a-115d8deb7505}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Emu\GPU\RSX\Overlays\PBD">
+      <UniqueIdentifier>{7c539ccb-7bd5-40d1-a698-eb364f00e74a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Crypto\aes.cpp">
@@ -183,10 +186,73 @@
     <ClCompile Include="Emu\Cell\PPUThread.cpp">
       <Filter>Emu\Cell</Filter>
     </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_ppu_object_name.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
     <ClCompile Include="Emu\Cell\RawSPUThread.cpp">
       <Filter>Emu\Cell</Filter>
     </ClCompile>
     <ClCompile Include="Emu\Cell\SPUThread.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_capture.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_configure.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_configure_link.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_correction.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_lobby.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_peer.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_controls.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_dummy.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_menu.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_pad.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_publish.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_replay.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_rows.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_run.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_run_steps.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_takeover.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_rewind.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_tick.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_tick_record.cpp">
       <Filter>Emu\Cell</Filter>
     </ClCompile>
     <ClCompile Include="Emu\CPU\CPUThread.cpp">
@@ -505,6 +571,12 @@
       <Filter>Emu\Cell\Modules</Filter>
     </ClCompile>
     <ClCompile Include="Emu\Cell\Modules\cellPad.cpp">
+      <Filter>Emu\Cell\Modules</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\Modules\pbd_pad_read.cpp">
+      <Filter>Emu\Cell\Modules</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\Modules\pbd_pad_words.cpp">
       <Filter>Emu\Cell\Modules</Filter>
     </ClCompile>
     <ClCompile Include="Emu\Cell\Modules\cellPamf.cpp">
@@ -872,6 +944,27 @@
     </ClCompile>
     <ClCompile Include="Emu\RSX\Overlays\overlay_perf_metrics.cpp">
       <Filter>Emu\GPU\RSX\Overlays</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_overlays.cpp">
+      <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_status_overlay.cpp">
+      <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_menu_overlay.cpp">
+      <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_practice_overlay.cpp">
+      <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_spectator_overlay.cpp">
+      <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_lobby_set_overlay.cpp">
+      <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_settings_overlay.cpp">
+      <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
     </ClCompile>
     <ClCompile Include="Emu\Cell\Modules\StaticHLE.cpp">
       <Filter>Emu\Cell\Modules</Filter>
@@ -1572,6 +1665,30 @@
     <ClInclude Include="Emu\Cell\SPUThread.h">
       <Filter>Emu\Cell</Filter>
     </ClInclude>
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_boundary.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_common.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_rollback.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_peer.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_lobby.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_replay.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_practice.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
     <ClInclude Include="Emu\CPU\CPUDisAsm.h">
       <Filter>Emu\CPU</Filter>
     </ClInclude>
@@ -1885,6 +2002,9 @@
       <Filter>Emu\Cell\Modules</Filter>
     </ClInclude>
     <ClInclude Include="Emu\Cell\Modules\cellPad.h">
+      <Filter>Emu\Cell\Modules</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\Cell\Modules\pbd_pad_read.h">
       <Filter>Emu\Cell\Modules</Filter>
     </ClInclude>
     <ClInclude Include="Emu\Cell\Modules\cellPamf.h">
@@ -2231,6 +2351,18 @@
     </ClInclude>
     <ClInclude Include="Emu\RSX\Overlays\overlay_perf_metrics.h">
       <Filter>Emu\GPU\RSX\Overlays</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\RSX\Overlays\pbd\overlay_pbd_draw.h">
+      <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\RSX\Overlays\pbd\overlay_pbd_button_layout.h">
+      <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\RSX\Overlays\pbd\pbd_glyph_atlas.h">
+      <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\RSX\Overlays\pbd\pbd_overlays.h">
+      <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
     </ClInclude>
     <ClInclude Include="Emu\Cell\Modules\cellCrossController.h">
       <Filter>Emu\Cell\Modules</Filter>
@@ -3147,5 +3279,97 @@
     <None Include="Emu\RSX\Program\MSAA\StencilUnresolvePass.glsl">
       <Filter>Emu\GPU\RSX\Program\MSAA</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Emu\PBD\pbd_anchor_dump.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClInclude Include="Emu\PBD\pbd_anchor_dump.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\PBD\pbd_memory_dump.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClCompile Include="Emu\PBD\pbd_memory_dump_native.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClInclude Include="Emu\PBD\pbd_memory_dump_native.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\PBD\pbd_replay_actor_records.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\PBD\pbd_emulator_identity.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\PBD\pbd_replay_bank_offset.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClCompile Include="Emu\PBD\pbd_replay_bone_segments.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_replay_boot.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClInclude Include="Emu\PBD\pbd_replay_boot.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClCompile Include="Emu\PBD\pbd_replay_carry.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClInclude Include="Emu\PBD\pbd_replay_carry.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\PBD\pbd_replay_carry_codec.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\PBD\pbd_replay_carry_guard.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\PBD\pbd_replay_carry_types.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\PBD\pbd_replay_difference.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\PBD\pbd_replay_rewind.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\PBD\pbd_replay_switches.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClCompile Include="Emu\PBD\pbd_replay_game_carry.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_replay_hit_contacts.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_replay_reaction.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_replay_reaction_result.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_replay_resource_cursor.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClInclude Include="Emu\PBD\pbd_replay_resource_reference.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClCompile Include="Emu\PBD\pbd_replay_restore.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClInclude Include="Emu\PBD\pbd_replay_restore.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\PBD\pbd_replay_result_reference.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClCompile Include="Emu\PBD\pbd_replay_retained_terms.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClInclude Include="Emu\PBD\pbd_stage_sync.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

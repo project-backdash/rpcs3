@@ -4,6 +4,7 @@
 #include "Utilities/address_range.h"
 #include "Utilities/geometry.h"
 #include "../gcm_enums.h"
+#include "pbd_render_scale.h"
 
 #define RSX_SURFACE_DIMENSION_IGNORED 1
 
@@ -214,7 +215,11 @@ namespace rsx
 		u16 scale_percent = 100;
 		u16 min_scalable_dimension = 0;
 
-		f32 scale_factor() const { return scale_percent * 0.01f; }
+		f32 scale_factor() const
+		{
+			const auto ratio = pbd::render_ratio(scale_percent);
+			return static_cast<f32>(ratio.numerator) / ratio.denominator;
+		}
 
 		bool operator == (const surface_scaling_config_t& that) const
 		{
@@ -376,8 +381,9 @@ namespace rsx
 		if (ref > config.min_scalable_dimension)
 		{
 			// Upscale both width and height
-			width = (config.scale_percent * width) / 100;
-			height = (config.scale_percent * height) / 100;
+			const auto ratio = pbd::render_ratio(config.scale_percent);
+			width = (ratio.numerator * width) / ratio.denominator;
+			height = (ratio.numerator * height) / ratio.denominator;
 
 			if constexpr (clamp)
 			{
@@ -396,8 +402,9 @@ namespace rsx
 		u16 height)
 	{
 		// Inverse scale
-		auto width_ = (width * 100) / config.scale_percent;
-		auto height_ = (height * 100) / config.scale_percent;
+		const auto ratio = pbd::render_ratio(config.scale_percent);
+		auto width_ = (width * ratio.denominator) / ratio.numerator;
+		auto height_ = (height * ratio.denominator) / ratio.numerator;
 
 		if constexpr (clamp)
 		{

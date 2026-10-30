@@ -6,14 +6,24 @@
 #include "Emu/Io/pad_config.h"
 #include "Emu/Io/pad_config_types.h"
 #include "Input/mouse_gyro_handler.h"
+#include "Emu/PBD/pbd_input_taps.h"
+#include "Input/pbd_pad_session.h"
+#include "Input/pbd_controller_ports.h"
 #include "Utilities/mutex.h"
 
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string_view>
 #include <string>
 
 class PadHandlerBase;
+namespace pbd::pads
+{
+	class controller_ports;
+	class takeover_watch;
+	class spectator_watch;
+}
 
 class pad_thread
 {
@@ -29,6 +39,12 @@ public:
 	std::array<std::shared_ptr<Pad>, CELL_PAD_MAX_PORT_NUM>& GetPads() { return m_pads; }
 	void SetRumble(u32 pad, u8 large_motor, u8 small_motor);
 	void SetIntercepted(bool intercepted);
+	// PROJECT BACKDASH, called under g_pad_mutex: the match sides (Input/pbd_pad_session.h) and this PC's controller's taps
+	// (Input/pbd_controller_ports.h).
+	bool pbd_match_side_available() const noexcept;
+	bool pbd_bind_match_side(u32 role) noexcept;
+	u16 pbd_read_taps(pbd::input_taps::reader reader, const Pad& pad);
+	void pbd_game_read(const Pad& pad);
 
 	s32 AddLddPad();
 	void UnregisterLddPad(u32 handle);
@@ -62,6 +78,19 @@ protected:
 	u32 num_ldd_pad = 0;
 
 private:
+	// PROJECT BACKDASH: its controllers, the match sides, controller takeover and a watcher's controllers; null when unused.
+	std::unique_ptr<pbd::pads::controller_ports> m_pbd_ports;
+	pbd::pads::match_sides m_pbd_match;
+	std::unique_ptr<pbd::pads::takeover_watch> m_pbd_takeover;
+	std::unique_ptr<pbd::pads::spectator_watch> m_pbd_spectator;
+	pbd::pads::controller_ports::ports pbd_configure_ports(const std::function<bool(u32)>& is_virtual);
+	void pbd_refresh_connection(u32 port, Pad& pad, pbd::pads::device_identity previous);
+	void pbd_release_controllers();
+	void pbd_open_home_menu();
+	void pbd_create_controllers();
+	void pbd_poll_controllers();
+	void pbd_update_controllers();
+	void pbd_note_controller_poll();
 	void apply_copilots();
 	void update_pad_states();
 

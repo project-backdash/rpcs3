@@ -8,6 +8,7 @@
 #include "Input/pad_thread.h"
 #include "Input/product_info.h"
 #include "cellPad.h"
+#include "pbd_pad_read.h"
 
 error_code sys_config_start(ppu_thread& ppu);
 error_code sys_config_stop(ppu_thread& ppu);
@@ -692,8 +693,10 @@ void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
 	}
 }
 
-error_code cellPadGetData(u32 port_no, vm::ptr<CellPadData> data)
+static error_code cell_pad_get_data_impl(u32 port_no, vm::ptr<CellPadData> data, pbd::input_observation* observation)
 {
+	// PROJECT BACKDASH: when the game last read this port (Modules/pbd_pad_read.h).
+	pbd::pad_read::note_read(port_no);
 	cellPad.trace("cellPadGetData(port_no=%d, data=*0x%x)", port_no, data);
 
 	std::lock_guard lock(pad::g_pad_mutex);
@@ -717,6 +720,8 @@ error_code cellPadGetData(u32 port_no, vm::ptr<CellPadData> data)
 		return not_an_error(CELL_PAD_ERROR_NO_DEVICE);
 
 	pad_get_data(port_no, data.get_ptr());
+	// PROJECT BACKDASH: the record a peer session, a script or a PBD menu gives the game instead (Modules/pbd_pad_read.h).
+	pbd::pad_read::after_read({*handler, config, port_no, *data, observation});
 
 	if (g_cfg.io.pad_debug_overlay && !g_cfg.video.debug_overlay && port_no == 0)
 	{
@@ -724,6 +729,12 @@ error_code cellPadGetData(u32 port_no, vm::ptr<CellPadData> data)
 	}
 
 	return CELL_OK;
+}
+
+error_code cellPadGetData(u32 port_no, vm::ptr<CellPadData> data)
+{
+	// PROJECT BACKDASH: the input diagnostics observe each read (Modules/pbd_pad_read.h).
+	return pbd::pad_read::observed(port_no, data, cell_pad_get_data_impl);
 }
 
 error_code cellPadPeriphGetInfo(vm::ptr<CellPadPeriphInfo> info)

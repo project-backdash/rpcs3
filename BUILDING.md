@@ -1,7 +1,49 @@
 # Building
 
-Only Windows and Linux are officially supported for building. However, various other platforms are capable of building RPCS3.
-Other instructions may be found [here](https://wiki.rpcs3.net/index.php?title=Building).
+## PROJECT BACKDASH
+
+Only the Visual Studio build for Windows x64 is supported. The CMake source lists include the PBD modules and tests,
+but the fork is not built or tested with CMake or on Linux.
+
+Use Visual Studio 2026 with the C++ x64 tools, Git and Python 3 on PATH, and Vulkan SDK 1.4.341.1.
+
+For an exported source snapshot, start in the distribution directory and prepare a short build root:
+
+```powershell
+python prepare.py --output C:\pbd-emulator
+Set-Location C:\pbd-emulator
+```
+
+Preparation verifies the supplied patch digest, shallow-fetches the pinned public RPCS3 base and verifies the
+reconstructed Git tree. It includes no private repository history. A failed step reports Git's explanation and
+retains the incomplete checkout for inspection; choose a new output directory after resolving the failure.
+
+For a repository checkout instead, select the source revision you want to build in Git; no preparation is needed.
+Use a root no longer than 80 characters to keep generated Windows linker paths within their supported length.
+From the prepared or repository checkout's root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\pbd\setup-dependencies.ps1
+powershell -ExecutionPolicy Bypass -File tools\pbd\build-rpcs3.ps1 -CheckOnly
+powershell -ExecutionPolicy Bypass -File tools\pbd\build-rpcs3.ps1 -Jobs 4
+```
+
+The setup script restores the archives in [dependencies.lock.json](tools/pbd/dependencies.lock.json), checks their
+hashes, and initializes the required submodules. Install the Vulkan SDK under `build\deps\VulkanSDK\1.4.341.1`,
+or pass its directory to the build script with `-VulkanSdk`. `-CheckOnly` checks the prerequisites without building.
+Both scripts check the available disk space before starting work.
+
+The build produces `bin\rpcs3.exe` and writes logs under `build\pbd-logs`. A rebuild is not byte-identical to a
+release executable. The complete pinned recipe is in [SOURCE.md](SOURCE.md#building-windows-what-we-ship).
+
+PBD GoogleTests are part of `rpcs3_test`, listed in `rpcs3/tests/pbd/pbd_tests.props` and `pbd_tests.cmake`.
+After building that target with its dependencies, run `rpcs3_test --gtest_filter=Pbd*`. Session changes are also
+checked by two-PC play and by comparing the game's random sequence with an unmodified run.
+
+## Upstream build reference
+
+The remaining instructions describe the inherited RPCS3 build. Their upstream clone command builds RPCS3 rather
+than PROJECT BACKDASH. For the fork's release build, use the pinned recipe above.
 
 ## Setup your environment
 

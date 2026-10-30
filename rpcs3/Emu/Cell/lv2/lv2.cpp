@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/CPU/pbd_ordinary_metrics.h"
 #include "Emu/System.h"
 #include "Emu/system_config.h"
 #include "Emu/Memory/vm_ptr.h"
@@ -9,6 +10,8 @@
 #include "Emu/Cell/PPUThread.h"
 #include "Emu/Cell/SPUThread.h"
 #include "Emu/Cell/ErrorCodes.h"
+#include "Emu/Cell/pbd_rollback_session.h"
+#include <chrono>
 #include "sys_sync.h"
 #include "sys_lwmutex.h"
 #include "sys_lwcond.h"
@@ -1315,10 +1318,19 @@ extern void ppu_execute_syscall(ppu_thread& ppu, u64 code)
 
 	if (code < g_ppu_syscall_table.size())
 	{
+		pbd_takeover_note_syscall(code);
 		g_fxo->get<named_thread<ppu_syscall_usage>>().stat[code]++;
 
 		if (const auto func = g_ppu_syscall_table[code].first)
 		{
+			if (g_pbd_replay_timing.load(std::memory_order_relaxed) && ppu.id == pbd::t5dr::main_ppu_id) [[unlikely]]
+			{
+				// PBD diagnostic: wall time of this syscall inside a re-executed window tick (owner only).
+				const auto begin = std::chrono::steady_clock::now();
+				func(ppu, {}, vm::_ptr<u32>(ppu.cia), nullptr);
+				pbd_replay_syscall_time(code, std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - begin).count());
+			}
+			else
 			func(ppu, {}, vm::_ptr<u32>(ppu.cia), nullptr);
 			ppu_log.trace("Syscall '%s' (%llu) finished, r3=0x%llx", ppu_syscall_code(code), code, ppu.gpr[3]);
 			return;
@@ -2153,6 +2165,7 @@ waitpkg_func static void __tpause(u32 cycles, u32 cstate)
 
 bool lv2_obj::wait_timeout(u64 usec, ppu_thread* cpu, bool scale, bool is_usleep)
 {
+	pbd::ordinary_metrics::scope measure_wait(3, "lv2_wait_timeout", true, 10'000'000);
 	static_assert(u64{umax} / max_timeout >= 100, "max timeout is not valid for scaling");
 
 	const u64 start_time = get_system_time();

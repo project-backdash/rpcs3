@@ -1,5 +1,7 @@
 #include "stdafx.h"
 #include "sys_ppu_thread.h"
+#include "Emu/Cell/pbd_fn_hook.h"
+#include "Emu/Cell/pbd_boot_request.h"
 
 #include "Emu/System.h"
 #include "Emu/IdManager.h"
@@ -73,6 +75,7 @@ void ppu_thread_exit(ppu_thread& ppu, ppu_opcode_t, be_t<u32>*, struct ppu_intrp
 		ppu_log.notice("HLE/LV2 history: %s", ppu.syscall_history);
 		ppu.syscall_history.index = 0;
 	}
+	pbd::boot_request::thread_exited(ppu);
 }
 
 constexpr u32 c_max_ppu_name_size = 28;
@@ -271,6 +274,9 @@ error_code sys_ppu_thread_detach(ppu_thread& ppu, u32 thread_id)
 	ppu.state += cpu_flag::wait;
 
 	sys_ppu_thread.trace("sys_ppu_thread_detach(thread_id=0x%x)", thread_id);
+	// PBD: audio orphan detector, see pbd::fn_hook::thread_detaches.
+	if (const u32 n = ++pbd::fn_hook::thread_detaches; n <= 16)
+		sys_ppu_thread.warning("PBD: sys_ppu_thread_detach(thread_id=0x%x) by %s (detach #%u since boot; an orphaned feeder can hang a later join)", thread_id, ppu.get_name(), n);
 
 	CellError result = CELL_ESRCH;
 

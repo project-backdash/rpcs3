@@ -411,6 +411,21 @@
     <ClCompile Include="Input\pad_thread.cpp">
       <Filter>Io</Filter>
     </ClCompile>
+    <ClCompile Include="Input\pbd_controller_backend.cpp">
+      <Filter>Io</Filter>
+    </ClCompile>
+    <ClCompile Include="Input\pbd_controller_ports.cpp">
+      <Filter>Io</Filter>
+    </ClCompile>
+    <ClCompile Include="Input\pbd_pad_session.cpp">
+      <Filter>Io</Filter>
+    </ClCompile>
+    <ClCompile Include="Input\pbd_pad_spectator.cpp">
+      <Filter>Io</Filter>
+    </ClCompile>
+    <ClCompile Include="Input\pbd_pad_takeover.cpp">
+      <Filter>Io</Filter>
+    </ClCompile>
     <ClCompile Include="Input\product_info.cpp">
       <Filter>Io</Filter>
     </ClCompile>
@@ -442,6 +457,12 @@
       <Filter>Gui\game window</Filter>
     </ClCompile>
     <ClCompile Include="rpcs3qt\gs_frame.cpp">
+      <Filter>Gui\game window</Filter>
+    </ClCompile>
+    <ClCompile Include="rpcs3qt\pbd_game_window.cpp">
+      <Filter>Gui\game window</Filter>
+    </ClCompile>
+    <ClCompile Include="rpcs3qt\pbd_game_window_settings.cpp">
       <Filter>Gui\game window</Filter>
     </ClCompile>
     <ClCompile Include="rpcs3qt\pad_settings_dialog.cpp">
@@ -1367,7 +1388,25 @@
     <ClInclude Include="Input\pad_thread.h">
       <Filter>Io</Filter>
     </ClInclude>
+    <ClInclude Include="Input\pbd_controller_ports.h">
+      <Filter>Io</Filter>
+    </ClInclude>
+    <ClInclude Include="Input\pbd_pad_session.h">
+      <Filter>Io</Filter>
+    </ClInclude>
+    <ClInclude Include="Input\pbd_pad_spectator.h">
+      <Filter>Io</Filter>
+    </ClInclude>
+    <ClInclude Include="Input\pbd_pad_takeover.h">
+      <Filter>Io</Filter>
+    </ClInclude>
     <ClInclude Include="rpcs3qt\gl_gs_frame.h">
+      <Filter>Gui\game window</Filter>
+    </ClInclude>
+    <ClInclude Include="rpcs3qt\pbd_game_window.h">
+      <Filter>Gui\game window</Filter>
+    </ClInclude>
+    <ClInclude Include="rpcs3qt\pbd_game_window_settings.h">
       <Filter>Gui\game window</Filter>
     </ClInclude>
     <ClInclude Include="Input\evdev_joystick_handler.h">

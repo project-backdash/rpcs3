@@ -5,6 +5,7 @@
 
 #include "PPUModule.h"
 #include "PPUInterpreter.h"
+#include "Emu/PBD/pbd_env.h"
 
 // Get function name by FNID
 extern std::string ppu_get_function_name(const std::string& _module, u32 fnid)
@@ -1983,14 +1984,151 @@ std::vector<ppu_intrp_func_t>& ppu_function_manager::access(bool ghc)
 	return ghc ? list_ghc : list;
 }
 
-u32 ppu_function_manager::add_function(ppu_intrp_func_t function)
+namespace
+{
+	struct pbd_hle_slot
+	{
+		std::string key;
+		u32* index_slot;
+	};
+
+	std::vector<pbd_hle_slot>& pbd_hle_slots()
+	{
+		static std::vector<pbd_hle_slot> slots; // parallel to access(): slot i describes function i (the two built-ins first)
+		return slots;
+	}
+
+	constexpr const char* pbd_hle_pinned[] =
+		{
+#include "pbd_hle_pinned_order.inc"
+	};
+} // namespace
+
+u32 ppu_function_manager::add_function(ppu_intrp_func_t function, const char* key, u32* index_slot)
 {
 	auto& list = access();
 	auto& list2 = access(true);
+	auto& slots = pbd_hle_slots();
+	while (slots.size() < list.size())
+		slots.push_back({fmt::format("builtin:%u", slots.size()), nullptr});
 
 	list.push_back(function);
 
 	list2.push_back(build_function_asm<ppu_intrp_func_t>("", gen_ghc_cpp_trampoline(function)));
 
+	// Unkeyed registrations get a key from their order among unkeyed ones (few, direct register_function<> calls).
+	static u32 unkeyed = 0;
+	slots.push_back({key ? std::string(key) : fmt::format("unkeyed:%u", unkeyed++), index_slot});
+
 	return ::size32(list) - 1;
+}
+
+std::vector<u32> ppu_function_manager::pbd_pin_order()
+{
+	auto& list = access();
+	auto& list2 = access(true);
+	auto& slots = pbd_hle_slots();
+	while (slots.size() < list.size())
+		slots.push_back({fmt::format("builtin:%u", slots.size()), nullptr});
+	const usz n = list.size();
+	std::vector<u32> old_to_new(n);
+	for (usz i = 0; i < n; i++)
+		old_to_new[i] = static_cast<u32>(i);
+	usz pinned_count = 0;
+	for (const char* k : pbd_hle_pinned)
+		if (k && *k)
+			pinned_count++;
+	usz matched = 0, moved = 0;
+	if (pinned_count)
+	{
+		std::unordered_map<std::string, u32> by_key;
+		for (usz i = 0; i < n; i++)
+			by_key.emplace(slots[i].key, static_cast<u32>(i));
+		std::vector<u32> new_to_old;
+		std::vector<bool> used(n, false);
+		for (const char* k : pbd_hle_pinned)
+		{
+			if (!k || !*k)
+				continue;
+			if (const auto it = by_key.find(k); it != by_key.end() && !used[it->second])
+			{
+				new_to_old.push_back(it->second);
+				used[it->second] = true;
+				matched++;
+			}
+			else
+			{
+				// A pinned key this build does not register: keep its slot position with the "unregistered" function so later
+				// slots keep their pinned numbers.
+				new_to_old.push_back(0);
+			}
+		}
+		for (usz i = 0; i < n; i++)
+			if (!used[i] && i != 0)
+				new_to_old.push_back(static_cast<u32>(i));
+		std::vector<ppu_intrp_func_t> nl1, nl2;
+		std::vector<pbd_hle_slot> ns;
+		for (usz j = 0; j < new_to_old.size(); j++)
+		{
+			const u32 o = new_to_old[j];
+			nl1.push_back(list[o]);
+			nl2.push_back(list2[o]);
+			ns.push_back(slots[o]);
+			if (o != 0 || j == 0)
+				old_to_new[o] = static_cast<u32>(j);
+			if (o != j)
+				moved++;
+		}
+		list.swap(nl1);
+		list2.swap(nl2);
+		slots.swap(ns);
+		for (usz j = 0; j < slots.size(); j++)
+			if (slots[j].index_slot)
+				*slots[j].index_slot = static_cast<u32>(j);
+	}
+	ppu_log.notice("PBD HLE slot pinning: %u functions, %u pinned keys, %u matched, %u moved", n, pinned_count, matched, moved);
+	// A checkpoint holds raw HLE slot addresses, so it loads only on a build with the same slot table: given the digest of
+	// every slot key it was made with (PBD_HLE_ORDER_EXPECT), any other build refuses the boot (exit 79).
+	u64 digest = 0xcbf29ce484222325ull;
+	for (const auto& s : slots)
+	{
+		for (const char ch : s.key)
+		{
+			digest ^= static_cast<u8>(ch);
+			digest *= 0x100000001b3ull;
+		}
+		digest ^= 0x0a;
+		digest *= 0x100000001b3ull;
+	}
+	ppu_log.notice("PBD HLE slot digest: %016x", digest);
+	if (const char* expect = pbd::env::find("PBD_HLE_ORDER_EXPECT"); expect && *expect)
+	{
+		if (std::strtoull(expect, nullptr, 16) != digest)
+		{
+			ppu_log.fatal("PBD checkpoint incompatible: HLE slot digest %016x, checkpoint expects %s", digest, expect);
+			if (const char* dir = pbd::env::find("PBD_ORDINARY_OUTPUT"); dir && *dir)
+			{
+				const std::string text = fmt::format("{\"schema\":1,\"reason\":\"checkpoint_incompatible\",\"exit_code\":79,\"build_digest\":\"%016x\",\"expected\":\"%s\"}\n", digest, expect);
+				if (fs::file out(std::string(dir) + "/boot-refusal.json", fs::rewrite); out)
+				{
+					out.write(text.data(), text.size());
+					out.sync();
+				}
+			}
+			std::fputs("PBD: checkpoint incompatible with this build (exit 79); see native log\n", stderr);
+			std::fflush(stderr);
+			logs::listener::sync_all();
+			std::_Exit(79);
+		}
+		ppu_log.notice("PBD checkpoint compatible: HLE slot digest matches");
+	}
+	if (const char* path = pbd::env::find("PBD_HLE_ORDER_DUMP"); path && *path)
+	{
+		std::string text;
+		for (usz j = 0; j < slots.size(); j++)
+			fmt::append(text, "%u\t%s\n", j, slots[j].key);
+		if (fs::file out(path, fs::rewrite); out)
+			out.write(text.data(), text.size());
+	}
+	return old_to_new;
 }

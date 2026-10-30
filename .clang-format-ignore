@@ -1,0 +1,4 @@
+# Generated or captured data tables: formatting would only spread their rows over more lines.
+rpcs3/Emu/RSX/Overlays/pbd/pbd_glyph_atlas.h
+rpcs3/Emu/Cell/pbd_hle_pinned_order.inc
+rpcs3/tests/pbd/practice_wall_model.h

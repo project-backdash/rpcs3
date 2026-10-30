@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "pbd_ordinary_metrics.h"
 #include "CPUThread.h"
 #include "CPUDisAsm.h"
 
@@ -11,6 +12,7 @@
 #include "Emu/Cell/lv2/sys_spu.h"
 #include "Emu/Cell/PPUThread.h"
 #include "Emu/Cell/SPUThread.h"
+#include "Emu/Cell/pbd_spu_checkpoint.h"
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/perf_meter.hpp"
 
@@ -760,6 +762,19 @@ void cpu_thread::operator()()
 		if (!(state0 & cpu_flag::stop))
 		{
 			cpu_task();
+
+			// A Safe materialized LLVM state-check escaped before its generated
+			// unsavable clear. All 128 GPRs and PC were stored before that call and
+			// no gateway entry followed. Execute that exact skipped clear here, on
+			// the owning SPU thread.
+			if (auto spu = try_get<spu_thread>(); spu && spu->unsavable &&
+												  g_cfg.core.spu_block_size == spu_block_size_type::safe &&
+												  g_cfg.savestate.compatible_mode &&
+												  pbd_spu_exit_clears_unsavable(*spu))
+			{
+				spu->unsavable = false;
+			}
+
 			state += cpu_flag::wait;
 
 			if (state & cpu_flag::ret && state.test_and_reset(cpu_flag::ret))
@@ -1770,6 +1785,13 @@ extern bool try_lock_spu_threads_in_a_state_compatible_with_savestates(bool reve
 
 	for (auto& spu : *get_spus(true, true))
 	{
+		if (!revert_lock)
+		{
+			// Retain the exact rejected participants; admission itself is unchanged.
+			sys_log.error("PBD SPU save admission rejected: id=0x%x pc=0x%x unsavable=%d state=0x%x current_func=%d",
+				spu->id, spu->pc, spu->unsavable, static_cast<u32>(+spu->state), spu->current_func != nullptr);
+		}
+
 		if (spu->state.test_and_reset(cpu_flag::dbg_global_pause))
 		{
 			spu->state.notify_one();

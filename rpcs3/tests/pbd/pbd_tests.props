@@ -1,0 +1,300 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The PBD unit tests in rpcs3_test. They build with C++ exceptions, since a failed check throws to end its test
+     (see pbd_test.h); the rest of the project builds without them. -->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_moment_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <AdditionalIncludeDirectories>$(SolutionDir)3rdparty\asmjit\asmjit\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_precision_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)match_bind_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)peer_auth_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)peer_log_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)peer_wait_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <AdditionalIncludeDirectories>$(SolutionDir)3rdparty\asmjit\asmjit\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <ClInclude Include="$(MSBuildThisFileDirectory)lobby_set_driver_model.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)pbd_test.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)practice_store_model.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)practice_wall_model.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)replay_entry_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)pick_transition_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)character_rule_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)clip_buffer_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)controller_takeover_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)controller_mapper_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)player_seats_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)versus_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)input_taps_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)corner_chat_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)env_parse_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)env_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)frame_tags_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)game_host_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)game_overlay_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)game_profile_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)search_badge_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)hidden_selection_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)json_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)lobby_set_driver_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)match_recording_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)memory_dump_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)output_gain_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)peer_endpoint_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)peer_message_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)peer_message_conformance_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)undo_restore_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_controls_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_dummy_state_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_floor_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_guard_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_history_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_menu_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_movement_presets_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_movement_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_random_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_stage_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_store_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_sets_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_streak_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_walls_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)presentation_rows_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)function_hook_config_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)ppu_object_name_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)raw_keyboard_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)rematch_json_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)rematch_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)render_scale_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)replay_viewer_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)replay_rewind_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)select_band_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)select_timer_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)session_history_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)session_policy_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)session_start_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)set_channel_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)set_notices_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)settings_menu_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)setup_digest_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)skip_guard_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)sound_options_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)spectator_channel_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)spectator_standby_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)spectator_ui_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)stage_rule_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)stage_sync_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)vs_cards_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)portable_parser_random_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)spectator_packet_random_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)set_channel_parser_audit_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)spectator_parser_audit_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)replay_game_file_parser_audit_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)json_reader_randomized_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)replay_carry_codec_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)replay_actor_records_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)replay_difference_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)replay_switches_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)replay_resource_reference_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)replay_bank_offset_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)input_script_format_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)input_live_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)owner_flags_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_wakeup_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_throw_escape_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_lesson_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_readiness_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_punish_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_restart_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_input_delay_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+  </ItemGroup>
+</Project>

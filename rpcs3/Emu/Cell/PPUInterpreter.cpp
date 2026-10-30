@@ -10,6 +10,14 @@
 #include "Emu/Cell/timers.hpp"
 #include "Emu/IdManager.h"
 
+u64 pbd_tick_timebase(ppu_thread&, u32, u64) noexcept;
+// Rolling undo: every interpreter store site reports its span before writing while a correction ring is active.
+extern std::atomic<bool> g_pbd_tick_undo_enabled;
+void pbd_tick_undo_store(ppu_thread&, u64, u32) noexcept;
+#define PBD_UNDO(addr, size)                                                  \
+	if (g_pbd_tick_undo_enabled.load(std::memory_order_relaxed)) [[unlikely]] \
+		pbd_tick_undo_store(ppu, addr, size);
+
 #include <bit>
 #include <cmath>
 #include <climits>
@@ -44,11 +52,31 @@ void ppubreak(ppu_thread& ppu)
 #define PPU_WRITE_32(addr, value) vm::write32(addr, value, &ppu);
 #define PPU_WRITE_64(addr, value) vm::write64(addr, value, &ppu);
 #else
-#define PPU_WRITE(type, addr, value) vm::write<type>(addr, value);
-#define PPU_WRITE_8(addr, value) vm::write8(addr, value);
-#define PPU_WRITE_16(addr, value) vm::write16(addr, value);
-#define PPU_WRITE_32(addr, value) vm::write32(addr, value);
-#define PPU_WRITE_64(addr, value) vm::write64(addr, value);
+#define PPU_WRITE(type, addr, value)  \
+	{                                 \
+		PBD_UNDO(addr, sizeof(type))  \
+		vm::write<type>(addr, value); \
+	}
+#define PPU_WRITE_8(addr, value) \
+	{                            \
+		PBD_UNDO(addr, 1)        \
+		vm::write8(addr, value); \
+	}
+#define PPU_WRITE_16(addr, value) \
+	{                             \
+		PBD_UNDO(addr, 2)         \
+		vm::write16(addr, value); \
+	}
+#define PPU_WRITE_32(addr, value) \
+	{                             \
+		PBD_UNDO(addr, 4)         \
+		vm::write32(addr, value); \
+	}
+#define PPU_WRITE_64(addr, value) \
+	{                             \
+		PBD_UNDO(addr, 8)         \
+		vm::write64(addr, value); \
+	}
 #endif
 
 extern bool is_debugger_present();
@@ -4429,6 +4457,7 @@ auto STWCX()
 
 	static const auto exec = [](ppu_thread& ppu, ppu_opcode_t op) {
 	const u64 addr = op.ra ? ppu.gpr[op.ra] + ppu.gpr[op.rb] : ppu.gpr[op.rb];
+	PBD_UNDO(vm::cast(addr), 4)
 	ppu_cr_set(ppu, 0, false, false, ppu_stwcx(ppu, vm::cast(addr), static_cast<u32>(ppu.gpr[op.rs])), ppu.xer.so);
 	};
 	RETURN_(ppu, op);
@@ -4549,6 +4578,7 @@ auto STDCX()
 
 	static const auto exec = [](ppu_thread& ppu, ppu_opcode_t op) {
 	const u64 addr = op.ra ? ppu.gpr[op.ra] + ppu.gpr[op.rb] : ppu.gpr[op.rb];
+	PBD_UNDO(vm::cast(addr), 8)
 	ppu_cr_set(ppu, 0, false, false, ppu_stdcx(ppu, vm::cast(addr), ppu.gpr[op.rs]), ppu.xer.so);
 	};
 	RETURN_(ppu, op);
@@ -4857,18 +4887,18 @@ auto MFTB()
 	if constexpr (Build == 0xf1a6)
 		return ppu_exec_select<Flags...>::template select<>();
 
-	static const auto exec = [](ppu_thread& ppu, ppu_opcode_t op) {
+	static const auto exec = [](ppu_thread& ppu, ppu_opcode_t op, u32 pc) {
 	const u32 n = (op.spr >> 5) | ((op.spr & 0x1f) << 5);
 
 	switch (n)
 	{
-	case 0x10C: ppu.gpr[op.rd] = get_timebased_time(); break;
+	case 0x10C: ppu.gpr[op.rd] = pbd_tick_timebase(ppu, pc, get_timebased_time()); break;
 	case 0x10D: ppu.gpr[op.rd] = get_timebased_time() >> 32; break;
 	default: fmt::throw_exception("MFTB 0x%x", n);
 	}
 
 	};
-	RETURN_(ppu, op);
+	RETURN_(ppu, op, vm::get_addr(this_op));
 }
 
 template <u32 Build, ppu_exec_bit... Flags>
@@ -5349,6 +5379,9 @@ auto STVLX()
 	{
 		const u64 addr = op.ra ? a + b : b;
 		const u32 tail = u32(addr & 15);
+		if (g_pbd_tick_undo_enabled.load(std::memory_order_relaxed)) [[unlikely]]
+			if (const auto current = get_current_cpu_thread<ppu_thread>())
+				pbd_tick_undo_store(*current, vm::cast(addr), 16 - tail);
 		u8* ptr = vm::_ptr<u8>(addr);
 		for (u32 j = 0; j < 16 - tail; j++)
 			ptr[j] = s.u8r[j];
@@ -5432,6 +5465,9 @@ auto STVRX()
 	{
 		const u64 addr = op.ra ? a + b : b;
 		const u32 tail = u32(addr & 15);
+		if (g_pbd_tick_undo_enabled.load(std::memory_order_relaxed) && tail) [[unlikely]]
+			if (const auto current = get_current_cpu_thread<ppu_thread>())
+				pbd_tick_undo_store(*current, vm::cast(addr - 16 + 16 - tail), tail);
 		u8* ptr = vm::_ptr<u8>(addr - 16);
 		for (u32 i = 15; i > 15 - tail; i--)
 			ptr[i] = s.u8r[i];
@@ -5752,6 +5788,7 @@ auto DCBZ()
 	static const auto exec = [](ppu_thread& ppu, ppu_opcode_t op) {
 	const u64 addr = op.ra ? ppu.gpr[op.ra] + ppu.gpr[op.rb] : ppu.gpr[op.rb];
 	const u32 addr0 = vm::cast(addr) & ~127;
+	PBD_UNDO(addr0, 128)
 
 	if (g_cfg.core.accurate_cache_line_stores)
 	{

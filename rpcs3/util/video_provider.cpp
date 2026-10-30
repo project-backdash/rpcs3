@@ -114,9 +114,16 @@ namespace utils
 
 		std::lock_guard lock_video(m_video_mutex);
 
-		if (!m_video_sink || !m_video_sink->use_internal_video)
+		if (!m_video_sink || !m_video_sink->use_internal_video || !m_video_sink->wants_frame())
 		{
 			return false;
+		}
+
+		// A frame read back asynchronously arrives a frame or more after its flip, after this check has already run for
+		// the next flips. Every presented frame is read back; present_frame places it on the sink's frame grid.
+		if (m_video_sink->asynchronous_capture())
+		{
+			return true;
 		}
 
 		const usz elapsed_us = get_system_time() - m_start_time_us;
@@ -127,7 +134,23 @@ namespace utils
 		return pts > m_last_video_pts_incoming;
 	}
 
-	void video_provider::present_frame(std::vector<u8>&& data, u32 pitch, u32 width, u32 height, bool is_bgra)
+	bool video_provider::asynchronous_capture()
+	{
+		std::lock_guard lock(m_video_mutex);
+		return m_video_sink && m_video_sink->asynchronous_capture();
+	}
+
+	void video_provider::frame_dropped()
+	{
+		std::lock_guard lock(m_video_mutex);
+
+		if (m_active && m_video_sink)
+		{
+			m_video_sink->frame_dropped();
+		}
+	}
+
+	void video_provider::present_frame(std::vector<u8>&& data, u32 pitch, u32 width, u32 height, bool is_bgra, u64 capture_time_us)
 	{
 		if (!m_active)
 		{
@@ -141,7 +164,7 @@ namespace utils
 			return;
 		}
 
-		const u64 current_time_us = get_system_time();
+		const u64 current_time_us = capture_time_us ? capture_time_us : get_system_time();
 
 		if (m_start_time_us.compare_and_swap_test(umax, current_time_us))
 		{
@@ -149,19 +172,39 @@ namespace utils
 		}
 
 		// Calculate presentation timestamp.
+		if (current_time_us < m_start_time_us)
+		{
+			if (capture_time_us) m_video_sink->frame_dropped();
+			return;
+		}
 		const usz elapsed_us = current_time_us - m_start_time_us;
 		ensure(elapsed_us >= m_pause_time_us);
 
-		const usz timestamp_ms = (elapsed_us - m_pause_time_us) / 1000;
-		const s64 pts = m_video_sink->get_pts(timestamp_ms);
+		usz timestamp_ms = (elapsed_us - m_pause_time_us) / 1000;
+		s64 pts = m_video_sink->get_pts(timestamp_ms);
 
 		// We can just skip this frame if it has the same timestamp.
 		if (pts <= m_last_video_pts_incoming)
 		{
-			return;
+			// An asynchronous frame is a presented frame. Flip jitter can round it into the previous frame's slot, and then
+			// it takes the next slot, at most one frame late, instead of being lost. An older frame cannot be placed.
+			if (!capture_time_us || pts < m_last_video_pts_incoming)
+			{
+				if (capture_time_us) m_video_sink->frame_dropped();
+				return;
+			}
+
+			pts = m_last_video_pts_incoming + 1;
 		}
 
-		if (m_video_sink->add_frame(data, pitch, width, height, is_bgra ? AVPixelFormat::AV_PIX_FMT_BGRA : AVPixelFormat::AV_PIX_FMT_RGBA, timestamp_ms))
+		// Asynchronous frames are stamped on the sink's frame grid: even frame spacing in the file, while each slot still
+		// follows the wall clock of its flip, so the video plays at the speed it was played and stays with the audio.
+		if (capture_time_us)
+		{
+			timestamp_ms = m_video_sink->get_timestamp_ms(pts);
+		}
+
+		if (m_video_sink->offer_frame(data, pitch, width, height, is_bgra ? AVPixelFormat::AV_PIX_FMT_BGRA : AVPixelFormat::AV_PIX_FMT_RGBA, timestamp_ms))
 		{
 			m_last_video_pts_incoming = pts;
 		}
@@ -206,7 +249,7 @@ namespace utils
 			return;
 		}
 
-		if (m_video_sink->add_audio_samples(buf, sample_count, channels, timestamp_us))
+		if (m_video_sink->offer_samples(buf, sample_count, channels, timestamp_us))
 		{
 			m_last_audio_pts_incoming = pts;
 		}

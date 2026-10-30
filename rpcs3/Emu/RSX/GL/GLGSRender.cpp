@@ -457,6 +457,9 @@ void GLGSRender::on_init_thread()
 
 void GLGSRender::on_exit()
 {
+	m_clip_copies.stop();
+	if (m_clip_readbacks[0]) glFinish();
+	for (auto& slot : m_clip_readbacks) slot.reset();
 	// Destroy internal RSX state, may call upon this->do_local_task
 	GSRender::on_exit();
 

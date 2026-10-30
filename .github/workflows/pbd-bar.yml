@@ -1,0 +1,40 @@
+name: PBD bar
+
+# The code bar of CODE-BAR.md. Upstream's own workflows run beside this one, unchanged.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pbd-bar-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: C++ formatting
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the checks compare against the upstream base commit
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install clang-format 20.1.8
+        run: python -m pip install clang-format==20.1.8
+
+      - name: Files the fork adds
+        run: python tools/pbd_check_format.py
+
+      - name: Lines this pull request changes
+        if: github.event_name == 'pull_request'
+        run: python tools/pbd_check_format.py --changed ${{ github.event.pull_request.base.sha }}

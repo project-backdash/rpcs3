@@ -84,14 +84,19 @@ bool CubebBackend::Operational()
 
 bool CubebBackend::DefaultDeviceChanged()
 {
-	if (m_default_device.empty() || m_reset_req.observe())
+	std::string default_device;
+	{
+		std::lock_guard lock{m_state_cb_mutex};
+		default_device = m_default_device;
+	}
+	if (default_device.empty() || m_reset_req.observe())
 	{
 		return false;
 	}
 
 	device_handle device = GetDevice();
 
-	return !device.handle || device.id != m_default_device;
+	return !device.handle || device.id != default_device;
 }
 
 bool CubebBackend::Open(std::string_view dev_id, AudioFreq freq, AudioSampleSize sample_size, AudioChannelCnt ch_cnt, audio_channel_layout layout)
@@ -106,6 +111,9 @@ bool CubebBackend::Open(std::string_view dev_id, AudioFreq freq, AudioSampleSize
 	std::lock_guard lock{m_cb_mutex};
 
 	const bool use_default_device = dev_id.empty() || dev_id == audio_device_enumerator::DEFAULT_DEV_ID;
+	// WASAPI can follow the Windows output without rebuilding the guest audio buffers.
+	// An explicit endpoint disables that path, even when it was obtained from Default.
+	const bool follow_system_default = use_default_device && std::string_view{cubeb_get_backend_id(m_ctx)} == "wasapi";
 
 	if (use_default_device) Cubeb.notice("Trying to open default device");
 	else Cubeb.notice("Trying to open device with dev_id='%s'", dev_id);
@@ -130,7 +138,7 @@ bool CubebBackend::Open(std::string_view dev_id, AudioFreq freq, AudioSampleSize
 	if (use_default_device)
 	{
 		std::lock_guard lock{m_state_cb_mutex};
-		m_default_device = device.id;
+		m_default_device = follow_system_default ? std::string{} : device.id;
 	}
 
 	m_sampling_rate = freq;
@@ -160,7 +168,7 @@ bool CubebBackend::Open(std::string_view dev_id, AudioFreq freq, AudioSampleSize
 
 		fmt::throw_exception("Invalid audio layout %d", static_cast<u32>(m_layout));
 	}();
-	stream_param.prefs = m_dev_collection_cb_enabled && device.handle ? CUBEB_STREAM_PREF_DISABLE_DEVICE_SWITCHING : CUBEB_STREAM_PREF_NONE;
+	stream_param.prefs = !follow_system_default && m_dev_collection_cb_enabled && device.handle ? CUBEB_STREAM_PREF_DISABLE_DEVICE_SWITCHING : CUBEB_STREAM_PREF_NONE;
 
 	u32 min_latency{};
 	if (int err = cubeb_get_min_latency(m_ctx, &stream_param, &min_latency))
@@ -171,11 +179,15 @@ bool CubebBackend::Open(std::string_view dev_id, AudioFreq freq, AudioSampleSize
 
 	const u32 stream_latency = std::max(static_cast<u32>(AUDIO_MIN_LATENCY * get_sampling_rate()), min_latency);
 
-	if (int err = cubeb_stream_init(m_ctx, &m_stream, "Main stream", nullptr, nullptr, device.handle, &stream_param, stream_latency, data_cb, state_cb, this))
+	if (int err = cubeb_stream_init(m_ctx, &m_stream, "Main stream", nullptr, nullptr, follow_system_default ? nullptr : device.handle, &stream_param, stream_latency, data_cb, state_cb, this))
 	{
 		Cubeb.error("cubeb_stream_init() failed: %i", err);
 		m_stream = nullptr;
 		return false;
+	}
+	if (follow_system_default)
+	{
+		Cubeb.notice("Default output follows Windows device changes inside WASAPI");
 	}
 
 	if (int err = cubeb_stream_start(m_stream))
@@ -481,7 +493,8 @@ void CubebBackend::device_collection_changed_cb(cubeb* context, void* user_ptr)
 		return;
 	}
 
-	// Non default device is used (or default device cannot be detected)
+	// An explicit device is pinned; a WASAPI default stream follows changes itself.
+	// Other backends keep the existing collection-triggered reopen path.
 	if (cubeb->m_default_device.empty())
 	{
 		Cubeb.notice("Skipping default device notification");

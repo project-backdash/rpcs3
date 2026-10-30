@@ -340,8 +340,11 @@ namespace rsx
 
 			auto scale_result = [](u32 value)
 			{
-				const auto scale = get_current_renderer()->resolution_scaling_config.scale_percent;
-				const auto result = (value * 10000ull) / (scale * scale);
+				// Precise ZPASS counts are an estimate at non-native scales: integer sample counts cannot be
+				// inverted losslessly. Boolean ZPASS below preserves zero/nonzero without this normalization.
+				const auto ratio = pbd::render_ratio(get_current_renderer()->resolution_scaling_config.scale_percent);
+				const auto result = (value * static_cast<u64>(ratio.denominator) * ratio.denominator) /
+				                    (static_cast<u64>(ratio.numerator) * ratio.numerator);
 				return std::max(1u, static_cast<u32>(result));
 			};
 
@@ -1034,4 +1037,4 @@ namespace rsx
 			set_eval_result(pthr, failed);
 		}
 	}
-}
+} // namespace rsx

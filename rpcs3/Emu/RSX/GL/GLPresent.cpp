@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/PBD/pbd_held_presentation.h"
 #include "GLGSRender.h"
 
 #include "upscalers/bilinear_pass.hpp"
@@ -10,11 +11,68 @@
 #include "Emu/RSX/Overlays/overlay_debug_overlay.h"
 
 #include "util/video_provider.h"
+#include "Emu/Cell/timers.hpp"
 
 LOG_CHANNEL(screenshot_log, "SCREENSHOT");
 
 extern atomic_t<bool> g_user_asked_for_screenshot;
 extern atomic_t<recording_mode> g_recording_mode;
+
+void GLGSRender::clips_resolve()
+{
+	// Several readbacks can finish between two flips. Fences signal in submission order, so offering the oldest first
+	// keeps the frames in presentation order, and the first unsignalled one means the newer ones are not done either.
+	while (true)
+	{
+		clip_readback* oldest = nullptr;
+		for (auto& item : m_clip_readbacks)
+		{
+			if (item && item->ready && (!oldest || item->time_us < oldest->time_us)) oldest = item.get();
+		}
+		if (!oldest) return;
+		auto& slot = *oldest;
+		const auto ready = glClientWaitSync(slot.ready, 0, 0);
+		if (ready != GL_ALREADY_SIGNALED && ready != GL_CONDITION_SATISFIED) return;
+		glDeleteSync(slot.ready); slot.ready = nullptr;
+		if (!m_clip_copies.offer(slot.mapped, slot.width * 4, slot.width, slot.height, false, slot.time_us, slot.copying,
+			[this](std::vector<u8>&& pixels, unsigned pitch, unsigned width, unsigned height, bool bgra, u64 time)
+			{
+				m_frame->present_frame_timed(std::move(pixels), pitch, width, height, bgra, time);
+			}))
+		{
+			g_fxo->get<utils::video_provider>().frame_dropped();
+		}
+	}
+}
+
+// False when the presented frame could not be read back; the caller counts it as dropped.
+bool GLGSRender::clips_record(gl::texture* image, u32 width, u32 height)
+{
+	if (!image || !width || !height || width > 8192 || height > 8192 || !gl::get_driver_caps().ARB_buffer_storage_supported) return false;
+	for (auto& item : m_clip_readbacks)
+	{
+		if (!item) item = std::make_unique<clip_readback>();
+		auto& slot = *item;
+		if (slot.ready || slot.copying->load(std::memory_order_acquire)) continue;
+		if (!slot.mapped || slot.width != width || slot.height != height)
+		{
+			if (slot.mapped) { slot.pixels.unmap(); slot.pixels.remove(); slot.mapped = nullptr; }
+			const auto size = static_cast<GLsizeiptr>(width) * height * 4;
+			slot.pixels.create(gl::buffer::target::pixel_pack, size, nullptr, gl::buffer::memory_type::host_visible,
+				gl::buffer::host_read | gl::buffer::persistent_map);
+			slot.mapped = slot.pixels.map(0, size, static_cast<gl::buffer::access>(GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT));
+			slot.width = width; slot.height = height;
+		}
+		if (!slot.mapped) return false;
+		const gl::buffer::save_binding_state binding(gl::buffer::target::pixel_pack);
+		const coord3u region{{}, {width, height, 1}};
+		image->copy_to(slot.pixels, 0, gl::texture::format::rgba, gl::texture::type::ubyte, 0, region, gl::pixel_pack_settings{});
+		glMemoryBarrier(GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
+		slot.time_us = get_system_time(); slot.ready = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+		return true;
+	}
+	return false;
+}
 
 namespace gl
 {
@@ -161,6 +219,8 @@ gl::texture* GLGSRender::get_present_source(gl::present_surface_info* info, cons
 
 void GLGSRender::flip(const rsx::display_flip_info_t& info)
 {
+	if (pbd::held_presentation::output().parked())
+		return;
 	if (info.skip_frame)
 	{
 		m_frame->flip(m_context, true);
@@ -328,15 +388,17 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 
 	if (image_to_flip)
 	{
+		clips_resolve();
 		const bool user_asked_for_screenshot = g_user_asked_for_screenshot.exchange(false);
 
 		if (user_asked_for_screenshot || (g_recording_mode != recording_mode::stopped && m_frame->can_consume_frame()))
 		{
+			const bool asynchronous = !user_asked_for_screenshot && m_frame->asynchronous_capture();
 			static const gl::pixel_pack_settings pack_settings{};
 
 			gl::texture* tex = image_to_flip;
 
-			if (g_cfg.video.record_with_overlays)
+			if (g_cfg.video.record_with_overlays || asynchronous)
 			{
 				m_sshot_fbo.create();
 
@@ -370,6 +432,13 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 				m_sshot_fbo.remove();
 			}
 			
+			if (asynchronous)
+			{
+				if (!clips_record(tex, buffer_width, buffer_height))
+					g_fxo->get<utils::video_provider>().frame_dropped();
+			}
+			else
+			{
 			std::vector<u8> sshot_frame(buffer_height * buffer_width * 4);
 			glGetError();
 
@@ -388,6 +457,7 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 			else
 			{
 				m_frame->present_frame(std::move(sshot_frame), buffer_width * 4, buffer_width, buffer_height, false);
+			}
 			}
 		}
 
@@ -514,7 +584,10 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 		m_vis_buffer.remove();
 	}
 
+	const auto replay_swaps = pbd::held_presentation::output().swaps();
 	m_frame->flip(m_context);
+	if (info.emu_flip && pbd::held_presentation::output().swaps() != replay_swaps)
+		pbd::held_presentation::output().picture(m_frame->shown());
 	rsx::thread::flip(info);
 
 	// Data sync

@@ -3,6 +3,7 @@
 
 #include "Emu/System.h"
 #include "Emu/IdManager.h"
+#include "Emu/savestate_utils.hpp"
 #include "Crypto/unself.h"
 #include "Crypto/unedat.h"
 #include "Crypto/sha1.h"
@@ -1209,6 +1210,24 @@ error_code sys_spu_thread_group_start(ppu_thread& ppu, u32 id)
 	if (!group)
 	{
 		return CELL_ESRCH;
+	}
+
+	// A SPURS group start replaces its image, registers, and entry PC as one
+	// transaction. Protect that mutation from savestate capture, but do not put
+	// short-lived audio groups on the global HLE gate: games may restart those
+	// every frame and starve a one-shot capture indefinitely.
+	std::unique_lock<hle_locks_t> savestate_lock{g_fxo->get<hle_locks_t>(), std::defer_lock};
+
+	if (group->name.ends_with("CellSpursKernelGroup") && Emu.IsStateClosePending())
+	{
+		ppu.state += cpu_flag::again;
+		return {};
+	}
+
+	if (group->name.ends_with("CellSpursKernelGroup") && !savestate_lock.try_lock())
+	{
+		ppu.state += cpu_flag::again;
+		return {};
 	}
 
 	struct notify_on_exit

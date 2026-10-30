@@ -142,6 +142,7 @@ namespace rsx
 			u32 m_remaining_commands = 0;
 			u32 m_args_ptr = 0;
 			u32 m_cmd = ~0u;
+			u32 m_pbd_cmd_pos = ~0u; // PBD: FIFO offset of the header m_cmd was read from
 
 			u32 m_cache_addr = 0;
 			u32 m_cache_size = 0;
@@ -158,6 +159,10 @@ namespace rsx
 
 			u32 get_pos() const { return m_internal_get; }
 			u32 last_cmd() const { return m_cmd; }
+			u32 pbd_cmd_pos() const
+			{
+				return m_pbd_cmd_pos;
+			}
 			void sync_get() const;
 			std::span<const u32> get_current_arg_ptr(u32 length_in_words) const;
 			u32 get_remaining_args_count() const { return m_remaining_commands; }

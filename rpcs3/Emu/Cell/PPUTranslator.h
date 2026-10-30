@@ -5,6 +5,7 @@
 #include "Emu/CPU/CPUTranslator.h"
 #include "PPUOpcodes.h"
 #include "PPUAnalyser.h"
+#include "pbd_ppu_object_name.h"
 
 #include "util/types.hpp"
 
@@ -74,6 +75,25 @@ class PPUTranslator final : public cpu_translator
 
 	llvm::Value* nan_vec4;
 	bool m_may_be_mmio = false;
+	// PBD: when the compiled rollback write capture is requested, every guest store site emits
+	// __dr2026_undo(thread, addr, bytes) before writing, so the rolling undo sees compiled writes exactly as it sees
+	// interpreter ones. Decided once per compilation and baked into the object name (the undo1- tag), so ordinary objects
+	// are never reused for a capture run and vice versa.
+	bool m_pbd_undo = false;
+	// Addresses of the capture flag and page bitmap, fetched once per function through link-table functions
+	// (external DATA symbols resolve to null-function stubs in this JIT).
+	llvm::Value* m_pbd_on = nullptr;
+	llvm::Value* m_pbd_bits = nullptr;
+	// PBD: every hook this module's translation tested for and found, and every copy loop it rewrote. ppu_initialize2 writes
+	// the object only when its name lists them all (pbd_ppu_object_name.h first_unnamed).
+	std::vector<pbd::ppu_object_name::hook_hit> m_hook_hits;
+
+	// The PBD hook tests, each recording what it finds in m_hook_hits: the input hook slot at `at` (-1 for none), a function
+	// probe or skippable entry there, and any of the three.
+	int InputSlotAt(u32 at);
+	bool ObserveAt(u32 at);
+	bool SkippableAt(u32 at);
+	bool HookAt(u32 at);
 
 #define DEF_VALUE(loc, glb, pos)\
 	llvm::Value*& loc = m_locals[pos];\
@@ -154,6 +174,7 @@ public:
 
 	// Emit function call
 	void CallFunction(u64 target, llvm::Value* indirect = nullptr);
+	bool InlineVectorLeaf(u64 target);
 
 	// Emit state check mid-block
 	void TestAborted();
@@ -310,6 +331,8 @@ public:
 
 	// Write to memory
 	void WriteMemory(llvm::Value* addr, llvm::Value* value, bool is_be = true, u32 align = 1);
+	// PBD: capture call with an inline page-bitmap fast path (see EmitUndoCapture).
+	void EmitUndoCapture(llvm::Value* addr, u32 bytes);
 
 	// Get an undefined value with specified type
 	template<typename T>
@@ -345,6 +368,12 @@ public:
 	// Parses PPU opcodes and translate them into LLVM IR
 	llvm::Function* Translate(const ppu_function& info);
 	llvm::Function* GetSymbolResolver(const ppu_module<lv2_obj>& info);
+
+	// The hooks found and the copy loops rewritten so far (m_hook_hits)
+	const std::vector<pbd::ppu_object_name::hook_hit>& GetHookHits() const
+	{
+		return m_hook_hits;
+	}
 
 	void MFVSCR(ppu_opcode_t op);
 	void MTVSCR(ppu_opcode_t op);

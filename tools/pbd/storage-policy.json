@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "reserve_bytes": 10737418240,
+  "job_estimates_bytes": {
+    "build": 12884901888,
+    "dependencies": 8589934592
+  }
+}

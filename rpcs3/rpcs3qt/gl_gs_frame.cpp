@@ -2,6 +2,7 @@
 
 #include "Emu/System.h"
 #include "Emu/system_config.h"
+#include "Emu/PBD/pbd_held_presentation.h"
 
 #include <QOpenGLContext>
 #include <QOffscreenSurface>
@@ -150,5 +151,6 @@ void gl_gs_frame::flip(draw_context_t context, bool skip_frame)
 	if (auto window = dynamic_cast<QWindow*>(gl_ctx->surface); window && window->isExposed())
 	{
 		gl_ctx->handle->swapBuffers(gl_ctx->surface);
+		pbd::held_presentation::output().swapped();
 	}
 }

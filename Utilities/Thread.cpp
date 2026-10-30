@@ -1,7 +1,10 @@
 #include "stdafx.h"
 #include "Emu/System.h"
+#include "Emu/CPU/pbd_ordinary_metrics.h"
 #include "Emu/Cell/SPUThread.h"
 #include "Emu/Cell/PPUThread.h"
+#include "Emu/Cell/pbd_rollback_session.h"
+#include "Emu/Cell/pbd_owner_timeline.h"
 #include "Emu/Cell/lv2/sys_mmapper.h"
 #include "Emu/Cell/lv2/sys_event.h"
 #include "Emu/Cell/lv2/sys_process.h"
@@ -1582,6 +1585,25 @@ bool handle_access_violation(u32 addr, bool is_writing, bool is_exec, ucontext_t
 		}
 	} spu_protection{cpu};
 
+	// PBD write-fault capture: a page the update latch armed is captured and unprotected here, ahead of every other
+	// interpretation of the fault (RSX handler, guest page-fault path). Pages the latch did not arm fall through.
+	if (is_writing && !is_exec && g_pbd_fault_capture_active.load(std::memory_order_relaxed))
+	{
+		const u32 p = addr >> 12;
+		if ((g_pbd_fault_bits[p >> 6] >> (p & 63)) & 1)
+		{
+			// PBD owner timeline (diagnostic): kind 10 = owner write fault on an armed page entered the handler, 11 = left it.
+			const bool pbd_timeline = pbd::owner_timeline::enabled && cpu && cpu->id == pbd::owner_timeline::owner_id;
+			if (pbd_timeline) [[unlikely]]
+				pbd::owner_timeline::record(10, addr, 0);
+			const bool pbd_captured = pbd_tick_write_fault(addr);
+			if (pbd_timeline) [[unlikely]]
+				pbd::owner_timeline::record(11, addr, pbd_captured);
+			if (pbd_captured)
+				return true;
+		}
+	}
+
 	if (!is_exec && addr < RAW_SPU_BASE_ADDR && vm::check_addr(addr) && rsx::g_access_violation_handler)
 	{
 		bool state_changed = false;
@@ -3050,6 +3072,7 @@ thread_state thread_ctrl::state()
 
 void thread_ctrl::wait_for(u64 usec, [[maybe_unused]] bool alert /* true */)
 {
+	pbd::ordinary_metrics::scope measure_wait(2, "thread_ctrl_wait_for", true, 10'000'000);
 	if (!usec)
 	{
 		return;

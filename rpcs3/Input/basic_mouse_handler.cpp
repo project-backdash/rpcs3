@@ -9,6 +9,9 @@
 #include "rpcs3qt/gs_frame.h"
 #include "Emu/Io/interception.h"
 #include "Emu/Io/mouse_config.h"
+#include "Emu/PBD/pbd_practice_presentation.h"
+#include "Emu/Cell/pbd_practice_mouse.h"
+#include "Emu/PBD/pbd_settings_runtime.h"
 
 mouse_config g_cfg_mouse;
 
@@ -100,6 +103,18 @@ bool basic_mouse_handler::eventFilter(QObject* target, QEvent* ev)
 	// !m_target->isVisible() is a hack since currently a guiless application will STILL inititialize a gsrender (providing a valid target)
 	if (!m_target || !m_target->isVisible() || target == m_target)
 	{
+		const bool pointer_event = ev->type() == QEvent::MouseMove || ev->type() == QEvent::MouseButtonPress ||
+		                           ev->type() == QEvent::MouseButtonRelease || ev->type() == QEvent::MouseButtonDblClick ||
+		                           ev->type() == QEvent::Wheel || ev->type() == QEvent::Leave;
+		if (pointer_event && ((pbd::practice::requested() && (pbd::practice::input_claim.load(std::memory_order_acquire) ||
+																 pbd::practice::mouse::captured_buttons.load(std::memory_order_acquire))) ||
+								 pbd::settings_menu::pointer_owned()))
+		{
+			// The game keeps a neutral mouse while the Practice window or the in-game Settings menu receives its own pointer events.
+			if (ev->type() == QEvent::MouseButtonPress || ev->type() == QEvent::MouseButtonRelease)
+				MouseButton(static_cast<QMouseEvent*>(ev), false);
+			return false;
+		}
 		if (g_cfg_mouse.reload_requested.exchange(false))
 		{
 			reload_config();

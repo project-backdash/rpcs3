@@ -286,6 +286,10 @@ namespace vm
 
 	// Read or write virtual memory in a safe manner, returns false on failure
 	bool try_access(u32 addr, void* ptr, u32 size, bool is_write);
+	// PBD: try_access for a READ whose destination is written with non-temporal stores (size a multiple of 64,
+	// destination 16-byte aligned; anything else falls back to the ordinary copy). For large copies into memory that is not
+	// read again soon (the rollback checkpoint ring): no read-for-ownership of the destination, no cache eviction by it.
+	bool try_read_stream(u32 addr, void* ptr, u32 size);
 
 	inline namespace ps3_
 	{

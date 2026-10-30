@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "sys_memory.h"
+#include "Emu/Cell/pbd_boot_request.h"
 
 #include "Emu/Memory/vm_locking.h"
 #include "Emu/CPU/CPUThread.h"
@@ -157,6 +158,7 @@ error_code sys_memory_allocate(cpu_thread& cpu, u64 size, u64 flags, vm::ptr<u32
 				vm::lock_sudo(addr, static_cast<u32>(size));
 				cpu.check_state();
 				*alloc_addr = addr;
+				pbd::boot_request::memory_allocated(cpu, addr, static_cast<u32>(size));
 				return CELL_OK;
 			}
 
@@ -259,6 +261,7 @@ error_code sys_memory_free(cpu_thread& cpu, u32 addr)
 
 	const auto size = (ensure(vm::dealloc(addr)));
 	reader_lock{id_manager::g_mutex}, ct->free(size);
+	pbd::boot_request::memory_freed(cpu, addr, static_cast<u32>(size));
 	return CELL_OK;
 }
 

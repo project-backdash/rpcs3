@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/CPU/pbd_ordinary_metrics.h"
 #include "sys_event.h"
 
 #include "Emu/IdManager.h"
@@ -155,6 +156,7 @@ CellError lv2_event_queue::send(lv2_event event, bool* notified_thread, lv2_even
 		{
 			// Save event
 			events.emplace_back(event);
+			pbd::ordinary_metrics::producer("event_enqueued", id, 0, std::get<0>(event));
 			return {};
 		}
 
@@ -180,6 +182,7 @@ CellError lv2_event_queue::send(lv2_event event, bool* notified_thread, lv2_even
 		}
 
 		std::tie(ppu.gpr[4], ppu.gpr[5], ppu.gpr[6], ppu.gpr[7]) = event;
+		pbd::ordinary_metrics::producer("event_ppu_gpr4_7_written", ppu.id, 32, std::get<0>(event));
 
 		awake(&ppu);
 
@@ -214,6 +217,7 @@ CellError lv2_event_queue::send(lv2_event event, bool* notified_thread, lv2_even
 		const u32 data2 = static_cast<u32>(std::get<2>(event));
 		const u32 data3 = static_cast<u32>(std::get<3>(event));
 		spu.ch_in_mbox.set_values(4, CELL_OK, data1, data2, data3);
+		pbd::ordinary_metrics::producer("event_spu_mailbox_written", spu.id, 16, std::get<0>(event));
 		resume_spu_thread_group_from_waiting(spu, notify_spus.spus);
 	}
 

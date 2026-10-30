@@ -5,6 +5,10 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
     <EnableLibUsbWindowsHotplug>true</EnableLibUsbWindowsHotplug>
+    <!-- The repository root, ending in a separator. The compiler cuts it from every source path it embeds (__FILE__,
+         std::source_location, assert), so the executables name files as rpcs3\Emu\... and never carry the folder, or
+         the user name, of the machine that built them. -->
+    <TrimmedPathRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\'))</TrimmedPathRoot>
   </PropertyGroup>
   <PropertyGroup Label="Globals">
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
@@ -19,7 +23,8 @@
       <LanguageStandard Condition = "'$(VisualStudioVersion.Substring(0,2))'&gt;='17'">stdcpp23</LanguageStandard>
       <PreprocessorDefinitions>_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING=1;_HAS_EXCEPTIONS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ExceptionHandling>false</ExceptionHandling>
-      <AdditionalOptions>-d2FH4- %(AdditionalOptions)</AdditionalOptions>
+      <!-- The quotes keep a root with spaces in one argument; the doubled backslash before the closing quote reads as one. -->
+      <AdditionalOptions>-d2FH4- "/d1trimfile:$(TrimmedPathRoot)\" %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary Condition = "$(Configuration.Contains('Release'))">MultiThreaded</RuntimeLibrary>
       <RuntimeLibrary Condition = "$(Configuration.Contains('Debug'))">MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
@@ -28,4 +33,16 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup />
+  <!-- Makefile projects build their library with its own CMake and Ninja, so the ClCompile option above never reaches
+       their cl.exe. cl.exe also reads options from the CL environment variable, so their commands first add the same
+       trim there. -->
+  <Target Name="TrimPathRootInMakefileBuilds" BeforeTargets="Build;Rebuild" Condition="'$(ConfigurationType)' == 'Makefile'">
+    <PropertyGroup>
+      <TrimPathRootCommand>set "CL="/d1trimfile:$(TrimmedPathRoot)\" %25CL%25"</TrimPathRootCommand>
+      <NMakeBuildCommandLine Condition="'$(NMakeBuildCommandLine)' != ''">$(TrimPathRootCommand)
+$(NMakeBuildCommandLine)</NMakeBuildCommandLine>
+      <NMakeReBuildCommandLine Condition="'$(NMakeReBuildCommandLine)' != ''">$(TrimPathRootCommand)
+$(NMakeReBuildCommandLine)</NMakeReBuildCommandLine>
+    </PropertyGroup>
+  </Target>
 </Project>

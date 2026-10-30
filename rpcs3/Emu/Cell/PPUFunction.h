@@ -1,27 +1,31 @@
 #pragma once
 
 #include "PPUThread.h"
+#include "Emu/CPU/pbd_ordinary_metrics.h"
 #include "PPUInterpreter.h"
 
 #include "util/v128.hpp"
 
 // BIND_FUNC macro "converts" any appropriate HLE function to ppu_intrp_func_t, binding it to PPU thread context.
-#define BIND_FUNC(func, ...) (static_cast<ppu_intrp_func_t>([](ppu_thread& ppu, ppu_opcode_t, be_t<u32>* this_op, ppu_intrp_func*) {\
-	const auto old_f = ppu.current_function;\
-	if (!old_f) ppu.last_function = #func;\
-	ppu.current_function = #func;\
-	ppu.cia = vm::get_addr(this_op); \
-	std::memcpy(ppu.syscall_args, ppu.gpr + 3, sizeof(ppu.syscall_args)); \
-	ppu_func_detail::do_call(ppu, func);\
-	static_cast<void>(ppu.test_stopped());\
-	auto& history = ppu.syscall_history.data[ppu.syscall_history.index++ % ppu.syscall_history.data.size()];\
-	history.cia = ppu.cia;\
-	history.func_name = ppu.current_function;\
-	history.error = ppu.gpr[3];\
-	if (ppu.syscall_history.count_debug_arguments) std::copy_n(ppu.syscall_args, std::size(history.args), history.args.data());\
-	ppu.current_function = old_f;\
-	ppu.cia += 4;\
-	__VA_ARGS__;\
+#define BIND_FUNC(func, ...) (static_cast<ppu_intrp_func_t>([](ppu_thread& ppu, ppu_opcode_t, be_t<u32>* this_op, ppu_intrp_func*) { \
+	pbd::ordinary_metrics::hle_scope measured_hle(ppu, #func);                                                                       \
+	const auto old_f = ppu.current_function;                                                                                         \
+	if (!old_f)                                                                                                                      \
+		ppu.last_function = #func;                                                                                                   \
+	ppu.current_function = #func;                                                                                                    \
+	ppu.cia = vm::get_addr(this_op);                                                                                                 \
+	std::memcpy(ppu.syscall_args, ppu.gpr + 3, sizeof(ppu.syscall_args));                                                            \
+	ppu_func_detail::do_call(ppu, func);                                                                                             \
+	static_cast<void>(ppu.test_stopped());                                                                                           \
+	auto& history = ppu.syscall_history.data[ppu.syscall_history.index++ % ppu.syscall_history.data.size()];                         \
+	history.cia = ppu.cia;                                                                                                           \
+	history.func_name = ppu.current_function;                                                                                        \
+	history.error = ppu.gpr[3];                                                                                                      \
+	if (ppu.syscall_history.count_debug_arguments)                                                                                   \
+		std::copy_n(ppu.syscall_args, std::size(history.args), history.args.data());                                                 \
+	ppu.current_function = old_f;                                                                                                    \
+	ppu.cia += 4;                                                                                                                    \
+	__VA_ARGS__;                                                                                                                     \
 }))
 
 struct ppu_va_args_t
@@ -266,7 +270,7 @@ class ppu_function_manager
 	// Access global function list
 	static std::vector<ppu_intrp_func_t>& access(bool ghc = false);
 
-	static u32 add_function(ppu_intrp_func_t function);
+	static u32 add_function(ppu_intrp_func_t function, const char* key = nullptr, u32* index_slot = nullptr);
 
 public:
 	ppu_function_manager() = default;
@@ -277,10 +281,17 @@ public:
 
 	// Register function (shall only be called during global initialization)
 	template<typename T, T Func>
-	static inline u32 register_function(ppu_intrp_func_t func)
+	static inline u32 register_function(ppu_intrp_func_t func, const char* key = nullptr)
 	{
-		return registered<T, Func>::index = add_function(func);
+		return registered<T, Func>::index = add_function(func, key, &registered<T, Func>::index);
 	}
+
+	// PBD: slots are assigned in static-init registration order,
+	// which follows the linker's object pull order and moves with unrelated code changes; savestates keep raw slot addresses.
+	// pbd_pin_order() (called once at boot, before any slot is used) reassigns every keyed function to the slot the pinned table
+	// (pbd_hle_pinned_order.inc, dumped from a build whose order matches the project's savestates) gives it. Returns the old->new
+	// permutation so other stored copies of indices can be updated. PBD_HLE_ORDER_DUMP=<file> writes "index<TAB>key" lines.
+	static std::vector<u32> pbd_pin_order();
 
 	// Get function index
 	template<typename T, T Func>

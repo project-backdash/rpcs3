@@ -12,6 +12,11 @@
     <OpenCvBuildDir>$(SolutionDir)3rdparty\opencv\opencv\opencv414\build</OpenCvBuildDir>
     <OpenCvWorld>opencv_world4140</OpenCvWorld>
   </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(PbdDiagnosticBuild)' == 'true'">
+    <ClCompile>
+      <PreprocessorDefinitions>PBD_DIAGNOSTIC_BUILD=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <ItemDefinitionGroup>
     <Lib>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>

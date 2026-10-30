@@ -1064,6 +1064,7 @@ std::unordered_map<u32, u16> sdl_pad_handler::get_button_values(const std::share
 		}
 	}
 
+	std::optional<float> touch_x;
 	for (const SDLDevice::touchpad& touchpad : dev->sdl.touchpads)
 	{
 		for (const SDLDevice::touch_point& finger : touchpad.fingers)
@@ -1085,6 +1086,8 @@ std::unordered_map<u32, u16> sdl_pad_handler::get_button_values(const std::share
 				{
 					continue;
 				}
+				if (!touch_x && std::isfinite(x) && x >= 0.f && x <= 1.f)
+					touch_x = x;
 
 				const f32 x_scaled = ScaledInput(x, 0.0f, 1.0f, 0.0f, 255.0f);
 				const f32 y_scaled = ScaledInput(y, 0.0f, 1.0f, 0.0f, 255.0f);
@@ -1098,6 +1101,15 @@ std::unordered_map<u32, u16> sdl_pad_handler::get_button_values(const std::share
 		}
 	}
 
+	const bool touch_was_down = dev->practice_touchpad.down;
+	const auto system = dev->practice_touchpad.update(values[SDLKeyCodes::Touchpad] != 0, touch_x,
+		pbd::practice::controls::touchpad_enabled());
+	if (system && !touch_was_down)
+		sdl_log.notice("Practice: touchpad click is %s", dev->practice_touchpad.describe());
+	if (system & 0x0100)
+		values[SDLKeyCodes::Back] = 255;
+	if (system & 0x0800)
+		values[SDLKeyCodes::Start] = 255;
 	return values;
 }
 

@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "Emu/Cell/PPUModule.h"
+#include "Emu/Cell/pbd_fn_hook.h"
 
 #include "Utilities/bin_patch.h"
 #include "Utilities/StrUtil.h"
@@ -148,6 +149,18 @@ const ppu_static_module* ppu_module_manager::get_module(const std::string& name)
 
 void ppu_module_manager::initialize_modules()
 {
+	// PBD: pin HLE slots once per process, before any slot address is used (ppu_function_manager::pbd_pin_order).
+	static const bool pbd_pinned = []
+	{
+		const auto remap = ppu_function_manager::pbd_pin_order();
+		for (auto& [name, _module] : ppu_module_manager::get())
+			for (auto& [fnid, function] : _module->functions)
+				if (function.index < remap.size())
+					function.index = remap[function.index];
+		return true;
+	}();
+	static_cast<void>(pbd_pinned);
+
 	for (auto& _module : ppu_module_manager::get())
 	{
 		_module.second->initialize();
@@ -2126,6 +2139,19 @@ bool ppu_load_exec(const ppu_exec_object& elf, bool virtual_load, const std::str
 			{
 				return false;
 			}
+		}
+	}
+
+	if (!virtual_load)
+	{
+		std::vector<std::pair<u32, u32>> code_ranges;
+		for (const auto& prog : elf.progs)
+			if (prog.p_type == 1 && (prog.p_flags & 1) && prog.p_filesz && prog.p_filesz <= prog.p_memsz)
+				code_ranges.emplace_back(static_cast<u32>(prog.p_vaddr), static_cast<u32>(prog.p_vaddr + prog.p_filesz));
+		if (!pbd::fn_hook::validate_configuration(code_ranges))
+		{
+			ppu_loader.error("PBD probe configuration rejected; refusing guest launch");
+			pbd::fn_hook::reject_configuration_launch();
 		}
 	}
 

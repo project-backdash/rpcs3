@@ -15,6 +15,7 @@
 #include "VKFormats.h"
 #include "VKOverlays.h"
 #include "VKProgramBuffer.h"
+#include "util/pbd_frame_copy.h"
 #include "VKFramebuffer.h"
 #include "VKShaderInterpreter.h"
 #include "VKQueryPool.h"
@@ -230,6 +231,36 @@ private:
 	bool reinitialize_swapchain();
 
 	vk::viewable_image* get_present_source(vk::present_surface_info* info, const rsx::avconf& avconfig);
+
+	// Black-frame probe (PBD_BLACK_PROBE=<abs path .jsonl>, record only): a sparse 32x18 grid of the presented
+	// source is copied into a small host-visible buffer per frame context and read when that context's swap command buffer has
+	// completed (frame_context_cleanup), so the probe never stalls the renderer it is diagnosing.
+	struct pbd_black_probe_slot
+	{
+		std::unique_ptr<vk::buffer> buf;
+		bool pending = false;
+		u32 kind = 0, marker = 0, index = 0, w = 0, h = 0, fmt = 0, src = 0, samples = 0;
+		u64 flip = 0, t_ns = 0;
+	};
+	std::vector<pbd_black_probe_slot> m_pbd_bp_slots;
+	u32 m_pbd_present_src = 0; // 1 surface store, 2 texture cache, 3 upload from guest memory; +10 = force-cast copy
+	void pbd_black_probe_record(const rsx::display_flip_info_t& info, vk::viewable_image* image, u32 w, u32 h, u64 flip);
+	void pbd_black_probe_resolve(vk::frame_context_t* ctx);
+	struct clip_readback
+	{
+		std::unique_ptr<vk::buffer> pixels;
+		const void* mapped = nullptr;
+		std::shared_ptr<std::atomic<bool>> copying = std::make_shared<std::atomic<bool>>(false);
+		const vk::frame_context_t* frame = nullptr; // The frame context whose completion makes the copy readable.
+		u32 width = 0, height = 0;
+		bool pending = false, bgra = false;
+		u64 time_us = 0;
+		~clip_readback() { if (mapped && pixels) pixels->unmap(); }
+	};
+	std::vector<std::unique_ptr<clip_readback>> m_clip_readbacks;
+	pbd::clips::frame_copy m_clip_copies;
+	bool clips_record(vk::image* image, u32 width, u32 height);
+	void clips_resolve(vk::frame_context_t* ctx);
 
 	void begin_render_pass();
 	void close_render_pass();

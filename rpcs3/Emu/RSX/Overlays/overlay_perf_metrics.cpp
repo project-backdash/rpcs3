@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "overlay_manager.h"
 #include "overlay_perf_metrics.h"
+#include "pbd/pbd_overlays.h"
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/Cell/SPUThread.h"
 #include "Emu/Cell/PPUThread.h"
@@ -926,11 +927,16 @@ namespace rsx
 
 		extern void reset_performance_overlay()
 		{
+			// PROJECT BACKDASH: its net overlay switch is decided and logged before the native-UI check.
+			const bool net_overlay_wanted = pbd_net_overlay_wanted();
 			if (!g_cfg.misc.use_native_interface)
 				return;
 
 			if (auto manager = g_fxo->try_get<rsx::overlays::display_manager>())
 			{
+				// PROJECT BACKDASH: its overlays (pbd/pbd_overlays.cpp), created before the performance overlay.
+				create_pbd_overlays(*manager, net_overlay_wanted);
+
 				auto& perf_settings = g_cfg.video.perf_overlay;
 				auto perf_overlay = manager->get<rsx::overlays::perf_metrics_overlay>();
 

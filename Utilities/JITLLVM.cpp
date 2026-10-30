@@ -555,6 +555,14 @@ std::string jit_compiler::cpu(std::string_view _cpu)
 {
 	std::string m_cpu = std::string(_cpu);
 
+	if (m_cpu.empty() && utils::has_avx2() && utils::has_fma3())
+	{
+		// One baseline for every PC with AVX2 and FMA3 (Intel Haswell, AMD Zen and later), so two players run the same
+		// translated code whatever their CPU generation. cpu_translator::initialize picks its FMA and AVX-512 paths from this
+		// name: the host's own name would send AVX-512 CPUs down arithmetic paths the others never take.
+		m_cpu = "haswell";
+	}
+
 	if (m_cpu.empty())
 	{
 		m_cpu = llvm::sys::getHostCPUName().str();

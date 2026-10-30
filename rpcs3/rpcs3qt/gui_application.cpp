@@ -29,6 +29,7 @@
 #include "Emu/Io/Null/null_camera_handler.h"
 #include "Emu/Io/Null/null_music_handler.h"
 #include "Emu/vfs_config.h"
+#include "Emu/pbd_session_mode.h"
 #include "util/init_mutex.hpp"
 #include "util/console.h"
 #include "qt_video_source.h"
@@ -596,8 +597,10 @@ void gui_application::InitializeConnects()
 
 std::unique_ptr<gs_frame> gui_application::get_gs_frame()
 {
-	// Load AppIcon
-	const QIcon app_icon = m_main_window ? m_main_window->GetAppIcon() : gui::utils::get_app_icon_from_path(Emu.GetBoot(), Emu.GetTitleID());
+	// The game window is the product's window, so its taskbar, title bar and Alt+Tab icon is the Project Backdash app
+	// icon (the exe's own icon, embedded as :/rpcs3.ico). The game's ICON0.PNG would put the disc's artwork on the
+	// taskbar instead, and the launcher starts the emulator with --no-gui, which always took that path.
+	const QIcon app_icon(QStringLiteral(":/rpcs3.ico"));
 
 	if (m_game_window)
 	{
@@ -1145,7 +1148,8 @@ void gui_application::InitializeCallbacks()
 
 void gui_application::StartPlaytime(bool start_playtime = true)
 {
-	if (!start_playtime)
+	// Game-only mode has no playtime view. Its keyboard input queue must not wait on statistics-file flushes.
+	if (!start_playtime || !m_show_gui || (m_game_window && m_game_window->hosted_by_launcher()))
 	{
 		return;
 	}
@@ -1397,7 +1401,10 @@ void gui_application::OnAppStateChanged(Qt::ApplicationState state)
 	// Invalidate previous delayed pause call (even when the setting is off because it is dynamic)
 	m_pause_delayed_tag++;
 
-	if (!g_cfg.misc.autopause)
+	// In a session (pbd_session_mode.h) the game runs in lockstep with another PC: a pause on focus loss would stop this PC
+	// alone, so the session would stall and end. The game keeps running while a player switches to another window, as with the
+	// pause shortcut, which the game window ignores there too.
+	if (!g_cfg.misc.autopause || pbd::session_mode::active())
 	{
 		return;
 	}

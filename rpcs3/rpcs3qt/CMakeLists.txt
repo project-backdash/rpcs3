@@ -48,6 +48,11 @@ add_library(rpcs3_ui STATIC
     gui_application.cpp
     gl_gs_frame.cpp
     gs_frame.cpp
+    pbd_clips_controller.cpp
+    pbd_game_host.cpp
+    pbd_game_window.cpp
+    pbd_game_window_settings.cpp
+    pbd_settings_devices.cpp
     gui_game_info.cpp
     gui_settings.cpp
     infinity_dialog.cpp
@@ -169,6 +174,11 @@ add_library(rpcs3_ui STATIC
     ../Input/mm_joystick_handler.cpp
     ../Input/mouse_gyro_handler.cpp
     ../Input/pad_thread.cpp
+    ../Input/pbd_controller_backend.cpp
+    ../Input/pbd_controller_ports.cpp
+    ../Input/pbd_pad_session.cpp
+    ../Input/pbd_pad_spectator.cpp
+    ../Input/pbd_pad_takeover.cpp
     ../Input/product_info.cpp
     ../Input/ps_move_calibration.cpp
     ../Input/ps_move_config.cpp

@@ -16,10 +16,24 @@
 
 class gui_settings;
 enum class video_renderer;
+namespace pbd::game_host
+{
+	class window;
+}
+namespace pbd::clips { class controller; }
+namespace pbd::game_window
+{
+	class settings_menu;
+	struct hooks;
+}
 
 class gs_frame : public QWindow, public GSFrameBase
 {
 	Q_OBJECT
+
+	// PROJECT BACKDASH: the in-game Settings menu and the PBD pointer routing drive this window (pbd_game_window*.h).
+	friend class pbd::game_window::settings_menu;
+	friend struct pbd::game_window::hooks;
 
 private:
 	// taskbar progress
@@ -48,14 +62,19 @@ private:
 	bool m_flip_showed_frame = false;
 	bool m_start_games_fullscreen = false;
 	bool m_ignore_stop_events = false;
+	std::unique_ptr<pbd::game_host::window> m_game_host;
 
 	std::shared_ptr<utils::video_encoder> m_video_encoder{};
+	std::unique_ptr<pbd::clips::controller> m_clips;
+	// The in-game Settings menu in Practice, replays and spectating; null elsewhere.
+	std::unique_ptr<pbd::game_window::settings_menu> m_settings;
 
 public:
 	explicit gs_frame(QScreen* screen, const QRect& geometry, const QIcon& appIcon, std::shared_ptr<gui_settings> gui_settings, bool force_fullscreen);
 	~gs_frame();
 
 	video_renderer renderer() const { return m_renderer; };
+	bool hosted_by_launcher() const;
 
 	void ignore_stop_events() { m_ignore_stop_events = true; }
 
@@ -79,6 +98,8 @@ public:
 	bool get_mouse_lock_state();
 
 	bool can_consume_frame() const override;
+	bool asynchronous_capture() const override;
+	void present_frame_timed(std::vector<u8>&& data, u32 pitch, u32 width, u32 height, bool bgra, u64 time_us) const override;
 	void present_frame(std::vector<u8>&& data, u32 pitch, u32 width, u32 height, bool is_bgra) const override;
 	void take_screenshot(std::vector<u8>&& data, u32 sshot_width, u32 sshot_height, bool is_bgra) override;
 
@@ -107,6 +128,7 @@ protected:
 	bool has_alpha() override;
 
 	bool event(QEvent* ev) override;
+	bool nativeEvent(const QByteArray& event_type, void* message, qintptr* result) override;
 
 private:
 	void load_gui_settings();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PPUFunction.h"
+#include <deque>
 #include "PPUCallback.h"
 #include "ErrorCodes.h"
 #include "Emu/Memory/vm_var.h"
@@ -122,13 +123,21 @@ public:
 
 	static void initialize_modules();
 
+	// PBD: stable key of a module function for HLE slot pinning ("module:fnid"); stored for the process lifetime.
+	static const char* pbd_hle_key(const char* _module, u32 fnid)
+	{
+		static std::deque<std::string> keys;
+		keys.push_back(fmt::format("%s:%08x", _module, fnid));
+		return keys.back().c_str();
+	}
+
 	template <auto* Func>
 	static auto& register_static_function(const char* _module, const char* name, ppu_intrp_func_t func, u32 fnid)
 	{
 		auto& info = access_static_function(_module, fnid);
 
 		info.name  = name;
-		info.index = ppu_function_manager::register_function<decltype(Func), Func>(func);
+		info.index = ppu_function_manager::register_function<decltype(Func), Func>(func, pbd_hle_key(_module, fnid));
 		info.flags = 0;
 
 		registered<Func>::info = &info;
@@ -332,9 +341,9 @@ inline RT ppu_execute(ppu_thread& ppu, Args... args)
 
 #define REG_VAR(_module, var) REG_VNID(_module, #var, var)
 
-#define REG_HIDDEN_FUNC(func) ppu_function_manager::register_function<decltype(&func), &func>(BIND_FUNC_WITH_BLR(func, ""))
+#define REG_HIDDEN_FUNC(func) ppu_function_manager::register_function<decltype(&func), &func>(BIND_FUNC_WITH_BLR(func, ""), "hidden:" #func)
 
-#define REG_HIDDEN_FUNC_PURE(func) ppu_function_manager::register_function<decltype(&func), &func>(func)
+#define REG_HIDDEN_FUNC_PURE(func) ppu_function_manager::register_function<decltype(&func), &func>(func, "hidden:" #func)
 
 #define REINIT_FUNC(func) (ppu_module_manager::find_static_function<&func>().flags = 0, ppu_module_manager::find_static_function<&func>())
 

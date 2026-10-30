@@ -14,6 +14,10 @@
 
 #include "Emu/Cell/ErrorCodes.h"
 #include "Emu/Cell/PPUThread.h"
+#include "Emu/RSX/pbd_frame_presentation.h"
+#include "Emu/Cell/pbd_fn_hook.h"
+#include "Emu/Cell/Modules/pbd_input_script_runtime.h"
+#include "Emu/PBD/pbd_env.h"
 #include "Emu/Cell/PPUDisAsm.h"
 #include "Emu/Cell/PPUAnalyser.h"
 #include "Emu/Cell/SPUThread.h"
@@ -44,12 +48,23 @@
 #include "Utilities/StrUtil.h"
 
 #include "../Crypto/unself.h"
+#include "../Crypto/sha256.h"
 #include "util/logs.hpp"
 #include "util/init_mutex.hpp"
 #include "util/sysinfo.hpp"
 
 #include <memory>
 #include <shared_mutex>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <Windows.h>
+#endif
+
+#include "pbd_session_mode.h"
 
 #include "Utilities/JIT.h"
 
@@ -66,6 +81,39 @@
 #endif
 
 LOG_CHANNEL(sys_log, "SYS");
+
+namespace
+{
+	// Normalized path, size and SHA-256 of a checkpoint file; empty unless read completely and unchanged.
+	std::optional<pbd::checkpoint_file> pbd_checkpoint_identity(const std::string& path)
+	{
+		std::error_code ec;
+		const auto normalized = std::filesystem::weakly_canonical(std::filesystem::path(std::u8string(path.begin(), path.end())), ec).u8string();
+		if (ec)
+			return std::nullopt;
+		pbd::checkpoint_file result{std::string(normalized.begin(), normalized.end())};
+		fs::file file(result.path, fs::read + fs::isfile);
+		if (!file)
+			return std::nullopt;
+		result.bytes = file.size();
+		mbedtls_sha256_context ctx;
+		mbedtls_sha256_init(&ctx);
+		bool ok = mbedtls_sha256_starts_ret(&ctx, 0) == 0;
+		std::vector<u8> buffer(1 << 20);
+		for (u64 remaining = result.bytes; ok && remaining;)
+		{
+			const u64 chunk = file.read(buffer.data(), static_cast<usz>(std::min<u64>(buffer.size(), remaining)));
+			ok = chunk && mbedtls_sha256_update_ret(&ctx, buffer.data(), static_cast<usz>(chunk)) == 0;
+			remaining -= chunk;
+		}
+		u8 extra = 0;
+		ok = ok && file.read(&extra, 1) == 0 && file.size() == result.bytes && mbedtls_sha256_finish_ret(&ctx, result.sha256.data()) == 0;
+		mbedtls_sha256_free(&ctx);
+		if (!ok)
+			return std::nullopt;
+		return result;
+	}
+} // namespace
 
 // Preallocate 32 MiB
 stx::manual_typemap<void, 0x20'00000, 128> g_fixed_typemap;
@@ -1165,6 +1213,8 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 	{
 		return game_boot_result::still_running;
 	}
+	if (recursion_count == 0)
+		m_pbd_checkpoint_boot_identity.reset();
 
 	struct cleanup_t
 	{
@@ -1217,7 +1267,29 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 		}
 		else
 		{
+			std::optional<pbd::checkpoint_file> replay_boot_identity;
+			const auto replay_record = pbd::env::find("PBD_MATCH_REPLAY_RECORD");
+			const bool record_checkpoint_identity = replay_record && std::string_view(replay_record) == "1";
+			const auto sound_apply = pbd::env::find("PBD_SOUND_OPTIONS_APPLY");
+			const bool sound_checkpoint_identity = sound_apply && std::string_view(sound_apply) == "1";
+			const auto spectator_channel = pbd::env::find("PBD_SPECTATOR_CHANNEL");
+			const bool spectator_checkpoint_identity = spectator_channel && *spectator_channel;
+			const auto set_channel = pbd::env::find("PBD_SET_CHANNEL");
+			const bool lobby_checkpoint_identity = set_channel && *set_channel;
+			// A lobby set (PBD_SET_CHANNEL) admits its first game only with this identity (pbd_rollback_session.cpp lobby clean start),
+			// so it is taken for every lobby set, not only when the match replay recorder is on.
+			if (recursion_count == 0 && (record_checkpoint_identity || sound_checkpoint_identity || spectator_checkpoint_identity ||
+											lobby_checkpoint_identity))
+				replay_boot_identity = pbd_checkpoint_identity(m_path);
 			m_ar = make_savestate_reader(m_path);
+			if (m_ar && replay_boot_identity)
+			{
+				std::string digest;
+				for (const u8 byte : replay_boot_identity->sha256)
+					digest += fmt::format("%02x", byte);
+				m_pbd_checkpoint_boot_identity = pbd_checkpoint_boot_identity{replay_boot_identity->path, std::move(digest),
+					replay_boot_identity->bytes, static_cast<u64>(GetEmulationIdentifier())};
+			}
 
 			m_boot_source_type = CELL_GAME_GAMETYPE_SYS;
 		}
@@ -3268,9 +3340,17 @@ void Emulator::GracefulShutdown(bool allow_autoexit, bool async_op, bool savesta
 
 	const u64 read_counter = get_sysutil_cb_manager_read_count();
 
-	const bool force_termination = old_state == system_state::frozen || savestate;
+	// PBD: a netplay session ends at once when the player closes the game window. The game's own exit reaction would
+	// run for up to 6 s inside the lockstep session (it changes scene and waits at a session barrier for the peer).
+	const bool pbd_session = pbd::session_mode::active();
 
-	if (!force_termination)
+	const bool force_termination = old_state == system_state::frozen || savestate || pbd_session;
+
+	if (pbd_session)
+	{
+		sys_log.notice("PBD session: stopping at once (no exit request to the game).");
+	}
+	else if (!force_termination)
 	{
 		sys_log.notice("Requesting game to exit...");
 	}
@@ -3478,12 +3558,29 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 				bool savedata_error = false;
 				bool vdec_error = false;
 
-				if (!g_fxo->get<hle_locks_t>().try_finalize([&]()
+				bool hle_finalized = false;
+
+				// A short HLE transaction may already be finishing when the save request
+				// closes admission. Give it time to release its guard; new guarded calls
+				// observe the pending close and cannot keep the save starved.
+				for (u32 attempt = 0; attempt < 100 && !vdec_error; attempt++)
 				{
-					// List of conditions required for emulation to save properly
-					vdec_error = check_if_vdec_contexts_exist();
-					return !vdec_error;
-				}))
+					hle_finalized = g_fxo->get<hle_locks_t>().try_finalize([&]()
+						{
+							// List of conditions required for emulation to save properly
+							vdec_error = check_if_vdec_contexts_exist();
+							return !vdec_error;
+						});
+
+					if (hle_finalized)
+					{
+						break;
+					}
+
+					thread_ctrl::wait_for(1'000);
+				}
+
+				if (!hle_finalized)
 				{
 					// Unlock SPUs
 					try_lock_spu_threads_in_a_state_compatible_with_savestates(true);
@@ -3740,8 +3837,24 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 		sys_log.notice("All threads have been stopped.");
 
 		std::string path;
+		std::string dr_native_output;
+#ifdef _WIN32
+		if (savestate)
+		{
+			const auto output = pbd::env::find_wide("PBD_NATIVE_CHECKPOINT_OUTPUT");
+			if (output && *output)
+			{
+				const std::filesystem::path requested(output);
+				const auto text = requested.u8string();
+				// Scoped to the unique harness capture directory. No overwrite or cleanup.
+				if (requested.is_absolute())
+					dr_native_output.assign(text.begin(), text.end());
+			}
+		}
+#endif
 
 		static_cast<void>(init_mtx->init());
+
 
 		// Call explcit semi-destructors (free memory before savestate)
 		for (const auto& [type, data] : *g_fxo)
@@ -3768,6 +3881,16 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 			constexpr std::string_view save = ".SAVESTAT";
 			path.resize(path.rfind(save) + save.size());
 			path += ".zst";
+			if (!dr_native_output.empty())
+			{
+				path = dr_native_output;
+				if (fs::exists(path))
+				{
+					sys_log.error("PBD checkpoint refuses existing destination: %s", path);
+					savestate = false;
+					break;
+				}
+			}
 
 			if (!fs::create_path(fs::get_parent_dir(path)))
 			{
@@ -3784,6 +3907,10 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 			}
 
 			auto serial_ptr = stx::make_single<utils::serial>();
+			// An explicit PBD inspection destination without .zst stays uncompressed.
+			if (!dr_native_output.empty() && !dr_native_output.ends_with(".zst"))
+				serial_ptr->m_file_handler = make_uncompressed_serialization_file_handler(file.file);
+			else
 			serial_ptr->m_file_handler = make_compressed_zstd_serialization_file_handler(file.file);
 			*to_ar = std::move(serial_ptr);
 
@@ -3988,7 +4115,7 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 				reset.set_init();
 			}
 
-			if (!file.commit() || !fs::get_stat(path, file_stat))
+			if (!file.commit(dr_native_output.empty()) || !fs::get_stat(path, file_stat))
 			{
 				sys_log.error("Failed to write savestate to file! (path='%s', %s)", path, fs::g_tls_error);
 				savestate = false;
@@ -4001,13 +4128,13 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 				old_path2.insert(old_path.find_last_of(fs::delim) + 1, "old-"sv);
 				old_path.insert(old_path.find_last_of(fs::delim) + 1, "used_"sv);
 
-				if (fs::remove_file(old_path))
+				if (dr_native_output.empty() && fs::remove_file(old_path))
 				{
 					sys_log.success("Old savestate has been removed: path='%s'", old_path);
 				}
 
 				// For backwards compatibility - avoid having loose files
-				if (fs::remove_file(old_path2))
+				if (dr_native_output.empty() && fs::remove_file(old_path2))
 				{
 					sys_log.success("Old savestate has been removed: path='%s'", old_path2);
 				}
@@ -4025,7 +4152,8 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 				const u64 max_files = g_cfg.savestate.max_files;
 				const u64 max_files_size_mb = g_cfg.savestate.max_files_size;
 
-				clean_savestates(m_title_id, m_path, max_files, max_files_size_mb << 20);
+				if (dr_native_output.empty())
+					clean_savestates(m_title_id, m_path, max_files, max_files_size_mb << 20);
 			}
 		}
 
@@ -4252,6 +4380,48 @@ void Emulator::Kill(bool allow_autoexit, bool savestate, savestate_stage* save_s
 			}
 		});
 	}));
+}
+
+void Emulator::PBDInspectCheckpoint()
+{
+#ifdef _WIN32
+	// Posted by the validated owner at the probe input entry: save, stop, never reload.
+	const auto output_env = pbd::env::find_wide("PBD_NATIVE_PROBE_OUTPUT");
+	const auto evidence_env = pbd::env::find_wide("PBD_NATIVE_PROBE_EVIDENCE");
+	if (!output_env || !*output_env || !evidence_env || !*evidence_env || IsStopped() || after_kill_callback)
+	{
+		sys_log.error("PBD probe rejected before save");
+		Kill(false);
+		return;
+	}
+	const std::filesystem::path output(output_env), evidence_path(evidence_env);
+	const auto utf8 = [](const std::filesystem::path& p)
+	{
+		const auto s = p.u8string();
+		return std::string(s.begin(), s.end());
+	};
+	auto evidence = std::make_shared<fs::file>(utf8(evidence_path), fs::write_new + fs::isfile);
+	if (!output.is_absolute() || !evidence_path.is_absolute() || !*evidence || !utf8(output).ends_with(".SAVESTAT") ||
+		fs::exists(utf8(output)) || g_cfg.savestate.suspend_emu || GetTitleID() != pbd::t5dr::title_id ||
+		!pbd::env::set_wide("PBD_NATIVE_CHECKPOINT_OUTPUT", output.c_str()))
+	{
+		sys_log.error("PBD probe destination/configuration rejected");
+		Kill(false);
+		return;
+	}
+	const auto row = fmt::format("{\"event\":\"probe_requested\",\"generation\":%u,\"flip_base\":%u}\n",
+		static_cast<u64>(GetEmulationIdentifier()), pbd::frame_presentation::flip_base.load());
+	evidence->write(row.data(), row.size());
+	after_kill_callback = [this, output, evidence, utf8]() mutable
+	{
+		const bool saved = IsStopped(true) && fs::is_file(utf8(output));
+		pbd::env::set_wide("PBD_NATIVE_CHECKPOINT_OUTPUT", L"");
+		const auto done = fmt::format("{\"event\":\"probe_saved\",\"success\":%s}\n", saved ? "true" : "false");
+		evidence->write(done.data(), done.size());
+		evidence->close();
+	};
+	Kill(false, true);
+#endif
 }
 
 game_boot_result Emulator::Restart(bool graceful, bool reset_path)

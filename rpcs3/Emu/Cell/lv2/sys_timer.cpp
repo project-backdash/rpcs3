@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/CPU/pbd_ordinary_metrics.h"
 #include "sys_timer.h"
 
 #include "Emu/IdManager.h"
@@ -85,6 +86,7 @@ u64 lv2_timer::check_unlocked(u64 _now) noexcept
 		return umax;
 	}
 
+	pbd::ordinary_metrics::producer("timer_due_before_delivery", reinterpret_cast<u64>(this), 0, next);
 	if (port)
 	{
 		port->send(source, data1, data2, next);

@@ -1,5 +1,9 @@
 #include "stdafx.h"
 #include "pad_thread.h"
+#include "pbd_controller_ports.h"
+#include "pbd_pad_session.h"
+#include "pbd_pad_spectator.h"
+#include "pbd_pad_takeover.h"
 #include "product_info.h"
 #include "ds3_pad_handler.h"
 #include "ds4_pad_handler.h"
@@ -80,6 +84,7 @@ pad_thread::~pad_thread()
 void pad_thread::Init()
 {
 	std::lock_guard lock(pad::g_pad_mutex);
+	m_pbd_match.swap_if_bound(m_pads, m_pads_connected);
 
 	// Reset mouse-based gyro state
 	m_mouse_gyro.set_enabled(g_cfg.io.mouse_based_gyro_enabled.get());
@@ -152,6 +157,10 @@ void pad_thread::Init()
 		input_log.notice("Reloaded empty pad config");
 	}
 
+	const auto pbd_ports = pbd_configure_ports([&](u32 port)
+		{
+			return pad_settings[port].is_ldd_pad;
+		});
 	input_log.trace("Using pad config:\n%s", g_cfg_input);
 
 #ifndef ANDROID
@@ -167,7 +176,8 @@ void pad_thread::Init()
 		cfg_player* cfg = g_cfg_input.player[i];
 		std::shared_ptr<PadHandlerBase> cur_pad_handler;
 
-		const pad_handler handler_type = pad_settings[i].is_ldd_pad ? pad_handler::null : cfg->handler.get();
+		const bool pbd_device = pbd_ports.contains(i);
+		const pad_handler handler_type = pad_settings[i].is_ldd_pad || pbd_device ? pad_handler::null : cfg->handler.get();
 
 		if (m_handlers.contains(handler_type))
 		{
@@ -194,7 +204,7 @@ void pad_thread::Init()
 		}
 		cur_pad_handler->Init();
 
-		std::shared_ptr<Pad> pad = std::make_shared<Pad>(handler_type, i, CELL_PAD_STATUS_DISCONNECTED, pad_settings[i].device_capability, pad_settings[i].device_type);
+		std::shared_ptr<Pad> pad = std::make_shared<Pad>(pbd_device ? pad_handler::keyboard : handler_type, i, CELL_PAD_STATUS_DISCONNECTED, pad_settings[i].device_capability, pad_settings[i].device_type);
 		m_pads[i] = pad;
 
 		if (pad_settings[i].is_ldd_pad)
@@ -218,17 +228,17 @@ void pad_thread::Init()
 				input_log.notice("Pad %d: config=\n%s", i, cfg->to_string());
 			}
 
-			// If the user changes the emulated controller, then simulate unplugging and plugging in a new controller
-			if (m_pads_connected[i] && (pad_settings[i].class_type != pad->m_class_type || pad_settings[i].vendor_id != pad->m_vendor_id || pad_settings[i].product_id != pad->m_product_id))
-			{
-				pad->m_disconnection_timer = get_system_time() + 30'000ull;
-			}
+			pbd_refresh_connection(i, *pad, {pad_settings[i].class_type, pad_settings[i].vendor_id, pad_settings[i].product_id});
 		}
 
+		if (pbd_device)
+			m_pbd_ports->bind(pbd_ports, i, pad);
 		pad->is_fake_pad = ((g_cfg.io.move == move_handler::real || g_cfg.io.move == move_handler::fake) && i >= (static_cast<u32>(CELL_PAD_MAX_PORT_NUM) - static_cast<u32>(CELL_GEM_MAX_NUM)))
 			|| (pad->m_class_type >= CELL_PAD_FAKE_TYPE_FIRST && pad->m_class_type < CELL_PAD_FAKE_TYPE_LAST);
 		connect_usb_controller(i, input::get_product_by_vid_pid(pad->m_vendor_id, pad->m_product_id));
 	}
+
+	pbd::pads::make_virtual_ports(m_pads, [this](u32 port, const u32* status) { InitLddPad(port, status); });
 
 	// Set copilots
 	for (usz i = 0; i < m_pads.size(); i++)
@@ -253,7 +263,10 @@ void pad_thread::Init()
 	}
 
 	// Initialize active mouse and keyboard. Activate pad handler if one exists.
+	m_pbd_match.swap_if_bound(m_pads, m_pads_connected);
 	input::set_mouse_and_keyboard(m_handlers.contains(pad_handler::keyboard) ? input::active_mouse_and_keyboard::pad : input::active_mouse_and_keyboard::emulated);
+	if (m_pbd_takeover)
+		m_pbd_takeover->ports_rebuilt();
 }
 
 void pad_thread::SetRumble(u32 pad, u8 large_motor, u8 small_motor)
@@ -299,7 +312,7 @@ void pad_thread::apply_copilots()
 		return (value - 128) / 127.0f;
 	};
 
-	std::lock_guard lock(pad::g_pad_mutex);
+	std::unique_lock lock(pad::g_pad_mutex);
 
 	for (auto& pad : m_pads)
 	{
@@ -390,6 +403,10 @@ void pad_thread::apply_copilots()
 			stick.m_value = static_cast<u16>(std::round(std::clamp(accumulated_value * 127.0f + 128.0f, 0.0f, 255.0f)));
 		}
 	}
+
+	// Device discovery and settings reads must not hold up the game's cellPad reads.
+	lock.unlock();
+	pbd_update_controllers();
 }
 
 void pad_thread::update_pad_states()
@@ -429,6 +446,8 @@ void pad_thread::update_pad_states()
 
 void pad_thread::operator()()
 {
+	pbd_create_controllers();
+
 	Init();
 
 	const bool is_vsh = Emu.IsVsh();
@@ -558,10 +577,12 @@ void pad_thread::operator()()
 		{
 			m_resume_emulation_flag = false;
 			m_mask_start_press_to_resume = 0;
+			pbd_release_controllers();
 			thread_ctrl::wait_for(30'000);
 			continue;
 		}
 
+		pbd_poll_controllers();
 		// Update variables
 		const bool needs_reset = pad::g_reset && pad::g_reset.exchange(false);
 		const pad_handler_mode new_pad_mode = g_cfg.io.pad_mode.get();
@@ -595,6 +616,7 @@ void pad_thread::operator()()
 				handler.second->process();
 				connected_devices += handler.second->connected_devices;
 			}
+			pbd_note_controller_poll();
 		}
 		else
 		{
@@ -615,7 +637,7 @@ void pad_thread::operator()()
 			m_mouse_gyro.apply_gyro(m_pads[0]);
 		}
 
-		m_info.now_connect = connected_devices + num_ldd_pad;
+		m_info.now_connect = connected_devices + num_ldd_pad + (m_pbd_ports ? m_pbd_ports->connected() : 0);
 
 		// The ignore_input section is only reached when a dialog was closed and the pads are still intercepted.
 		// As long as any of the listed buttons is pressed, cellPadGetData will ignore all input (needed for Hotline Miami).
@@ -692,7 +714,7 @@ void pad_thread::operator()()
 			// Make sure we call this function only once per button press
 			if ((ps_button_pressed && !m_ps_button_pressed) || pad::g_home_menu_requested.exchange(false))
 			{
-				open_home_menu();
+				pbd_open_home_menu();
 			}
 
 			m_ps_button_pressed = ps_button_pressed;

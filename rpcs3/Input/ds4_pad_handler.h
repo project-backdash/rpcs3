@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hid_pad_handler.h"
+#include "Emu/Cell/pbd_practice_controls.h"
 
 #include <unordered_map>
 
@@ -122,12 +123,13 @@ public:
 	std::array<CalibData, CalibIndex::COUNT> calib_data{};
 	reports::ds4_input_report_usb report_usb{};
 	reports::ds4_input_report_bt report_bt{};
+	pbd::practice::controls::touchpad_click practice_touchpad;
 };
 
 class ds4_pad_handler final : public hid_pad_handler<DS4Device>
 {
 	// These are all the possible buttons on a standard DS4 controller
-	// The touchpad is restricted to its button for now (or forever?)
+	// Touch motion remains available alongside the click's Practice system-button gesture.
 	enum DS4KeyCodes
 	{
 		None = 0,

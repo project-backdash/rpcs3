@@ -3,6 +3,7 @@
 #include "Emu/System.h"
 #include "RSXFIFO.h"
 #include "RSXThread.h"
+#include "pbd_replay_pacing.h"
 #include "Capture/rsx_capture.h"
 #include "Core/RSXReservationLock.hpp"
 #include "Emu/Memory/vm_reservation.h"
@@ -42,6 +43,7 @@ namespace rsx
 		void FIFO_control::restore_state(u32 cmd, u32 count)
 		{
 			m_cmd = cmd;
+			m_pbd_cmd_pos = ~0u;
 			m_command_inc = ((m_cmd & RSX_METHOD_NON_INCREMENT_CMD_MASK) == RSX_METHOD_NON_INCREMENT_CMD) ? 0 : 4;
 			m_remaining_commands = count;
 			m_internal_get = m_ctrl->get - 4;
@@ -379,6 +381,7 @@ namespace rsx
 				if (const u32 addr = m_iotable->get_addr(m_internal_get); addr + 1)
 				{
 					m_cmd = vm::read32(addr);
+					m_pbd_cmd_pos = m_internal_get;
 				}
 				else
 				{
@@ -391,6 +394,7 @@ namespace rsx
 				if (auto [ok, arg] = fetch_u32(m_internal_get); ok)
 				{
 					m_cmd = arg;
+					m_pbd_cmd_pos = m_internal_get;
 				}
 				else
 				{
@@ -641,6 +645,30 @@ namespace rsx
 
 	void thread::run_FIFO()
 	{
+		// PBD exact withhold (see pbd_replay_pacing.h): standing at the PUT position the latch published at a
+		// restore means everything submitted before it has been consumed: the frames from here are the re-executed ones.
+		if (!m_pbd_withhold_left && m_pbd_marker_read != ::pbd::replay_pacing::marker_write.load(std::memory_order_relaxed)) [[unlikely]]
+		{
+			const u64 marker = ::pbd::replay_pacing::markers[m_pbd_marker_read % ::pbd::replay_pacing::markers.size()].load(std::memory_order_acquire);
+			if (fifo_ctrl->get_pos() == static_cast<u32>(marker))
+			{
+				// Record only: renderer lag at this restore = pre-restore frames ended since it (marker_age).
+				const u32 pbd_k = m_pbd_marker_read % 8;
+				::pbd::replay_pacing::marker_hit_lag[pbd_k].store(m_pbd_marker_age, std::memory_order_relaxed);
+				::pbd::replay_pacing::marker_hit_replayed[pbd_k].store(::pbd::replay_pacing::replay_completed.load(std::memory_order_relaxed), std::memory_order_relaxed);
+				::pbd::replay_pacing::marker_hit_ns[pbd_k].store(static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+																	 std::chrono::steady_clock::now().time_since_epoch())
+																		 .count()),
+					std::memory_order_relaxed);
+				::pbd::replay_pacing::marker_hit_slot[pbd_k].store(m_pbd_marker_read + 1, std::memory_order_release);
+				m_pbd_bp_marker = m_pbd_marker_read + 1;
+				m_pbd_withhold_left = static_cast<u32>(marker >> 32);
+				m_pbd_marker_read++;
+				m_pbd_marker_age = 0;
+				skip_current_frame = true;
+				m_pbd_replay_skip = true;
+			}
+		}
 		FIFO::register_pair command;
 		fifo_ctrl->read(command);
 		const auto cmd = command.reg;
@@ -711,6 +739,8 @@ namespace rsx
 				}
 
 				//rsx_log.warning("rsx jump(0x%x) #addr=0x%x, cmd=0x%x, get=0x%x, put=0x%x", offs, m_ioAddress + get, cmd, get, put);
+				m_pbd_jump_src = fifo_ctrl->get_pos(); // PBD: the command binding follows executed JUMPs
+				m_pbd_jump_dst = offs;
 				fifo_ctrl->set_get(offs, cmd);
 				return;
 			}

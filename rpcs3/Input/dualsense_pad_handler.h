@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hid_pad_handler.h"
+#include "Emu/Cell/pbd_practice_controls.h"
 
 #include <unordered_map>
 
@@ -179,6 +180,7 @@ public:
 	bool init_lightbar{true};
 	bool update_lightbar{true};
 	bool release_leds{false};
+	pbd::practice::controls::touchpad_click practice_touchpad;
 
 	// Controls for lightbar pulse. This seems somewhat hacky for now, as I haven't found out a nicer way.
 	bool lightbar_on{false};

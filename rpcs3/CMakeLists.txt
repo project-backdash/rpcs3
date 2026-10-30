@@ -88,7 +88,7 @@ if (NOT ANDROID)
     endif()
 
     if(WIN32)
-        target_link_libraries(rpcs3_lib PRIVATE ws2_32 Iphlpapi Winmm Psapi gdi32 setupapi)
+        target_link_libraries(rpcs3_lib PRIVATE ws2_32 Iphlpapi Winmm Psapi gdi32 setupapi mfplat mfuuid d3d11 ole32 oleaut32 shell32)
     else()
         target_link_libraries(rpcs3_lib PRIVATE ${CMAKE_DL_LIBS})
     endif()
@@ -197,6 +197,8 @@ if(BUILD_RPCS3_TESTS)
             tests/test_spu_analyser.cpp
             tests/test_types_util.cpp
     )
+
+    include(${CMAKE_CURRENT_SOURCE_DIR}/tests/pbd/pbd_tests.cmake)
 
     target_link_libraries(rpcs3_test
         PRIVATE

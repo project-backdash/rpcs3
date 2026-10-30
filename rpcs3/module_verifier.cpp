@@ -26,15 +26,31 @@ void WIN32_module_verifier::run_module_verification()
 		std::wstring_view name;
 		std::string_view package_name;
 		std::string_view dl_link;
+		// The package ships this DLL next to the executable (the build's own toolset version), so that copy is accepted too.
+		bool app_local;
 	};
 
 	const std::vector<module_info_t> special_module_infos = {
-		{ L"vulkan-1.dll", "Vulkan Runtime", "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-runtime.exe" },
-		{ L"msvcp140.dll", "Microsoft Visual C++ 2015-2022 Redistributable", "https://aka.ms/vs/17/release/VC_redist.x64.exe" },
-		{ L"vcruntime140.dll", "Microsoft Visual C++ 2015-2022 Redistributable", "https://aka.ms/vs/17/release/VC_redist.x64.exe" },
-		{ L"msvcp140_1.dll", "Microsoft Visual C++ 2015-2022 Redistributable", "https://aka.ms/vs/17/release/VC_redist.x64.exe" },
-		{ L"vcruntime140_1.dll", "Microsoft Visual C++ 2015-2022 Redistributable", "https://aka.ms/vs/17/release/VC_redist.x64.exe" }
+		{L"vulkan-1.dll", "Vulkan Runtime", "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-runtime.exe", false},
+		{L"msvcp140.dll", "Microsoft Visual C++ 2015-2022 Redistributable", "https://aka.ms/vs/17/release/VC_redist.x64.exe", true},
+		{L"vcruntime140.dll", "Microsoft Visual C++ 2015-2022 Redistributable", "https://aka.ms/vs/17/release/VC_redist.x64.exe", true},
+		{L"msvcp140_1.dll", "Microsoft Visual C++ 2015-2022 Redistributable", "https://aka.ms/vs/17/release/VC_redist.x64.exe", true},
+		{L"vcruntime140_1.dll", "Microsoft Visual C++ 2015-2022 Redistributable", "https://aka.ms/vs/17/release/VC_redist.x64.exe", true}
 	};
+
+	// The folder part of a module path, without the trailing separator.
+	const auto folder_of = [](std::wstring_view path)
+	{
+		const usz separator = path.find_last_of(L"\\/");
+		return separator == std::wstring_view::npos ? std::wstring_view{} : path.substr(0, separator);
+	};
+
+	// The Vulkan loader belongs to the GPU driver and must always come from the Windows folder. A runtime DLL is accepted
+	// from exactly the executable's folder (a whole-folder, case-insensitive comparison, not a prefix), where the package
+	// puts it, and refused anywhere else.
+	WCHAR exe_path[MAX_PATH];
+	const DWORD exe_len = GetModuleFileName(nullptr, exe_path, MAX_PATH);
+	const std::wstring_view exe_folder = exe_len && exe_len < MAX_PATH ? folder_of(std::wstring_view(exe_path, exe_len)) : std::wstring_view{};
 
 	WCHAR windir[MAX_PATH];
 	if (!GetWindowsDirectory(windir, MAX_PATH))
@@ -59,6 +75,17 @@ void WIN32_module_verifier::run_module_verification()
 
 		if (::StrStrI(wpath, windir) != wpath)
 		{
+			if (module.app_local && !exe_folder.empty() && len < MAX_PATH)
+			{
+				const std::wstring_view module_folder = folder_of(std::wstring_view(wpath, len));
+				if (!module_folder.empty() &&
+					::CompareStringOrdinal(module_folder.data(), static_cast<int>(module_folder.size()), exe_folder.data(), static_cast<int>(exe_folder.size()), TRUE) == CSTR_EQUAL)
+				{
+					sys_log.notice("Module '%s' is loaded from the executable's folder: '%s'", wchar_to_utf8(module.name), wchar_to_utf8(wpath));
+					continue;
+				}
+			}
+
 			const std::string path = wchar_to_utf8(wpath);
 			const std::string win_path = wchar_to_utf8(windir);
 			const std::string module_name = wchar_to_utf8(module.name);

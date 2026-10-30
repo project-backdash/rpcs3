@@ -3,7 +3,11 @@
 #include "Emu/Io/pad_config.h"
 #include "Emu/Io/KeyboardHandler.h"
 #include "Emu/Io/interception.h"
+#include "Emu/PBD/pbd_practice_presentation.h"
+#include "Emu/Cell/pbd_practice_mouse.h"
+#include "Emu/PBD/pbd_settings_runtime.h"
 #include "Input/product_info.h"
+#include "Emu/PBD/pbd_replay_viewer_menu.h"
 #include "rpcs3qt/gs_frame.h"
 
 #include <algorithm>
@@ -375,6 +379,8 @@ void keyboard_pad_handler::release_all_keys()
 	{
 		for (Button& button : pad.m_buttons)
 		{
+			// Forget the physical keys too, so the next unrelated event cannot recreate a released button press.
+			button.m_pressed_keys.clear();
 			button.m_pressed = false;
 			button.m_value = 0;
 			button.m_actual_value = 0;
@@ -418,6 +424,24 @@ bool keyboard_pad_handler::eventFilter(QObject* target, QEvent* ev)
 	// !m_target->isVisible() is a hack since currently a guiless application will STILL inititialize a gsrender (providing a valid target)
 	if (!m_target || !m_target->isVisible()|| target == m_target)
 	{
+		// The filter runs before gs_frame::event. Viewer clicks/motion must not become mapped fight inputs.
+		// Releases still clear a mouse button held before the viewer opened; keyboard bindings stay available.
+		if (pbd::replay_viewer::presentation.enabled.load(std::memory_order_relaxed) &&
+			(ev->type() == QEvent::MouseButtonPress || ev->type() == QEvent::MouseButtonDblClick ||
+				ev->type() == QEvent::MouseMove || ev->type() == QEvent::Wheel))
+			return false;
+		const bool pointer_event = ev->type() == QEvent::MouseMove || ev->type() == QEvent::MouseButtonPress ||
+		                           ev->type() == QEvent::MouseButtonRelease || ev->type() == QEvent::MouseButtonDblClick || ev->type() == QEvent::Wheel;
+		if (pointer_event && ((pbd::practice::requested() && (pbd::practice::input_claim.load(std::memory_order_acquire) ||
+																 pbd::practice::mouse::captured_buttons.load(std::memory_order_acquire))) ||
+								 pbd::settings_menu::pointer_owned()))
+		{
+			// Clear a mouse binding held before pause or before the in-game Settings menu opened, without converting any menu
+			// click into a new attack.
+			if (ev->type() == QEvent::MouseButtonPress || ev->type() == QEvent::MouseButtonRelease)
+				mouseReleaseEvent(static_cast<QMouseEvent*>(ev));
+			return false;
+		}
 		switch (ev->type())
 		{
 		case QEvent::KeyPress:
@@ -1386,6 +1410,31 @@ void keyboard_pad_handler::process()
 
 			btn.m_value = btn_internal.m_value;
 			btn.m_pressed = btn_internal.m_pressed;
+		}
+
+		// A keyboard can hold opposite directions at once, which a pad's D-pad cannot: Left+Right and Up+Down both read as
+		// neutral on that axis, so the game never sees an input a pad could not make.
+		Button* dpad[4] = {};
+		for (Button& btn : pad->m_buttons)
+		{
+			if (btn.m_offset != CELL_PAD_BTN_OFFSET_DIGITAL1)
+				continue;
+			switch (btn.m_outKeyCode)
+			{
+			case CELL_PAD_CTRL_LEFT: dpad[0] = &btn; break;
+			case CELL_PAD_CTRL_RIGHT: dpad[1] = &btn; break;
+			case CELL_PAD_CTRL_UP: dpad[2] = &btn; break;
+			case CELL_PAD_CTRL_DOWN: dpad[3] = &btn; break;
+			default: break;
+			}
+		}
+		for (usz axis = 0; axis < 4; axis += 2)
+		{
+			if (dpad[axis] && dpad[axis + 1] && dpad[axis]->m_pressed && dpad[axis + 1]->m_pressed)
+			{
+				dpad[axis]->m_pressed = dpad[axis + 1]->m_pressed = false;
+				dpad[axis]->m_value = dpad[axis + 1]->m_value = 0;
+			}
 		}
 
 		for (usz j = 0; j < pad->m_sticks.size(); j++)

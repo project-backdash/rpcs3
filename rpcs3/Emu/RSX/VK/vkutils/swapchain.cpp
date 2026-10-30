@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "swapchain.h"
+#include "Emu/PBD/pbd_presentation_journal.h"
 
 namespace vk
 {
@@ -283,6 +284,17 @@ namespace vk
 			}
 		}
 
+		// PBD (log only): the VSync queue diagnostic needs the requested setting, every mode the surface offers and the
+		// image count negotiated (the latency VSync adds differs by a factor of two or more between GPUs and drivers).
+		{
+			std::string pbd_modes;
+			for (VkPresentModeKHR mode : present_modes)
+				pbd_modes += fmt::format("%s%d", pbd_modes.empty() ? "" : ",", static_cast<int>(mode));
+			rsx_log.notice("PBD swapchain: vsync setting %d, supported modes [%s], mode %d, images %u (surface min %u max %u)",
+				static_cast<int>(g_cfg.video.vsync.get()), pbd_modes, static_cast<int>(swapchain_present_mode), nb_swap_images,
+				surface_descriptors.minImageCount, surface_descriptors.maxImageCount);
+		}
+
 		VkSurfaceTransformFlagBitsKHR pre_transform = surface_descriptors.currentTransform;
 		if (surface_descriptors.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
 			pre_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
@@ -323,7 +335,9 @@ namespace vk
 		rsx_log.notice("Swapchain: requesting full screen exclusive mode %d.", static_cast<int>(full_screen_exclusive_info.fullScreenExclusive));
 #endif
 
-		_vkCreateSwapchainKHR(dev, &swap_info, nullptr, &m_vk_swapchain);
+		// Vulkan's own presentation, not a DXGI flip-model swap chain, in the mode chosen above (the run summary).
+		if (_vkCreateSwapchainKHR(dev, &swap_info, nullptr, &m_vk_swapchain) == VK_SUCCESS)
+			pbd::presentation::journal::get().swapchain(false, static_cast<s32>(swapchain_present_mode));
 
 		if (old_swapchain)
 		{

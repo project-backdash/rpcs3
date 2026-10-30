@@ -367,7 +367,8 @@ std::unordered_map<u32, u16> ds4_pad_handler::get_button_values(const std::share
 	keyBuffer[DS4KeyCodes::R2] = input.rz;
 
 	// Touch Pad
-	const auto apply_touch = [&keyBuffer](const ds4_touch_report& touch)
+	std::optional<float> touch_x;
+	const auto apply_touch = [&keyBuffer, &touch_x](const ds4_touch_report& touch, bool current)
 	{
 		for (const ds4_touch_point& point : touch.points)
 		{
@@ -375,6 +376,9 @@ std::unordered_map<u32, u16> ds4_pad_handler::get_button_values(const std::share
 			{
 				const s32 x = (point.x_hi << 8) | point.x_lo;
 				const s32 y = (point.y_hi << 4) | point.y_lo;
+				// The first report contains the current contacts; buffered history must not choose a click half.
+				if (current && !touch_x && x >= 0 && x < DS4_TOUCHPAD_WIDTH)
+					touch_x = static_cast<float>(x) / DS4_TOUCHPAD_WIDTH;
 
 				const f32 x_scaled = ScaledInput(static_cast<float>(x), 0.0f, static_cast<float>(DS4_TOUCHPAD_WIDTH), 0.0f, 255.0f);
 				const f32 y_scaled = ScaledInput(static_cast<float>(y), 0.0f, static_cast<float>(DS4_TOUCHPAD_HEIGHT), 0.0f, 255.0f);
@@ -394,7 +398,7 @@ std::unordered_map<u32, u16> ds4_pad_handler::get_button_values(const std::share
 
 		for (u32 i = 0; i < std::min<u32>(report.num_touch_reports, ::size32(report.touch_reports)); i++)
 		{
-			apply_touch(report.touch_reports[i]);
+			apply_touch(report.touch_reports[i], i == 0);
 		}
 	}
 	else
@@ -403,10 +407,19 @@ std::unordered_map<u32, u16> ds4_pad_handler::get_button_values(const std::share
 
 		for (u32 i = 0; i < std::min<u32>(report.num_touch_reports, ::size32(report.touch_reports)); i++)
 		{
-			apply_touch(report.touch_reports[i]);
+			apply_touch(report.touch_reports[i], i == 0);
 		}
 	}
 
+	const bool touch_was_down = dev->practice_touchpad.down;
+	const auto system = dev->practice_touchpad.update(keyBuffer[DS4KeyCodes::TouchPad] != 0, touch_x,
+		pbd::practice::controls::touchpad_enabled());
+	if (system && !touch_was_down)
+		ds4_log.notice("Practice: touchpad click is %s", dev->practice_touchpad.describe());
+	if (system & 0x0100)
+		keyBuffer[DS4KeyCodes::Share] = 255;
+	if (system & 0x0800)
+		keyBuffer[DS4KeyCodes::Options] = 255;
 	return keyBuffer;
 }
 

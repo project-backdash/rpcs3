@@ -7,6 +7,7 @@
 #include "GLShaderInterpreter.h"
 #include "Emu/RSX/rsx_cache.h"
 #include "util/asm.hpp"
+#include "util/pbd_frame_copy.h"
 
 #include <optional>
 #include <unordered_map>
@@ -139,6 +140,20 @@ class GLGSRender : public GSRender, public ::rsx::reports::ZCULL_control
 
 	// Present
 	gl::fbo m_sshot_fbo;
+	struct clip_readback
+	{
+		gl::buffer pixels;
+		const void* mapped = nullptr;
+		GLsync ready = nullptr;
+		std::shared_ptr<std::atomic<bool>> copying = std::make_shared<std::atomic<bool>>(false);
+		u32 width = 0, height = 0;
+		u64 time_us = 0;
+		~clip_readback() { if (ready) glDeleteSync(ready); if (mapped) pixels.unmap(); }
+	};
+	std::array<std::unique_ptr<clip_readback>, 3> m_clip_readbacks;
+	pbd::clips::frame_copy m_clip_copies;
+	bool clips_record(gl::texture* image, u32 width, u32 height);
+	void clips_resolve();
 	std::unique_ptr<gl::texture> m_sshot_tex;
 	std::unique_ptr<gl::upscaler> m_upscaler;
 	output_scaling_mode m_output_scaling = output_scaling_mode::bilinear;

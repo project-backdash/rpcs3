@@ -559,8 +559,32 @@ void run_platform_sanity_checks()
 #endif
 }
 
+#include "Input/pbd_controller_backend.h"
+#include "util/pbd_clips.h"
+#include "Emu/Cell/pbd_ppu_object_name.h"
+#include "Emu/PBD/pbd_features.h"
+
 int run_rpcs3(int argc, char** argv)
 {
+	if (argc > 1 && std::string_view(argv[1]) == "--pbd-clips-probe")
+	{
+		std::printf("{\"schema\":\"pbd-clips-probe-1\",\"available\":%s}\n", pbd::clips::hardware_available() ? "true" : "false");
+		return 0;
+	}
+	// The lobby features this build speaks beyond its launcher's first contract (pbd::features).
+	if (argc > 1 && std::string_view(argv[1]) == "--pbd-features")
+	{
+		std::printf("%.*s\n", static_cast<int>(pbd::features::answer.size()), pbd::features::answer.data());
+		return 0;
+	}
+	// Reads only this process's environment: how the game objects of a run with it would be named, without booting.
+	if (argc > 1 && std::string_view(argv[1]) == "--pbd-ppu-codegen")
+	{
+		std::printf("{\"schema\":\"pbd-ppu-codegen-1\",\"identity\":\"%s\"}\n", pbd::ppu_object_name::run_identity().c_str());
+		return 0;
+	}
+	if (argc > 1 && std::string_view(argv[1]) == "--pbd-controller-stream")
+		return pbd::controllers::run_controller_stream(argc, argv);
 #ifdef _WIN32
 	ULONG64 intro_cycles{};
 	QueryThreadCycleTime(GetCurrentThread(), &intro_cycles);
@@ -645,7 +669,18 @@ int run_rpcs3(int argc, char** argv)
 #ifdef _WIN32
 	if (!SetProcessWorkingSetSize(GetCurrentProcess(), 0x80000000, 0xC0000000)) // 2-3 GiB
 	{
-		report_fatal_error("Not enough memory for RPCS3 process.");
+		const DWORD error = GetLastError();
+		// A restricted launch token can lack the privilege to raise working-set
+		// bounds. This reservation is a paging hint, not a memory allocation.
+		// Keep the OS-managed bounds and the normal allocation failure checks.
+		if (error == ERROR_PRIVILEGE_NOT_HELD)
+		{
+			sys_log.warning("Working-set reservation unavailable (Win32 error %u); retaining OS-managed working-set bounds", error);
+		}
+		else
+		{
+			report_fatal_error(fmt::format("Not enough memory for RPCS3 process (working-set error=%u).", error));
+		}
 	}
 
 	WSADATA wsa_data{};

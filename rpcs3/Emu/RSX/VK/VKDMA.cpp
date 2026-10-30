@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/CPU/pbd_ordinary_metrics.h"
 #include "VKResourceManager.h"
 #include "VKDMA.h"
 #include "vkutils/device.h"
@@ -154,6 +155,7 @@ namespace vk
 		auto src = map_range(range);
 		auto dst = vm::get_super_ptr(range.start);
 		std::memcpy(dst, src, range.length());
+		::pbd::ordinary_metrics::producer("vulkan_mirror_flush_written", range.start, range.length(), 0);
 
 		// NOTE: Do not unmap. This can be extremely slow on some platforms.
 	}
@@ -260,6 +262,7 @@ namespace vk
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			vm::get_super_ptr<void>(base_address),
 			size);
+		::pbd::ordinary_metrics::producer("vulkan_direct_backing_allocated", base_address, size, 0);
 
 		s_allocated_dma_pool_size += allocated_memory->size();
 	}

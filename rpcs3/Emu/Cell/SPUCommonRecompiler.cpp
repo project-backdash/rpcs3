@@ -9411,7 +9411,7 @@ struct spu_fast : public spu_recompiler_base
 		}
 
 		// Allocate executable area with necessary size
-		const auto result = jit_runtime::alloc(22 + 1 + 9 + ::size32(func.data) * (16 + 16) + 36 + 47, 16);
+		const auto result = jit_runtime::alloc(22 + 1 + 9 + ::size32(func.data) * (16 + 16) + 39 + 47, 16);
 
 		if (!result)
 		{
@@ -9522,11 +9522,14 @@ struct spu_fast : public spu_recompiler_base
 		*raw++ = 0x00;
 		*raw++ = 0x00;
 
-		// lea rdi, [rbp + spu_thread::gpr]
+		// lea rdi, [rbp + spu_thread::gpr]. CPU diagnostic state can move
+		// the register array past 127 bytes; encode a full displacement.
 		*raw++ = 0x48;
 		*raw++ = 0x8d;
-		*raw++ = 0x7d;
-		*raw++ = ::narrow<s8>(::offset32(&spu_thread::gpr));
+		*raw++ = 0xbd;
+		const s32 gpr_off = ::narrow<s32>(::offset32(&spu_thread::gpr));
+		std::memcpy(raw, &gpr_off, 4);
+		raw += 4;
 
 		// Save base pc: mov [rbp + spu_thread::base_pc], eax
 		*raw++ = 0x89;

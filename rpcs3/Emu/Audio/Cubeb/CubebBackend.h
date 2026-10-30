@@ -42,7 +42,7 @@ private:
 
 	atomic_t<bool> m_reset_req = false;
 
-	// Protected by callback mutex
+	// Protected by state callback mutex; empty when pinned or followed by WASAPI.
 	std::string m_default_device{};
 
 	bool m_dev_collection_cb_enabled = false;

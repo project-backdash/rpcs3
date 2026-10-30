@@ -66,6 +66,14 @@ constexpr bool is_error(game_boot_result res)
 	return res != game_boot_result::no_errors;
 }
 
+struct pbd_checkpoint_boot_identity
+{
+	std::string path;
+	std::string sha256;
+	u64 bytes = 0;
+	u64 emulation_generation = 0;
+};
+
 struct EmuCallbacks
 {
 	std::function<void(std::function<void()>, atomic_t<u32>*)> call_from_main_thread;
@@ -154,6 +162,7 @@ class Emulator final
 	std::string m_path_old;
 	std::string m_path_original;
 	std::string m_path_real;
+	std::optional<pbd_checkpoint_boot_identity> m_pbd_checkpoint_boot_identity;
 	std::string m_title_id;
 	std::string m_title;
 	std::string m_localized_title;
@@ -465,6 +474,15 @@ public:
 	void GracefulShutdown(bool allow_autoexit = true, bool async_op = false, bool savestate = false, bool continuous_mode = false);
 	void Kill(bool allow_autoexit = true, bool savestate = false, savestate_stage* stage = nullptr);
 	game_boot_result Restart(bool graceful = true, bool reset_path = true);
+	// Inspection savestate at a validated input entry (PBD_NATIVE_PROBE_OUTPUT); saves and stops, no reload.
+	void PBDInspectCheckpoint();
+
+	std::optional<pbd_checkpoint_boot_identity> PBDGetCheckpointBootIdentity() const
+	{
+		if (!m_pbd_checkpoint_boot_identity || m_pbd_checkpoint_boot_identity->emulation_generation != static_cast<u64>(GetEmulationIdentifier()))
+			return std::nullopt;
+		return m_pbd_checkpoint_boot_identity;
+	}
 	bool Quit(bool force_quit);
 	static void CleanUp();
 
@@ -474,6 +492,10 @@ public:
 	bool IsStopped(bool test_fully = false) const { return test_fully ? m_state == system_state::stopped : m_state <= system_state::stopping; }
 	bool IsReady()   const { return m_state == system_state::ready; }
 	bool IsStarting() const { return m_state == system_state::starting; }
+	bool IsStateClosePending() const
+	{
+		return m_emu_state_close_pending;
+	}
 	void WaitReady() const { m_state.wait(system_state::ready); }
 	auto GetStatus(bool fixup = true) const { system_state state = m_state; return fixup && state == system_state::frozen ? system_state::paused : fixup && state == system_state::stopping ? system_state::stopped : state; }
 

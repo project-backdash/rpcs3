@@ -1,3 +1,6 @@
 #include "resource.h"
+// rpcs3.ico is the Project Backdash app icon (the stacked arrow mark): the 16, 24, 32 and 48 px frames are drawn on
+// pixels, the 64, 128 and 256 px frames are the 512 px master resized. It is the exe icon in Explorer and on pinned
+// shortcuts, and through resources.qrc it is the icon of every window, the game window included.
 IDI_ICON1 ICON "rpcs3.ico"
 frame_icon ICON "rpcs3.ico"

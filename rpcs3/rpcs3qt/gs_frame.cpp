@@ -1,4 +1,8 @@
 #include "gs_frame.h"
+#include "pbd_clips_controller.h"
+#include "pbd_game_host.h"
+#include "pbd_game_window.h"
+#include "pbd_game_window_settings.h"
 #include "gui_settings.h"
 
 #include "Utilities/Config.h"
@@ -129,6 +133,7 @@ gs_frame::gs_frame(QScreen* screen, const QRect& geometry, const QIcon& appIcon,
 	}
 
 	load_gui_settings();
+	m_game_host = std::make_unique<pbd::game_host::window>(*this);
 
 	// Change cursor when in fullscreen.
 	connect(this, &QWindow::visibilityChanged, this, [this](Visibility visibility)
@@ -143,7 +148,7 @@ gs_frame::gs_frame(QScreen* screen, const QRect& geometry, const QIcon& appIcon,
 	// Change cursor when this window gets or loses focus.
 	connect(this, &QWindow::activeChanged, this, [this]()
 	{
-		g_game_window_focused = isActive();
+		g_game_window_focused = m_game_host->configured() ? m_game_host->focused() : isActive();
 		handle_cursor(visibility(), false, true, true);
 	});
 
@@ -152,10 +157,13 @@ gs_frame::gs_frame(QScreen* screen, const QRect& geometry, const QIcon& appIcon,
 	m_mousehide_timer.setSingleShot(true);
 
 	m_progress_indicator = std::make_unique<progress_indicator>(0, 100);
+
+	pbd::game_window::hooks::create_controls(*this);
 }
 
 gs_frame::~gs_frame()
 {
+	pbd::game_window::hooks::shutdown(*this);
 	g_user_asked_for_screenshot = false;
 	g_user_asked_for_recording = false;
 	g_user_asked_for_frame_capture = false;
@@ -218,6 +226,8 @@ void gs_frame::paintEvent(QPaintEvent* event)
 
 void gs_frame::showEvent(QShowEvent* event)
 {
+	if (pbd::game_window::hooks::show_event(*this, event))
+		return;
 	// We have to calculate new window positions, since the frame is only known once the window was created.
 	// We will try to find the originally requested dimensions if possible by moving the frame.
 
@@ -267,6 +277,9 @@ void gs_frame::handle_shortcut(gui::shortcuts::shortcut shortcut_key, const QKey
 	{
 		return;
 	}
+
+	if (pbd::game_window::hooks::shortcut(*this, shortcut_key, key_sequence))
+		return;
 
 	switch (shortcut_key)
 	{
@@ -330,6 +343,7 @@ void gs_frame::handle_shortcut(gui::shortcuts::shortcut shortcut_key, const QKey
 	{
 		if (!Emu.IsStopped())
 		{
+			m_game_host->shutdown();
 			Emu.GracefulShutdown(true, true);
 		}
 		break;
@@ -413,12 +427,12 @@ void gs_frame::handle_shortcut(gui::shortcuts::shortcut shortcut_key, const QKey
 	}
 	case gui::shortcuts::shortcut::gw_volume_up:
 	{
-		audio::change_volume(5);
+		pbd::game_window::settings_menu::volume_key(m_settings.get(), 5);
 		break;
 	}
 	case gui::shortcuts::shortcut::gw_volume_down:
 	{
-		audio::change_volume(-5);
+		pbd::game_window::settings_menu::volume_key(m_settings.get(), -5);
 		break;
 	}
 	case gui::shortcuts::shortcut::gw_toggle_mouse_gyro:
@@ -439,6 +453,11 @@ void gs_frame::handle_shortcut(gui::shortcuts::shortcut shortcut_key, const QKey
 
 void gs_frame::toggle_fullscreen()
 {
+	if (m_game_host->configured())
+	{
+		m_game_host->toggle_fullscreen();
+		return;
+	}
 	Emu.CallFromMainThread([this]()
 	{
 		if (visibility() == FullScreen)
@@ -462,6 +481,7 @@ void gs_frame::toggle_fullscreen()
 
 void gs_frame::toggle_recording()
 {
+	if (m_clips) { m_clips->record(); return; }
 	utils::video_provider& video_provider = g_fxo->get<utils::video_provider>();
 
 	if (g_recording_mode == recording_mode::cell)
@@ -680,6 +700,7 @@ void gs_frame::close()
 
 	Emu.CallFromMainThread([this]()
 	{
+		m_game_host->shutdown();
 		// Hide window if necessary
 		hide_on_close();
 
@@ -703,11 +724,6 @@ void gs_frame::reset()
 {
 }
 
-bool gs_frame::shown()
-{
-	return QWindow::isVisible();
-}
-
 void gs_frame::hide()
 {
 	Emu.CallFromMainThread([this]() { QWindow::hide(); });
@@ -716,36 +732,40 @@ void gs_frame::hide()
 void gs_frame::show()
 {
 	Emu.CallFromMainThread([this]()
-	{
-		QWindow::show();
+		{
+			if (pbd::game_window::hooks::show(*this))
+				return;
+			QWindow::show();
 
-		if (g_cfg.misc.start_fullscreen || m_start_games_fullscreen)
-		{
-			setVisibility(FullScreen);
-		}
-		else if (const QVariant var = m_gui_settings->GetValue(gui::gs_visibility); var.canConvert<QString>() && !m_gui_settings->GetValue(gui::gs_resize).toBool())
-		{
-			// Restore saved visibility from last time. Make sure not to hide the window, or the user can't access it anymore.
-			if (const Visibility visibility = gui::string_to_visibility(var.value<QString>()); visibility != Visibility::Hidden)
+			if (g_cfg.misc.start_fullscreen || m_start_games_fullscreen)
 			{
-				setVisibility(visibility);
+				setVisibility(FullScreen);
 			}
-		}
-	});
+			else if (const QVariant var = m_gui_settings->GetValue(gui::gs_visibility); var.canConvert<QString>() && !m_gui_settings->GetValue(gui::gs_resize).toBool())
+			{
+				// Restore saved visibility from last time. Make sure not to hide the window, or the user can't access it anymore.
+				if (const Visibility visibility = gui::string_to_visibility(var.value<QString>()); visibility != Visibility::Hidden)
+				{
+					setVisibility(visibility);
+				}
+			}
+		});
 }
 
 display_handle_t gs_frame::handle() const
 {
 #ifdef _WIN32
+	if (m_game_host->configured())
+		return reinterpret_cast<HWND>(m_game_host->native_handle());
 	return reinterpret_cast<HWND>(this->winId());
 #elif defined(__APPLE__)
-	return reinterpret_cast<void*>(this->winId()); //NSView
+	return reinterpret_cast<void*>(this->winId()); // NSView
 #else
 #ifdef HAVE_WAYLAND
-	QPlatformNativeInterface *native = QGuiApplication::platformNativeInterface();
-	struct wl_display *wl_dpy = static_cast<struct wl_display *>(
+	QPlatformNativeInterface* native = QGuiApplication::platformNativeInterface();
+	struct wl_display* wl_dpy = static_cast<struct wl_display*>(
 		native->nativeResourceForWindow("display", NULL));
-	struct wl_surface *wl_surf = static_cast<struct wl_surface *>(
+	struct wl_surface* wl_surf = static_cast<struct wl_surface*>(
 		native->nativeResourceForWindow("surface", const_cast<QWindow*>(static_cast<const QWindow*>(this))));
 	if (wl_dpy != nullptr && wl_surf != nullptr)
 	{
@@ -758,7 +778,7 @@ display_handle_t gs_frame::handle() const
 		return std::make_pair(XOpenDisplay(0), static_cast<ulong>(this->winId()));
 	}
 #else
-		fmt::throw_exception("Vulkan X11 support disabled at compile-time.");
+	fmt::throw_exception("Vulkan X11 support disabled at compile-time.");
 #endif
 #endif
 }
@@ -780,6 +800,8 @@ void gs_frame::delete_context(draw_context_t context)
 
 int gs_frame::client_width()
 {
+	if (m_game_host->configured())
+		return m_game_host->width_px();
 #ifdef _WIN32
 	RECT rect;
 	if (GetClientRect(reinterpret_cast<HWND>(winId()), &rect))
@@ -792,6 +814,8 @@ int gs_frame::client_width()
 
 int gs_frame::client_height()
 {
+	if (m_game_host->configured())
+		return m_game_host->height_px();
 #ifdef _WIN32
 	RECT rect;
 	if (GetClientRect(reinterpret_cast<HWND>(winId()), &rect))
@@ -804,29 +828,32 @@ int gs_frame::client_height()
 
 f64 gs_frame::client_display_rate()
 {
+	if (m_game_host->managed())
+		return m_game_host->refresh_rate();
 	f64 rate = 20.; // Minimum is 20
 
 	Emu.BlockingCallFromMainThread([&rate]()
-	{
-		const QList<QScreen*> screens = QGuiApplication::screens();
-
-		for (int i = 0; i < screens.count(); i++)
 		{
-			rate = std::fmax(rate, ::at32(screens, i)->refreshRate());
-		}
-	});
+			const QList<QScreen*> screens = QGuiApplication::screens();
+
+			for (int i = 0; i < screens.count(); i++)
+			{
+				rate = std::fmax(rate, ::at32(screens, i)->refreshRate());
+			}
+		});
 
 	return rate;
 }
 
-void gs_frame::flip(draw_context_t /*context*/, bool /*skip_frame*/)
+void gs_frame::flip(draw_context_t /*context*/, bool skip_frame)
 {
 	static Timer fps_t;
-
+	pbd::game_window::hooks::before_flip(*this, skip_frame);
 	if (!m_flip_showed_frame)
 	{
 		// Show on first flip
 		m_flip_showed_frame = true;
+		pbd::game_window::hooks::first_frame();
 		show();
 		fps_t.Start();
 	}
@@ -1205,6 +1232,8 @@ void gs_frame::mouse_hide_timeout()
 
 bool gs_frame::event(QEvent* ev)
 {
+	if (pbd::game_window::hooks::event(*this, ev))
+		return true;
 	if (ev->type() == QEvent::Close)
 	{
 		if (m_gui_settings->GetValue(gui::ib_confirm_exit).toBool())
@@ -1232,6 +1261,8 @@ bool gs_frame::event(QEvent* ev)
 			return QWindow::event(ev);
 		}
 
+		m_game_host->shutdown();
+
 		if (Emu.IsStopped())
 		{
 			// This should be unreachable, but never say never. Properly close the window anyway.
@@ -1241,6 +1272,8 @@ bool gs_frame::event(QEvent* ev)
 		{
 			// Notify progress dialog cancellation
 			g_system_progress_canceled = true;
+
+			pbd::game_window::hooks::window_closed();
 
 			// Issue async shutdown
 			Emu.GracefulShutdown(true, true);

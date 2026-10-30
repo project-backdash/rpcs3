@@ -4,6 +4,7 @@
 #include <util/logs.hpp>
 #include <deque>
 #include <unordered_map>
+#include "Emu/RSX/pbd_frame_tags.h"
 
 template <typename T>
 class named_thread;
@@ -76,16 +77,29 @@ namespace rsx
 
 	struct display_flip_info_t
 	{
-		std::deque<u32> buffer_queue;
+		struct queued_buffer
+		{
+			u32 buffer;
+			::pbd::frame_presentation::frame_tag_queue::record pbd_token;
+			u32 pbd_bp_kind = 0, pbd_bp_marker = 0, pbd_bp_index = 0;
+		};
+		std::deque<queued_buffer> buffer_queue;
+		::pbd::frame_presentation::frame_tag_queue::record pbd_token{};
+		u64 pbd_context = ~u64{0};
+		u64 pbd_sequence = 0;
+		u32 pbd_boundary = ~u32{0};
+		bool pbd_live = false;
+		// Black-frame probe tag of the popped buffer: kind 0 none, 1 post-window live frame, 2 in flight at a restore, 3 baseline.
+		u32 pbd_bp_kind = 0, pbd_bp_marker = 0, pbd_bp_index = 0;
 		u32 buffer;
 		bool skip_frame;
 		bool emu_flip;
 		bool in_progress;
 		frame_statistics_t stats;
 
-		inline void push(u32 _buffer)
+		inline void push(u32 _buffer, const ::pbd::frame_presentation::frame_tag_queue::record& token = {})
 		{
-			buffer_queue.push_back(_buffer);
+			buffer_queue.push_back({_buffer, token});
 		}
 
 		inline bool pop(u32 _buffer)
@@ -100,9 +114,17 @@ namespace rsx
 				const auto index = buffer_queue.front();
 				buffer_queue.pop_front();
 
-				if (index == _buffer)
+				if (index.buffer == _buffer)
 				{
 					buffer = _buffer;
+					pbd_token = index.pbd_token;
+					pbd_context = pbd_token.context;
+					pbd_sequence = pbd_token.sequence;
+					pbd_boundary = pbd_token.boundary;
+					pbd_live = pbd_token.live;
+					pbd_bp_kind = index.pbd_bp_kind;
+					pbd_bp_marker = index.pbd_bp_marker;
+					pbd_bp_index = index.pbd_bp_index;
 					return true;
 				}
 			} while (!buffer_queue.empty());
@@ -122,6 +144,10 @@ namespace rsx
 		vblank_thread(const vblank_thread&) = delete;
 
 		void set_thread(std::shared_ptr<named_thread<std::function<void()>>> thread);
+
+		// PBD: wake the vblank thread's poll so a virtual vblank credit is served at
+		// once instead of at the next poll (see pbd::replay_pacing::grant).
+		void notify();
 
 		vblank_thread& operator=(thread_state);
 		vblank_thread& operator=(const vblank_thread&) = delete;

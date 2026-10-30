@@ -4,13 +4,14 @@
 #include "Emu/System.h"
 #include "Emu/IdManager.h"
 #include "Emu/RSX/Overlays/overlay_message.h"
+#include "Emu/PBD/pbd_output_gain.h"
 #include <cmath>
 
 namespace audio
 {
 	f32 get_volume()
 	{
-		return g_fxo->get<audio_fxo>().audio_muted ? 0.0f : g_cfg.audio.volume / 100.0f;
+		return g_fxo->get<audio_fxo>().audio_muted ? 0.0f : pbd::output_gain::level(static_cast<int>(g_cfg.audio.volume.get()));
 	}
 
 	void toggle_mute()

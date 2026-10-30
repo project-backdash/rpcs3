@@ -12,6 +12,8 @@
 #include "Utilities/JIT.h"
 
 #include "SPUThread.h"
+#include "pbd_spu_checkpoint.h"
+#include "Emu/Cell/lv2/sys_spu.h"
 #include "SPUAnalyser.h"
 #include "SPUInterpreter.h"
 #include <algorithm>
@@ -1151,6 +1153,14 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	// Call cpu_thread::check_state if necessary and return or continue (full check)
 	void check_state(u32 addr, bool may_be_unsafe_for_savestate = true)
 	{
+		// Load/register SSA definitions before splitting the control flow: a
+		// check-only load cached in m_block would not dominate the fast path.
+		const bool materialized = g_cfg.core.spu_block_size == spu_block_size_type::safe &&
+		                          m_block && !m_block->block_wide_reg_store_elimination && (!m_finfo || !m_finfo->fn);
+		std::array<llvm::Value*, 128> resume_regs{};
+		if (materialized)
+			for (u32 i = 0; i < 128; ++i)
+				resume_regs[i] = get_reg_fixed(i, get_type<u32[4]>());
 		const auto pstate = spu_ptr(&spu_thread::state);
 		const auto _body = llvm::BasicBlock::Create(m_context, "", m_function);
 		const auto check = llvm::BasicBlock::Create(m_context, "", m_function);
@@ -1168,7 +1178,10 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 			spu_context_attr(m_ir->CreateStore(m_ir->getInt8(1), spu_ptr(&spu_thread::unsavable)))->setVolatile(true);
 		}
 
-		m_ir->CreateCall(m_test_state, {m_thread});
+		if (materialized)
+			for (u32 i = 0; i < 128; ++i)
+				spu_context_attr(m_ir->CreateStore(resume_regs[i], init_reg_fixed(i)))->setVolatile(true);
+		m_ir->CreateCall(m_test_state, {m_thread, m_ir->getInt1(materialized), m_ir->getInt1(may_be_unsafe_for_savestate)});
 
 		if (may_be_unsafe_for_savestate)
 		{
@@ -2524,7 +2537,7 @@ public:
 		}
 
 		// Function that executes check_state and escapes if necessary
-		m_test_state = llvm::cast<llvm::Function>(m_module->getOrInsertFunction("spu_test_state", get_ftype<void, u8*>()).getCallee());
+		m_test_state = llvm::cast<llvm::Function>(m_module->getOrInsertFunction("spu_test_state", get_ftype<void, u8*, bool, bool>()).getCallee());
 		m_test_state->setLinkage(GlobalValue::InternalLinkage);
 #ifdef ARCH_ARM64
 		// LLVM doesn't support PreserveAll on arm64.
@@ -2535,7 +2548,7 @@ public:
 		m_ir->SetInsertPoint(BasicBlock::Create(m_context, "", m_test_state));
 		const auto escape_yes = BasicBlock::Create(m_context, "", m_test_state);
 		const auto escape_no = BasicBlock::Create(m_context, "", m_test_state);
-		m_ir->CreateCondBr(call("spu_exec_check_state", &exec_check_state, m_test_state->getArg(0)), escape_yes, escape_no);
+		m_ir->CreateCondBr(call("spu_exec_check_state_bound", &exec_check_state_bound, m_test_state->getArg(0), m_test_state->getArg(1), m_test_state->getArg(2)), escape_yes, escape_no);
 		m_ir->SetInsertPoint(escape_yes);
 		call("spu_escape", spu_runtime::g_escape, m_test_state->getArg(0));
 		m_ir->CreateRetVoid();
@@ -4460,6 +4473,17 @@ public:
 		return _spu->check_state();
 	}
 
+	static bool exec_check_state_bound(spu_thread* spu, bool materialized, bool clears_unsavable)
+	{
+		if (!materialized)
+			return exec_check_state(spu);
+		pbd_spu_materialized_scope state_image(*spu, 0x10000u | (clears_unsavable ? 0x1000000u : 0));
+		const bool escape = exec_check_state(spu);
+		if (escape)
+			pbd_spu_note_materialized_exit(*spu);
+		return escape;
+	} // Scope ends before spu_test_state can escape its generated native frame.
+
 	template <spu_intrp_func_t F>
 	static void exec_fall(spu_thread* _spu, spu_opcode_t op)
 	{
@@ -4517,6 +4541,22 @@ public:
 		}
 	}
 
+	static void exec_stop_materialized(spu_thread* spu, u32 code)
+	{
+		bool completed;
+		{
+			pbd_spu_materialized_scope materialized(*spu, code);
+			completed = spu->stop_and_signal(code);
+		} // Never retain a stack registration across g_escape's native jump.
+		if (!completed || spu->state & cpu_flag::again)
+			spu_runtime::g_escape(spu);
+		if (spu->test_stopped())
+		{
+			spu->pc += 4;
+			spu_runtime::g_escape(spu);
+		}
+	}
+
 	void STOP(spu_opcode_t op) //
 	{
 		if (m_interp_magn)
@@ -4527,7 +4567,15 @@ public:
 
 		update_pc();
 		ensure_gpr_stores();
-		call("spu_syscall", &exec_stop, m_thread, m_ir->getInt32(op.opcode & 0x3fff));
+		if (g_cfg.core.spu_block_size == spu_block_size_type::safe && (op.opcode & 0x3fff) == SYS_SPU_THREAD_STOP_RECEIVE_EVENT)
+		{
+			ensure(m_block && !m_block->block_wide_reg_store_elimination && (!m_finfo || !m_finfo->fn));
+			for (u32 i = 0; i < 128; ++i)
+				spu_context_attr(m_ir->CreateStore(get_reg_fixed(i, get_type<u32[4]>()), init_reg_fixed(i)))->setVolatile(true);
+			call("spu_syscall_materialized", &exec_stop_materialized, m_thread, m_ir->getInt32(op.opcode & 0x3fff));
+		}
+		else
+			call("spu_syscall", &exec_stop, m_thread, m_ir->getInt32(op.opcode & 0x3fff));
 
 		if (g_cfg.core.spu_block_size == spu_block_size_type::safe)
 		{
@@ -4695,7 +4743,7 @@ public:
 		case SPU_RdDec:
 		{
 #if defined(ARCH_X64) || defined(ARCH_ARM64)
-			if (utils::get_tsc_freq() && !(g_cfg.core.spu_loop_detection) && (g_cfg.core.clocks_scale == 100))
+			if (!pbd_clock_guarded() && utils::get_tsc_freq() && !(g_cfg.core.spu_loop_detection) && (g_cfg.core.clocks_scale == 100))
 			{
 				const auto timebase_offs = m_ir->CreateLoad(get_type<u64>(), m_ir->CreateIntToPtr(m_ir->getInt64(reinterpret_cast<u64>(&g_timebase_offs)), get_type<u64*>()));
 				const auto timestamp = m_ir->CreateLoad(get_type<u64>(), spu_ptr(&spu_thread::ch_dec_start_timestamp));
@@ -5518,7 +5566,7 @@ public:
 			call("spu_get_events", &exec_get_events, m_thread, m_ir->getInt32(SPU_EVENT_TM));
 
 #if defined(ARCH_X64) || defined(ARCH_ARM64)
-			if (utils::get_tsc_freq() && !(g_cfg.core.spu_loop_detection) && (g_cfg.core.clocks_scale == 100))
+			if (!pbd_clock_guarded() && utils::get_tsc_freq() && !(g_cfg.core.spu_loop_detection) && (g_cfg.core.clocks_scale == 100))
 			{
 				const auto timebase_offs = m_ir->CreateLoad(get_type<u64>(), m_ir->CreateIntToPtr(m_ir->getInt64(reinterpret_cast<u64>(&g_timebase_offs)), get_type<u64*>()));
 				const auto tsc = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));
@@ -10040,7 +10088,7 @@ public:
 			{
 				// Can't afford external tail call in true functions
 				m_ir->CreateStore(m_ir->getInt32("BIJT"_u32), _ptr(m_memptr, 0xffdead20));
-				m_ir->CreateCall(m_test_state, {m_thread});
+				m_ir->CreateCall(m_test_state, {m_thread, m_ir->getFalse(), m_ir->getFalse()});
 				m_ir->CreateBr(sw->getDefaultDest());
 			}
 			else

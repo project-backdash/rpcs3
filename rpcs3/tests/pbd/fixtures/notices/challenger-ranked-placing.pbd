@@ -1,0 +1,17 @@
+PBD-MENU-1
+generation=12
+visible=1
+kind=challenger
+selected=0
+close=0
+title=A%20NEW%20CHALLENGER
+subtitle=Kai%20%C2%B7%20Sergei%20Dragunov
+confirm=Choose
+back=
+row=1|JOIN%20BATTLE|
+row=1|DECLINE||Two%20declines%20in%2024%20h%20pause%20Ranked.
+timer=1761400015000|15000|Accept%20match||0
+countdown_row=0
+card=SERGEI%20DRAGUNOV|Kai|r15
+ping=2|142
+pill=placement

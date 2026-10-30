@@ -18,45 +18,10 @@
 
 LOG_CHANNEL(XAudio);
 
-template <>
-void fmt_class_string<ERole>::format(std::string& out, u64 arg)
-{
-	format_enum(out, arg, [](auto value)
-	{
-		switch (value)
-		{
-		case eConsole: return "eConsole";
-		case eMultimedia: return "eMultimedia";
-		case eCommunications: return "eCommunications";
-		case ERole_enum_count: return unknown;
-		}
-
-		return unknown;
-	});
-}
-
-template <>
-void fmt_class_string<EDataFlow>::format(std::string& out, u64 arg)
-{
-	format_enum(out, arg, [](auto value)
-	{
-		switch (value)
-		{
-		case eRender: return "eRender";
-		case eCapture: return "eCapture";
-		case eAll: return "eAll";
-		case EDataFlow_enum_count: return unknown;
-		}
-
-		return unknown;
-	});
-}
-
 XAudio2Backend::XAudio2Backend()
 	: AudioBackend()
 {
 	Microsoft::WRL::ComPtr<IXAudio2> instance{};
-	Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator{};
 
 	// In order to prevent errors on CreateMasteringVoice, apparently we need CoInitializeEx according to:
 	// https://docs.microsoft.com/en-us/windows/win32/api/xaudio2fx/nf-xaudio2fx-xaudio2createvolumemeter
@@ -77,27 +42,13 @@ XAudio2Backend::XAudio2Backend()
 		XAudio.error("RegisterForCallbacks() failed: %s (0x%08x)", std::system_category().message(hr), static_cast<u32>(hr));
 	}
 
-	// Try to register a listener for device changes
-	if (HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&enumerator)); FAILED(hr))
-	{
-		XAudio.error("CoCreateInstance() failed: %s (0x%08x)", std::system_category().message(hr), static_cast<u32>(hr));
-		return;
-	}
-
-	// All succeeded, "commit"
+	// Default voices use the WASAPI virtual client; explicit device IDs stay pinned.
 	m_xaudio2_instance = std::move(instance);
-	m_device_enumerator = std::move(enumerator);
 }
 
 XAudio2Backend::~XAudio2Backend()
 {
 	Close();
-
-	if (m_device_enumerator != nullptr)
-	{
-		m_device_enumerator->UnregisterEndpointNotificationCallback(this);
-		m_device_enumerator = nullptr;
-	}
 
 	if (m_xaudio2_instance != nullptr)
 	{
@@ -119,12 +70,6 @@ bool XAudio2Backend::Initialized()
 bool XAudio2Backend::Operational()
 {
 	return m_source_voice != nullptr && !m_reset_req.observe();
-}
-
-bool XAudio2Backend::DefaultDeviceChanged()
-{
-	std::lock_guard lock{m_state_cb_mutex};
-	return !m_reset_req.observe() && m_default_dev_changed;
 }
 
 void XAudio2Backend::Play()
@@ -160,14 +105,10 @@ void XAudio2Backend::CloseUnlocked()
 		m_master_voice = nullptr;
 	}
 
-	m_device_enumerator->UnregisterEndpointNotificationCallback(this);
 
 	m_playing = false;
 	m_last_sample.fill(0);
 
-	std::lock_guard lock(m_state_cb_mutex);
-	m_default_dev_changed = false;
-	m_current_device.clear();
 }
 
 void XAudio2Backend::Close()
@@ -210,34 +151,11 @@ bool XAudio2Backend::Open(std::string_view dev_id, AudioFreq freq, AudioSampleSi
 	CloseUnlocked();
 
 	const bool use_default_device = dev_id.empty() || dev_id == audio_device_enumerator::DEFAULT_DEV_ID;
-	std::string selected_dev_id{};
+	const std::wstring selected_dev_id = use_default_device ? std::wstring{} : utf8_to_wchar(dev_id);
+	// Passing Default as a concrete ID opts out of Windows live output routing.
+	// Keep the voice format stable while the virtual client adapts to a new endpoint.
 
-	if (use_default_device)
-	{
-		Microsoft::WRL::ComPtr<IMMDevice> default_dev{};
-		if (HRESULT hr = m_device_enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &default_dev); FAILED(hr))
-		{
-			XAudio.error("GetDefaultAudioEndpoint() failed: %s (0x%08x)", std::system_category().message(hr), static_cast<u32>(hr));
-			return false;
-		}
-
-		LPWSTR default_id{};
-		if (HRESULT hr = default_dev->GetId(&default_id); FAILED(hr))
-		{
-			XAudio.error("GetId() failed: %s (0x%08x)", std::system_category().message(hr), static_cast<u32>(hr));
-			return false;
-		}
-
-		selected_dev_id = wchar_to_utf8(std::wstring_view{default_id});
-		CoTaskMemFree(default_id);
-		if (selected_dev_id.empty())
-		{
-			XAudio.error("Default device id is empty");
-			return false;
-		}
-	}
-
-	if (HRESULT hr = m_xaudio2_instance->CreateMasteringVoice(&m_master_voice, 0, 0, 0, utf8_to_wchar(use_default_device ? selected_dev_id : dev_id).c_str()); FAILED(hr))
+	if (HRESULT hr = m_xaudio2_instance->CreateMasteringVoice(&m_master_voice, 0, 0, 0, use_default_device ? nullptr : selected_dev_id.c_str()); FAILED(hr))
 	{
 		XAudio.error("CreateMasteringVoice() failed: %s (0x%08x)", std::system_category().message(hr), static_cast<u32>(hr));
 		m_master_voice = nullptr;
@@ -284,13 +202,6 @@ bool XAudio2Backend::Open(std::string_view dev_id, AudioFreq freq, AudioSampleSi
 		return false;
 	}
 
-	if (HRESULT hr = m_device_enumerator->RegisterEndpointNotificationCallback(this); FAILED(hr))
-	{
-		XAudio.error("RegisterEndpointNotificationCallback() failed: %s (0x%08x)", std::system_category().message(hr), static_cast<u32>(hr));
-		CloseUnlocked();
-		return false;
-	}
-
 	if (HRESULT hr = m_source_voice->SetVolume(1.0f); FAILED(hr))
 	{
 		XAudio.error("SetVolume() failed: %s (0x%08x)", std::system_category().message(hr), static_cast<u32>(hr));
@@ -300,7 +211,7 @@ bool XAudio2Backend::Open(std::string_view dev_id, AudioFreq freq, AudioSampleSi
 
 	if (use_default_device)
 	{
-		m_current_device = selected_dev_id;
+		XAudio.notice("Default output follows Windows device changes inside WASAPI");
 	}
 
 	return true;
@@ -376,47 +287,4 @@ void XAudio2Backend::OnCriticalError(HRESULT Error) noexcept
 	{
 		m_state_callback(AudioStateEvent::UNSPECIFIED_ERROR);
 	}
-}
-
-HRESULT XAudio2Backend::OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR new_default_device_id)
-{
-	XAudio.notice("OnDefaultDeviceChanged(flow=%s, role=%s, new_default_device_id=0x%x)", flow, role, new_default_device_id);
-
-	if (!new_default_device_id)
-	{
-		XAudio.notice("OnDefaultDeviceChanged(): new_default_device_id empty");
-		return S_OK;
-	}
-
-	// Listen only for one device role, otherwise we're going to receive more than one notification for flow type
-	if (role != eConsole)
-	{
-		XAudio.notice("OnDefaultDeviceChanged(): we don't care about this device");
-		return S_OK;
-	}
-
-	std::lock_guard lock(m_state_cb_mutex);
-
-	// Non default device is used
-	if (m_current_device.empty())
-	{
-		return S_OK;
-	}
-
-	const std::string new_device_id = wchar_to_utf8(std::wstring_view{new_default_device_id});
-
-	if (flow == eRender || flow == eAll)
-	{
-		if (!m_reset_req.observe() && new_device_id != m_current_device)
-		{
-			m_default_dev_changed = true;
-
-			if (m_state_callback)
-			{
-				m_state_callback(AudioStateEvent::DEFAULT_DEVICE_MAYBE_CHANGED);
-			}
-		}
-	}
-
-	return S_OK;
 }

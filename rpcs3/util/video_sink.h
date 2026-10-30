@@ -18,6 +18,18 @@ namespace utils
 		virtual void stop(bool flush = true) = 0;
 		virtual void pause(bool flush = true) = 0;
 		virtual void resume() = 0;
+		virtual bool wants_frame() const { return true; }
+		virtual bool asynchronous_capture() const { return false; }
+		virtual bool offer_frame(std::vector<u8>& frame, u32 pitch, u32 width, u32 height, s32 pixel_format, usz timestamp_ms)
+		{
+			return add_frame(frame, pitch, width, height, pixel_format, timestamp_ms);
+		}
+		virtual bool offer_samples(const u8* buf, u32 sample_count, u16 channels, usz timestamp_us)
+		{
+			return add_audio_samples(buf, sample_count, channels, timestamp_us);
+		}
+		// A presented frame that never reached offer_frame (a busy readback, a full copy queue, a late frame).
+		virtual void frame_dropped() {}
 
 		bool add_frame(std::vector<u8>& frame, u32 pitch, u32 width, u32 height, s32 pixel_format, usz timestamp_ms)
 		{

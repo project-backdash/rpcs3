@@ -2,6 +2,9 @@
 
 #include "Utilities/Thread.h"
 #include <string>
+#include <atomic>
+#include <mutex>
+#include <set>
 
 struct gdb_cmd;
 
@@ -18,33 +21,38 @@ class gdb_thread
 	shared_ptr<cpu_thread> selected_thread{};
 	u64 continue_ops_thread_id = ANY_THREAD;
 	u64 general_ops_thread_id = ANY_THREAD;
+	bool resume_on_disconnect = false;
+	bool session_active = false;
+	const char* session_error = nullptr;
+	std::mutex session_mutex;
+	std::set<u32> session_paused_threads;
+	std::set<u32> session_breakpoints;
+	u64 stepping_thread_id = ANY_THREAD;
+	void cleanup_session();
+	bool fail_session(const char* message);
 
 	//initialize server socket and start listening
 	void start_server();
 	//read at most cnt bytes to buf, returns number of bytes actually read
-	int read(void* buf, int cnt) const;
+	int read(void* buf, int cnt);
 	//reads one character
-	char read_char();
+	bool read_char(char& result);
 	//reads pairs of hex characters and returns their integer value
-	u8 read_hexbyte();
+	bool read_hexbyte(u8& result);
 
-	// Tries to read command, returns false on error
+	// False means checksum mismatch or a failure recorded in session_error.
 	bool try_read_cmd(gdb_cmd& out_cmd);
 
-	//reads commands until receiveing one with valid checksum
-	//in case of other exception (i.e. wrong first char of command)
-	//it will log exception text and return false
-	//in that case best for caller would be to stop reading, because
-	//chance of getting correct command is low
+	// Retry checksum mismatches; return false on transport/protocol failure.
 	bool read_cmd(gdb_cmd& out_cmd);
 	//send cnt bytes from buf to client
-	void send(const char* buf, int cnt) const;
+	bool send(const char* buf, int cnt);
 	//send character to client
-	void send_char(char c);
+	bool send_char(char c);
 	//acknowledge packet, either as accepted or declined
-	void ack(bool accepted);
+	bool ack(bool accepted);
 	//sends command body cmd to client
-	void send_cmd(std::string_view cmd);
+	bool send_cmd(std::string_view cmd);
 	//sends command to client until receives positive acknowledgement
 	//returns false in case some error happened, and command wasn't sent
 	bool send_cmd_ack(std::string_view cmd);
@@ -63,7 +71,7 @@ class gdb_thread
 	//send reason of stop, returns false if sending response failed
 	bool send_reason();
 
-	void wait_with_interrupts();
+	bool wait_with_interrupts();
 
 	//commands
 	bool cmd_extended_mode(gdb_cmd& cmd);
@@ -84,11 +92,12 @@ class gdb_thread
 	bool cmd_vcont(gdb_cmd& cmd);
 	bool cmd_set_breakpoint(gdb_cmd& cmd);
 	bool cmd_remove_breakpoint(gdb_cmd& cmd);
+	bool cmd_detach(gdb_cmd& cmd);
 
 public:
 	bool from_breakpoint = true;
-	bool paused = false;
-	u64 pausedBy = 0;
+	std::atomic<bool> paused{false};
+	std::atomic<u64> pausedBy{0};
 
 	gdb_thread() noexcept;
 	~gdb_thread();

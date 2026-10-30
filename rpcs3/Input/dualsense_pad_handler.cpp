@@ -753,12 +753,15 @@ std::unordered_map<u32, u16> dualsense_pad_handler::get_button_values(const std:
 	keyBuffer[DualSenseKeyCodes::Mic]      = ((data & 0x04) != 0) ? 255 : 0;
 
 	// Touch Pad
+	std::optional<float> touch_x;
 	for (const dualsense_touch_point& point : input.points)
 	{
 		if (!(point.contact & DUALSENSE_TOUCH_POINT_INACTIVE))
 		{
 			const s32 x = (point.x_hi << 8) | point.x_lo;
 			const s32 y = (point.y_hi << 4) | point.y_lo;
+			if (!is_simple_mode && !touch_x && x >= 0 && x < DUALSENSE_TOUCHPAD_WIDTH)
+				touch_x = static_cast<float>(x) / DUALSENSE_TOUCHPAD_WIDTH;
 
 			const f32 x_scaled = ScaledInput(static_cast<float>(x), 0.0f, static_cast<float>(DUALSENSE_TOUCHPAD_WIDTH), 0.0f, 255.0f);
 			const f32 y_scaled = ScaledInput(static_cast<float>(y), 0.0f, static_cast<float>(DUALSENSE_TOUCHPAD_HEIGHT), 0.0f, 255.0f);
@@ -770,6 +773,16 @@ std::unordered_map<u32, u16> dualsense_pad_handler::get_button_values(const std:
 			keyBuffer[DualSenseKeyCodes::Touch_D] = Clamp0To255((y_scaled - 127.5f) * 2.0f);
 		}
 	}
+
+	const bool touch_was_down = dev->practice_touchpad.down;
+	const auto system = dev->practice_touchpad.update(keyBuffer[DualSenseKeyCodes::TouchPad] != 0, touch_x,
+		pbd::practice::controls::touchpad_enabled());
+	if (system && !touch_was_down)
+		dualsense_log.notice("Practice: touchpad click is %s", dev->practice_touchpad.describe());
+	if (system & 0x0100)
+		keyBuffer[DualSenseKeyCodes::Share] = 255;
+	if (system & 0x0800)
+		keyBuffer[DualSenseKeyCodes::Options] = 255;
 
 	if (dev->feature_set == DualSenseDevice::DualSenseFeatureSet::Edge)
 	{

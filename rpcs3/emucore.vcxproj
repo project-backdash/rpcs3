@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -223,6 +223,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="util\video_provider.cpp" />
+    <ClCompile Include="util\pbd_clips.cpp" />
     <ClCompile Include="util\media_utils.cpp" />
     <ClCompile Include="util\yaml.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -294,6 +295,7 @@
     <ClCompile Include="Emu\Cell\PPUAnalyser.cpp" />
     <ClCompile Include="Emu\Cell\PPUTranslator.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
     <ClCompile Include="Emu\CPU\CPUTranslator.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -384,7 +386,18 @@
     <ClCompile Include="Emu\Cell\Modules\cellNetCtl.cpp" />
     <ClCompile Include="Emu\Cell\Modules\cellOskDialog.cpp" />
     <ClCompile Include="Emu\Cell\Modules\cellOvis.cpp" />
-    <ClCompile Include="Emu\Cell\Modules\cellPad.cpp" />
+    <ClCompile Include="Emu\Cell\Modules\cellPad.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\Modules\pbd_pad_read.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\Modules\pbd_pad_words.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="Emu\Cell\Modules\cellPamf.cpp" />
     <ClCompile Include="Emu\Cell\Modules\cellPesmUtility.cpp" />
     <ClCompile Include="Emu\Cell\Modules\cellPhotoDecode.cpp" />
@@ -417,7 +430,10 @@
     <ClCompile Include="Emu\Cell\Modules\cellSysconf.cpp" />
     <ClCompile Include="Emu\Cell\Modules\cellSysCache.cpp" />
     <ClCompile Include="Emu\Cell\Modules\cellSysmodule.cpp" />
-    <ClCompile Include="Emu\Cell\Modules\cellSysutil.cpp" />
+    <ClCompile Include="Emu\Cell\Modules\cellSysutil.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="Emu\Cell\Modules\cellSysutilAp.cpp" />
     <ClCompile Include="Emu\Cell\Modules\cellSysutilAvc.cpp" />
     <ClCompile Include="Emu\Cell\Modules\cellSysutilAvc2.cpp" />
@@ -517,6 +533,13 @@
     <ClCompile Include="Emu\RSX\Overlays\overlay_message_dialog.cpp" />
     <ClCompile Include="Emu\RSX\Overlays\overlay_osk.cpp" />
     <ClCompile Include="Emu\RSX\Overlays\overlay_perf_metrics.cpp" />
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_overlays.cpp" />
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_status_overlay.cpp" />
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_menu_overlay.cpp" />
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_practice_overlay.cpp" />
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_spectator_overlay.cpp" />
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_lobby_set_overlay.cpp" />
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_settings_overlay.cpp" />
     <ClCompile Include="Emu\RSX\Overlays\overlay_progress_bar.cpp" />
     <ClCompile Include="Emu\RSX\Overlays\overlay_save_dialog.cpp" />
     <ClCompile Include="Emu\RSX\Overlays\overlay_trophy_notification.cpp" />
@@ -554,18 +577,374 @@
     <ClCompile Include="Emu\Audio\AudioDumper.cpp" />
     <ClCompile Include="Emu\Cell\MFC.cpp" />
     <ClCompile Include="Emu\Cell\PPUThread.cpp" />
+    <ClCompile Include="Emu\Cell\pbd_ppu_object_name.cpp" />
+    <ClCompile Include="Emu\Cell\pbd_write_watch.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_function_hook_configuration.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_function_hook_dispatch.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_function_hook_gates.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_function_hook_random.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_function_hook_report.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_function_hook_voice.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_fn_hook.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_menu_builder.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_menu_rows.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_session_setup.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_capture.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_boundary_completion.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_boundary_dispatch.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_correction_execution.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_correction_memory.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_dummy_contact_observation.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_dummy_native_route.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_exit_gate.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_input_selection.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_lobby_start.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_peer_timing.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_boundary_commands.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_frame_observation.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_lesson_boundary.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_menu_navigation.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_move_observation.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_opening.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_option_commands.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_pad_actions.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_restart.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_replay_control_boundary.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_replay_viewer_commands.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_segment_barrier.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_tick_checkpoint.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_tick_entry.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_tick_input.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_tick_state.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_tick_verification.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_checkpoint_setup.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_session_practice_setup.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_configure.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_configure_link.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_correction.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_lobby.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_peer.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_controls.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_dummy.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_menu.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_pad.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_publish.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_replay.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_rows.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_run.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_run_steps.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_takeover.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_rewind.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_tick.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_rollback_session_tick_record.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_sound_options.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_boot_dispatch.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_boot_request.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_live_replay.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_direct_replay_configuration.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_direct_replay_input.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_direct_replay_rounds.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_direct_match.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_fighter_side.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_collision.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_frame_events.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_placement.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_reset.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_replay_native.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_practice_native.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_paint.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_position.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_sets.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_practice_commands.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_rematch_native.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_character_rule_native.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_stage_rule_native.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_pick_transition.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\PBD\pbd_rank_screens.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_hidden_selection.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="Emu\Cell\pbd_versus_native.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="Emu\Cell\RawSPUThread.cpp" />
     <ClCompile Include="Emu\Cell\SPUCommonRecompiler.cpp" />
     <ClCompile Include="Emu\Cell\SPULLVMRecompiler.cpp" />
     <ClCompile Include="Emu\Cell\SPUThread.cpp" />
     <ClCompile Include="Emu\CPU\CPUThread.cpp" />
+    <ClCompile Include="Emu\CPU\pbd_ordinary_metrics.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="Emu\VFS.cpp" />
     <ClCompile Include="Emu\RSX\GSRender.cpp" />
     <ClCompile Include="Emu\RSX\RSXTexture.cpp" />
     <ClCompile Include="Emu\RSX\RSXThread.cpp" />
     <ClCompile Include="Emu\Memory\vm.cpp" />
     <ClCompile Include="Emu\System.cpp" />
-    <ClCompile Include="Emu\GDB.cpp" />
+    <ClCompile Include="Emu\GDB.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="Loader\ELF.cpp" />
     <ClCompile Include="Loader\PSF.cpp" />
     <ClCompile Include="Loader\PUP.cpp" />
@@ -779,6 +1158,10 @@
     <ClInclude Include="Emu\RSX\Overlays\overlay_osk.h" />
     <ClInclude Include="Emu\RSX\Overlays\overlay_osk_panel.h" />
     <ClInclude Include="Emu\RSX\Overlays\overlay_perf_metrics.h" />
+    <ClInclude Include="Emu\RSX\Overlays\pbd\overlay_pbd_draw.h" />
+    <ClInclude Include="Emu\RSX\Overlays\pbd\overlay_pbd_button_layout.h" />
+    <ClInclude Include="Emu\RSX\Overlays\pbd\pbd_glyph_atlas.h" />
+    <ClInclude Include="Emu\RSX\Overlays\pbd\pbd_overlays.h" />
     <ClInclude Include="Emu\RSX\Overlays\overlay_save_dialog.h" />
     <ClInclude Include="Emu\RSX\Overlays\overlay_compile_notification.h" />
     <ClInclude Include="Emu\RSX\Overlays\overlay_trophy_notification.h" />
@@ -958,6 +1341,7 @@
     <ClInclude Include="Emu\Cell\Modules\cellMusic.h" />
     <ClInclude Include="Emu\Cell\Modules\cellNetCtl.h" />
     <ClInclude Include="Emu\Cell\Modules\cellPad.h" />
+    <ClInclude Include="Emu\Cell\Modules\pbd_pad_read.h" />
     <ClInclude Include="Emu\Cell\Modules\cellPamf.h" />
     <ClInclude Include="Emu\Cell\Modules\cellPng.h" />
     <ClInclude Include="Emu\Cell\Modules\cellPngDec.h" />
@@ -1023,6 +1407,14 @@
     <ClInclude Include="Emu\Cell\SPUOpcodes.h" />
     <ClInclude Include="Emu\Cell\SPURecompiler.h" />
     <ClInclude Include="Emu\Cell\SPUThread.h" />
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_boundary.h" />
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_common.h" />
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage.h" />
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_rollback.h" />
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_peer.h" />
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_lobby.h" />
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_replay.h" />
+    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_practice.h" />
     <ClInclude Include="Emu\Cell\timers.hpp" />
     <ClInclude Include="Emu\CPU\CPUDisAsm.h" />
     <ClInclude Include="Emu\CPU\CPUThread.h" />
@@ -1162,4 +1554,42 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+  <ItemGroup>
+    <ClCompile Include="Emu\PBD\pbd_anchor_dump.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClInclude Include="Emu\PBD\pbd_anchor_dump.h" />
+    <ClInclude Include="Emu\PBD\pbd_memory_dump.h" />
+    <ClCompile Include="Emu\PBD\pbd_memory_dump_native.cpp" />
+    <ClInclude Include="Emu\PBD\pbd_memory_dump_native.h" />
+    <ClInclude Include="Emu\PBD\pbd_replay_actor_records.h" />
+    <ClInclude Include="Emu\PBD\pbd_emulator_identity.h" />
+    <ClInclude Include="Emu\PBD\pbd_replay_bank_offset.h" />
+    <ClCompile Include="Emu\PBD\pbd_replay_bone_segments.cpp" />
+    <ClCompile Include="Emu\PBD\pbd_replay_boot.cpp" />
+    <ClInclude Include="Emu\PBD\pbd_replay_boot.h" />
+    <ClCompile Include="Emu\PBD\pbd_replay_carry.cpp" />
+    <ClInclude Include="Emu\PBD\pbd_replay_carry.h" />
+    <ClInclude Include="Emu\PBD\pbd_replay_carry_codec.h" />
+    <ClInclude Include="Emu\PBD\pbd_replay_carry_guard.h" />
+    <ClInclude Include="Emu\PBD\pbd_replay_carry_types.h" />
+    <ClInclude Include="Emu\PBD\pbd_replay_difference.h" />
+    <ClInclude Include="Emu\PBD\pbd_replay_rewind.h" />
+    <ClInclude Include="Emu\PBD\pbd_replay_switches.h" />
+    <ClCompile Include="Emu\PBD\pbd_replay_game_carry.cpp" />
+    <ClCompile Include="Emu\PBD\pbd_replay_hit_contacts.cpp" />
+    <ClCompile Include="Emu\PBD\pbd_replay_reaction.cpp" />
+    <ClCompile Include="Emu\PBD\pbd_replay_reaction_result.cpp" />
+    <ClCompile Include="Emu\PBD\pbd_replay_resource_cursor.cpp" />
+    <ClInclude Include="Emu\PBD\pbd_replay_resource_reference.h" />
+    <ClCompile Include="Emu\PBD\pbd_replay_restore.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClInclude Include="Emu\PBD\pbd_replay_restore.h" />
+    <ClInclude Include="Emu\PBD\pbd_replay_result_reference.h" />
+    <ClCompile Include="Emu\PBD\pbd_replay_retained_terms.cpp" />
+    <ClInclude Include="Emu\PBD\pbd_stage_sync.h" />
+  </ItemGroup>
 </Project>

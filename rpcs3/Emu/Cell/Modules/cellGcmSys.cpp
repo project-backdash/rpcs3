@@ -11,6 +11,8 @@
 #include "sysPrxForUser.h"
 
 #include "util/asm.hpp"
+#include "Emu/Cell/pbd_owner_timeline.h"
+#include "Emu/PBD/pbd_env.h"
 
 LOG_CHANNEL(cellGcmSys);
 
@@ -166,6 +168,31 @@ vm::ptr<CellGcmReportData> cellGcmGetReportDataAddressLocation(ppu_thread& ppu, 
 	return vm::cast(rsx::get_current_renderer()->label_addr + ::offset32(&RsxReports::report) + index * 0x10);
 }
 
+// PBD: the GPU half of the game's load monitor. The game's "NU::System::RenderDuration" thread (entry 0x34c694)
+// differences two RSX report timestamps per frame (report indices 0x7c..0x7f, a begin/end pair selected by the main
+// thread's 2-cycle index at 0x106d4a48/4c) into GPU microseconds at 0x106d4a40; the main thread feeds that into the
+// load monitor's GPU table (0x8ef90 -> 0x8ee38, table 0x100538fc), and an entry in state 2 makes the prune pass 0xb2208
+// unlink ACTIVE effect objects, which changes the number of random-generator draws. RPCS3 writes HOST nanoseconds into
+// those timers, so the simulation would depend on host GPU speed, and a correction of odd depth rewinds the 2-cycle
+// index but not the timers: the next sample pairs stamps of different frames, the duration comes out huge, every GPU
+// entry goes to state 2 and effects are pruned in the first live ticks after the correction. With the battle clock (the
+// CPU half's logical time) the timestamps read as a constant, so the measured GPU duration is 0 on every peer at any
+// correction depth. PBD_GCM_TIMESTAMP_LIVE=1 keeps the host values (diagnostic comparison only).
+static bool pbd_gcm_timestamp_constant()
+{
+	static const bool enabled = []
+	{
+#ifdef _WIN32
+		const wchar_t* clock = pbd::env::find_wide("PBD_BATTLE_CLOCK");
+		const wchar_t* live = pbd::env::find_wide("PBD_GCM_TIMESTAMP_LIVE");
+		return clock && *clock && !(clock[0] == L'0' && clock[1] == 0) && !(live && live[0] == L'1' && live[1] == 0);
+#else
+		return false;
+#endif
+	}();
+	return enabled;
+}
+
 u64 cellGcmGetTimeStamp(u32 index)
 {
 	cellGcmSys.trace("cellGcmGetTimeStamp(index=%d)", index);
@@ -173,6 +200,11 @@ u64 cellGcmGetTimeStamp(u32 index)
 	if (index >= 2048)
 	{
 		cellGcmSys.error("cellGcmGetTimeStamp: Wrong local index (%d)", index);
+	}
+
+	if (pbd_gcm_timestamp_constant())
+	{
+		return 0;
 	}
 
 	const u32 address = rsx::get_current_renderer()->label_addr + ::offset32(&RsxReports::report) + index * 0x10;
@@ -248,6 +280,11 @@ u64 cellGcmGetTimeStampLocation(ppu_thread& ppu, u32 index, u32 location)
 	cellGcmSys.trace("cellGcmGetTimeStampLocation(index=%d, location=%d)", index, location);
 
 	vm::ptr<CellGcmReportData> report = cellGcmGetReportDataAddressLocation(ppu, index, location);
+
+	if (pbd_gcm_timestamp_constant())
+	{
+		return 0; // PBD: see cellGcmGetTimeStamp
+	}
 
 	// Timestamp reports don't need host GPU access and are much faster to emulate
 	return vm::get_super_ptr<CellGcmReportData>(report.addr())->timer;
@@ -1489,6 +1526,12 @@ s32 cellGcmCallback(ppu_thread& ppu, vm::ptr<CellGcmContextData> context, u32 co
 	context->current.set(newCommandBuffer.first);
 	context->end.set(newCommandBuffer.second);
 
+	// PBD owner timeline (diagnostic, PBD_OWNER_TIMELINE=1): kind 6 = segment-full callback entered (a = new segment offset),
+	// kind 7 = RSX released it (b = busy-wait iterations). The busy wait below is on-CPU time for the calling PPU.
+	const bool pbd_timeline = pbd::owner_timeline::enabled && ppu.id == pbd::owner_timeline::owner_id;
+	u64 pbd_spins = 0;
+	if (pbd_timeline) [[unlikely]]
+		pbd::owner_timeline::record(6, offset, count);
 	// Wait for rsx to "release" the new command buffer
 	while (true)
 	{
@@ -1502,8 +1545,11 @@ s32 cellGcmCallback(ppu_thread& ppu, vm::ptr<CellGcmContextData> context, u32 co
 		}
 
 		busy_wait();
+		pbd_spins++;
 	}
 
+	if (pbd_timeline) [[unlikely]]
+		pbd::owner_timeline::record(7, offset, pbd_spins);
 	return CELL_OK;
 }
 

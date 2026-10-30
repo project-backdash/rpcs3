@@ -20,6 +20,11 @@
 #include "Emu/Cell/SPUDisAsm.h"
 #include "Emu/Cell/SPUAnalyser.h"
 #include "Emu/Cell/SPUThread.h"
+#include "pbd_spu_checkpoint.h"
+#include "Emu/PBD/pbd_env.h"
+#ifdef _WIN32
+#include <Windows.h>
+#endif
 #include "Emu/Cell/SPURecompiler.h"
 #include "Emu/Cell/timers.hpp"
 
@@ -1471,6 +1476,7 @@ extern thread_local std::string(*g_tls_log_prefix)();
 
 void spu_thread::cpu_task()
 {
+	pbd_spu_invalidate_materialized_exit(*this);
 #ifdef __APPLE__
 	pthread_jit_write_protect_np(true);
 #endif
@@ -1546,6 +1552,65 @@ void spu_thread::cpu_task()
 		}
 	}
 
+	// A savestate may resume a SPURS kernel with a coherent-looking serialized image and only fail after the first pending
+	// workload dispatch. Keep this trace opt-in and bounded: it records state at exponentially spaced JIT block boundaries,
+	// while a small ring retains the exact tail needed to identify an indirect branch to zero without changing guest state.
+#ifdef _WIN32
+	const wchar_t* spurs_trace_env = pbd::env::find_wide("PBD_SPURS_LOAD_TRACE");
+	const bool spurs_trace_requested = spurs_trace_env && std::wstring_view(spurs_trace_env) == L"1";
+#else
+	const bool spurs_trace_requested = false;
+#endif
+	// Only the first restored task for each SPURS lane is relevant to a load divergence. Later scheduler re-entries
+	// would otherwise turn a bounded diagnostic into unbounded logging during a healthy control run.
+	static std::array<std::atomic<bool>, 8> spurs_trace_seen{};
+	const bool spurs_trace = spurs_trace_requested && group && index < spurs_trace_seen.size() &&
+	                         group->name.ends_with("CellSpursKernelGroup"sv) && !spurs_trace_seen[index].exchange(true);
+	std::array<u32, 256> spurs_trace_pc{};
+	std::array<u32, 256> spurs_trace_op{};
+	u64 spurs_trace_blocks = 0;
+	usz spurs_trace_pos = 0;
+	const auto spurs_trace_hash = [](const void* data, usz size)
+	{
+		const auto bytes = static_cast<const u8*>(data);
+		u64 value = 1469598103934665603ull;
+		for (usz i = 0; i < size; i++)
+			value = (value ^ bytes[i]) * 1099511628211ull;
+		return value;
+	};
+	const auto spurs_trace_emit = [&](std::string_view tag, bool full)
+	{
+		if (!spurs_trace)
+			return;
+		std::string ls_hashes;
+		for (u32 offset = 0; offset < SPU_LS_SIZE; offset += 0x4000)
+			fmt::append(ls_hashes, "%s%05x:%016x", offset ? "," : "", offset, spurs_trace_hash(ls + offset, 0x4000));
+		std::string recent;
+		const usz count = std::min<usz>(spurs_trace_blocks, spurs_trace_pc.size());
+		for (usz i = 0; i < count; i++)
+		{
+			const usz at = (spurs_trace_pos + spurs_trace_pc.size() - count + i) % spurs_trace_pc.size();
+			fmt::append(recent, "%s%05x/%08x", i ? "," : "", spurs_trace_pc[at], spurs_trace_op[at]);
+		}
+		std::string regs;
+		if (full)
+		{
+			for (u32 i = 0; i < gpr.size(); i++)
+				fmt::append(regs, "%sr%u=%08x:%08x:%08x:%08x", i ? "," : "", i,
+					gpr[i]._u32[0], gpr[i]._u32[1], gpr[i]._u32[2], gpr[i]._u32[3]);
+		}
+		spu_log.notice("PBD_SPURS_LOAD_TRACE tag=%s blocks=%u pc=0x%05x op=0x%08x npc=0x%05x spurs=0x%08x "
+					   "gpr_hash=%016x ls_chunks=%s mfc_size=%u mfc_barrier=0x%x mfc_fence=0x%x tag_mask=0x%x "
+					   "tag_status=%u/0x%x stall_mask=0x%x stall_status=%u/0x%x atomic_status=%u/0x%x "
+					   "out_mbox=%u/0x%x out_intr_mbox=%u/0x%x recent=%s regs=%s",
+			tag, spurs_trace_blocks, pc, _ref<u32>(pc), status_npc.load().npc, spurs_addr,
+			spurs_trace_hash(gpr.data(), sizeof(gpr)), ls_hashes, mfc_size, mfc_barrier, mfc_fence, ch_tag_mask,
+			ch_tag_stat.get_count(), ch_tag_stat.get_value(), ch_stall_mask, ch_stall_stat.get_count(), ch_stall_stat.get_value(),
+			ch_atomic_stat.get_count(), ch_atomic_stat.get_value(), ch_out_mbox.get_count(), ch_out_mbox.get_value(),
+			ch_out_intr_mbox.get_count(), ch_out_intr_mbox.get_value(), recent, regs);
+	};
+	spurs_trace_emit("cpu_task_start", true);
+
 	if (jit)
 	{
 		while (true)
@@ -1558,13 +1623,25 @@ void spu_thread::cpu_task()
 
 			if (_ref<u32>(pc) == 0x0u)
 			{
+				spurs_trace_emit("zero_stop", true);
 				if (spu_thread::stop_and_signal(0x0))
 					pc += 4;
 				continue;
 			}
 
+			if (spurs_trace)
+			{
+				spurs_trace_pc[spurs_trace_pos] = pc;
+				spurs_trace_op[spurs_trace_pos] = _ref<u32>(pc);
+				spurs_trace_pos = (spurs_trace_pos + 1) % spurs_trace_pc.size();
+				spurs_trace_blocks++;
+				if ((spurs_trace_blocks & (spurs_trace_blocks - 1)) == 0)
+					spurs_trace_emit("block_checkpoint", false);
+			}
+			pbd_spu_invalidate_materialized_exit(*this);
 			spu_runtime::g_gateway(*this, _ptr<u8>(0), nullptr);
 		}
+		spurs_trace_emit("cpu_task_exit", true);
 
 		if (unsavable && is_stopped(state - cpu_flag::stop))
 		{
@@ -1849,6 +1926,64 @@ spu_thread::spu_thread(lv2_spu_group* group, u32 index, std::string_view name, u
 	range_lock = vm::alloc_range_lock();
 
 	memset(&hv_ctx, 0, sizeof(hv_ctx));
+}
+
+namespace
+{
+	std::array<std::atomic<u64>, 128> pbd_spu_stop_bindings{};
+	std::array<std::atomic<spu_thread*>, 128> pbd_spu_materialized_exits{};
+	std::array<std::atomic<bool>, 128> pbd_spu_exit_cleanup{};
+	struct spu_pending_event_wait
+	{
+		enum class outcome
+		{
+			completed,
+			again,
+			restart
+		};
+		spu_thread& cpu;
+		const shared_ptr<lv2_event_queue>& queue; // Strong original STOP reference.
+		bool entered = false;
+		spu_pending_event_wait(spu_thread& c, const shared_ptr<lv2_event_queue>& q) : cpu(c), queue(q)
+		{
+			ensure(get_current_cpu_thread() == &cpu && cpu.id >= spu_thread::id_base && cpu.id - spu_thread::id_base < 128);
+		}
+		outcome run();
+	};
+} // namespace
+void pbd_spu_invalidate_materialized_exit(spu_thread& cpu) noexcept
+{
+	ensure(get_current_cpu_thread() == &cpu && cpu.id >= spu_thread::id_base && cpu.id - spu_thread::id_base < 128);
+	pbd_spu_materialized_exits[cpu.id - spu_thread::id_base].store(nullptr, std::memory_order_release);
+}
+void pbd_spu_note_materialized_exit(spu_thread& cpu) noexcept
+{
+	ensure(get_current_cpu_thread() == &cpu && cpu.id >= spu_thread::id_base && cpu.id - spu_thread::id_base < 128);
+	// Only the helper entered after all128 volatile stores may publish this.
+	ensure((pbd_spu_stop_bindings[cpu.id - spu_thread::id_base].load(std::memory_order_acquire) & ~u64{0x1000000}) == ((u64{cpu.pc} << 32) | 0x80000000u | 0x10000u));
+	pbd_spu_exit_cleanup[cpu.id - spu_thread::id_base].store(!!(pbd_spu_stop_bindings[cpu.id - spu_thread::id_base].load() & 0x1000000u));
+	pbd_spu_materialized_exits[cpu.id - spu_thread::id_base].store(&cpu, std::memory_order_release);
+}
+bool pbd_spu_has_materialized_exit(spu_thread& cpu) noexcept
+{
+	if (get_current_cpu_thread() != &cpu || cpu.id < spu_thread::id_base || cpu.id - spu_thread::id_base >= 128)
+		return false;
+	return pbd_spu_materialized_exits[cpu.id - spu_thread::id_base].load(std::memory_order_acquire) == &cpu;
+}
+bool pbd_spu_exit_clears_unsavable(spu_thread& cpu) noexcept
+{
+	return pbd_spu_has_materialized_exit(cpu) && pbd_spu_exit_cleanup[cpu.id - spu_thread::id_base].load();
+}
+pbd_spu_materialized_scope::pbd_spu_materialized_scope(spu_thread& value, u32 code) : cpu(value)
+{
+	ensure(get_current_cpu_thread() == &cpu && cpu.id >= spu_thread::id_base && cpu.id - spu_thread::id_base < 128 &&
+		   ((code & ~0x1000000u) == SYS_SPU_THREAD_STOP_RECEIVE_EVENT || (code & ~0x1000000u) == 0x10000u || code == 0x20000u || code == 0x30000u || (code & ~0x1000000u) == 0x40000u || (code & ~0x1000000u) == 0x50000u) && cpu.pc < 0x40000);
+	const u64 binding = (u64{cpu.pc} << 32) | 0x80000000u | code;
+	ensure(!pbd_spu_stop_bindings[cpu.id - spu_thread::id_base].exchange(binding, std::memory_order_acq_rel));
+}
+pbd_spu_materialized_scope::~pbd_spu_materialized_scope()
+{
+	pbd_spu_stop_bindings[cpu.id - spu_thread::id_base].store(0, std::memory_order_release);
 }
 
 void spu_thread::serialize_common(utils::serial& ar)
@@ -2485,6 +2620,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 
 			//atomic_fence_seq_cst();
 
+
 			if (g_cfg.core.mfc_debug && _this)
 			{
 				auto& dump = _this->mfc_history[_this->mfc_dump_idx++ % spu_thread::max_mfc_dump_idx];
@@ -2689,6 +2825,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 		}
 		}
 
+
 		if (g_cfg.core.mfc_debug && _this)
 		{
 			auto& dump = _this->mfc_history[_this->mfc_dump_idx++ % spu_thread::max_mfc_dump_idx];
@@ -2765,6 +2902,7 @@ plain_access:
 		break;
 	}
 	}
+
 
 	if (g_cfg.core.mfc_debug && _this)
 	{
@@ -3328,6 +3466,9 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 				break;
 			}
 			}
+
+			// This optimized list path bypasses do_dma_transfer; preserve the
+			// current element LSA before advancing. Fallback is recorded there.
 
 			arg_lsa += utils::align<u32>(size, 16);
 		}
@@ -6492,6 +6633,27 @@ extern void resume_spu_thread_group_from_waiting(spu_thread& spu, std::array<sha
 	}
 }
 
+spu_pending_event_wait::outcome spu_pending_event_wait::run()
+{
+	ensure(get_current_cpu_thread() == &cpu && !std::exchange(entered, true));
+	while (auto old = +cpu.state)
+	{
+		if (old & cpu_flag::signal && cpu.state.test_and_reset(cpu_flag::signal))
+			break;
+		if (cpu.is_stopped(old))
+		{
+			std::lock_guard qlock(queue->mutex);
+			old = cpu.state.fetch_sub(cpu_flag::signal);
+			if (old & cpu_flag::signal)
+				break;
+			cpu.state += cpu_flag::again;
+			return outcome::again;
+		}
+		thread_ctrl::wait_on(cpu.state, old);
+	}
+	return outcome::completed;
+}
+
 bool spu_thread::stop_and_signal(u32 code)
 {
 	auto set_status_npc = [&]()
@@ -6692,29 +6854,15 @@ bool spu_thread::stop_and_signal(u32 code)
 
 		lv2_obj::notify_all();
 
-		while (auto old = +state)
+		for (;;)
 		{
-			if (old & cpu_flag::signal && state.test_and_reset(cpu_flag::signal))
-			{
-				break;
-			}
-
-			if (is_stopped(old))
-			{
-				std::lock_guard qlock(queue->mutex);
-
-				old = state.fetch_sub(cpu_flag::signal);
-
-				if (old & cpu_flag::signal)
-				{
-					break;
-				}
-
-				state += cpu_flag::again;
+			spu_pending_event_wait body(*this, queue);
+			const auto result = body.run();
+			if (result == spu_pending_event_wait::outcome::restart)
+				continue;
+			if (result == spu_pending_event_wait::outcome::again)
 				return false;
-			}
-
-			thread_ctrl::wait_on(state, old);
+			break;
 		}
 
 		wakeup_delay();

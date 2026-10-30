@@ -9,6 +9,7 @@
 #include "util/media_utils.h"
 
 #include "cellAtracXdec.h"
+#include "Emu/PBD/pbd_env.h"
 
 vm::gvar<CellAdecCoreOps> g_cell_adec_core_ops_atracx2ch;
 vm::gvar<CellAdecCoreOps> g_cell_adec_core_ops_atracx6ch;
@@ -16,6 +17,23 @@ vm::gvar<CellAdecCoreOps> g_cell_adec_core_ops_atracx8ch;
 vm::gvar<CellAdecCoreOps> g_cell_adec_core_ops_atracx;
 
 LOG_CHANNEL(cellAtracXdec);
+
+// Concealing an access unit FFmpeg rejects (diagnostic, PBD_ATRAC_CONCEAL=1). The unmodified path reports
+// CELL_ADEC_ERROR_ATX_NON_FATAL and the game closes the decoder, so the music is gone for the rest of the match. Units
+// are rejected when the main thread's frame is stretched (a long correction window, heavy diagnostics on a slow host):
+// the stream side is late; no rollback touches the stream buffer. Concealed, the unit and the next produce no samples
+// and no error. It stays off: after the first rejection every later unit is rejected too (one per 42 ms), so the
+// stream stays out of phase and concealment only turns a closed decoder into silence.
+static const bool s_pbd_atrac_conceal = []
+{
+#ifdef _WIN32
+	const wchar_t* v = pbd::env::find_wide("PBD_ATRAC_CONCEAL");
+	return v && std::wstring_view(v) == L"1";
+#else
+	return true;
+#endif
+}();
+static std::atomic<u32> s_pbd_atrac_concealed{0};
 
 template <>
 void fmt_class_string<CellAtracXdecError>::format(std::string& out, u64 arg)
@@ -463,6 +481,7 @@ void AtracXdecContext::exec(ppu_thread& ppu)
 			// LLE does not initialize the output address if parsing the ATS header fails
 			vm::ptr<void> output = vm::null;
 			u32 decoded_samples_num = 0;
+			bool pbd_concealed = false;
 
 			if (error != CELL_ADEC_ERROR_ATX_ATSHDR)
 			{
@@ -483,8 +502,25 @@ void AtracXdecContext::exec(ppu_thread& ppu)
 					}
 
 					// Game sent invalid data
-					cellAtracXdec.error("avcodec_send_packet() failed (err=0x%x='%s')", err, utils::av_error_to_string(err));
+					if (!s_pbd_atrac_conceal)
+						cellAtracXdec.error("avcodec_send_packet() failed (err=0x%x='%s')", err, utils::av_error_to_string(err));
+					if (!s_pbd_atrac_conceal)
+					{
+						// PBD diagnostic: which guest memory held the rejected access unit, and what was in it.
+						const u8* au = static_cast<const u8*>(work_mem.get_ptr());
+						cellAtracXdec.error("PBD rejected AU: start=*0x%x size=0x%x nbytes=0x%x head=%02x%02x%02x%02x%02x%02x%02x%02x %02x%02x%02x%02x%02x%02x%02x%02x",
+							cmd.au_start_addr.addr(), +cmd.au_size, decoder.nbytes,
+							au[0], au[1], au[2], au[3], au[4], au[5], au[6], au[7], au[8], au[9], au[10], au[11], au[12], au[13], au[14], au[15]);
+					}
 					error = CELL_ADEC_ERROR_ATX_NON_FATAL; // Not accurate, FFmpeg doesn't provide detailed errors like LLE
+					if (s_pbd_atrac_conceal)
+					{
+						const u32 n = ++s_pbd_atrac_concealed;
+						if (n <= 8 || n % 64 == 0)
+							cellAtracXdec.warning("PBD concealed rejected AU #%u: start=*0x%x size=0x%x (err=0x%x='%s')", n, cmd.au_start_addr.addr(), +cmd.au_size, err, utils::av_error_to_string(err));
+						error = CELL_OK;
+						pbd_concealed = true;
+					}
 
 					av_frame_unref(decoder.frame);
 				}
@@ -493,7 +529,7 @@ void AtracXdecContext::exec(ppu_thread& ppu)
 					fmt::throw_exception("avcodec_receive_frame() failed (err=0x%x='%s')", err, utils::av_error_to_string(err));
 				}
 
-				decoded_samples_num = decoder.frame->nb_samples;
+				decoded_samples_num = pbd_concealed ? 0u : decoder.frame->nb_samples;
 				ensure(decoded_samples_num == 0u || decoded_samples_num == ATXDEC_SAMPLES_PER_FRAME);
 
 				// The first frame after starting a new sequence or after an error is replaced with silence
@@ -614,6 +650,8 @@ void AtracXdecContext::exec(ppu_thread& ppu)
 				}
 
 				first_decode = false;
+				if (pbd_concealed)
+					skip_next_frame = true; // the decoder's history is broken: the next unit is silence too, as after an error
 
 				if (error != CELL_OK)
 				{

@@ -8,9 +8,71 @@
 #include "util/tsc.hpp"
 
 #include "util/sysinfo.hpp"
+#include "Emu/PBD/pbd_env.h"
+#include <mutex>
+#include <shared_mutex>
 
 u64 g_timebase_offs{};
+// Battle clock: guest timebase value restored from the loaded savestate (0 and invalid when booted).
+u64 g_pbd_restored_timebase = 0;
+bool g_pbd_restored_timebase_valid = false;
 static u64 systemtime_offset;
+
+bool pbd_clock_guarded() noexcept
+{
+#if defined(_WIN32) && defined(PBD_DIAGNOSTIC_BUILD)
+	static const bool requested = []
+	{
+		const char* p = pbd::env::find("PBD_CHECKPOINT_HOLD_TRIAL");
+		return p && std::string_view(p) == "1";
+	}();
+	return requested;
+#else
+	return false;
+#endif
+}
+
+namespace
+{
+	std::shared_mutex dr_clock_mutex;
+	thread_local u32 dr_clock_read_depth = 0;
+	thread_local bool dr_clock_writer = false;
+	struct clock_read_scope
+	{
+		bool participating = false;
+		clock_read_scope()
+		{
+			if (!pbd_clock_guarded() || dr_clock_writer)
+				return;
+			if (!dr_clock_read_depth++)
+				dr_clock_mutex.lock_shared();
+			participating = true;
+		}
+		~clock_read_scope()
+		{
+			if (participating && !--dr_clock_read_depth)
+				dr_clock_mutex.unlock_shared();
+		}
+	};
+	struct clock_write_scope
+	{
+		std::unique_lock<std::shared_mutex> lock{dr_clock_mutex, std::defer_lock};
+		const bool previous = dr_clock_writer;
+		clock_write_scope()
+		{
+			if (!previous)
+			{
+				ensure(!dr_clock_read_depth);
+				lock.lock();
+				dr_clock_writer = true;
+			}
+		}
+		~clock_write_scope()
+		{
+			dr_clock_writer = previous;
+		}
+	};
+} // namespace
 
 #ifndef __linux__
 #include "util/asm.hpp"
@@ -145,6 +207,7 @@ static constexpr u64 g_timebase_freq = /*79800000*/ 80000000ull; // 80 Mhz
 // Convert time is microseconds to timebased time
 u64 convert_to_timebased_time(u64 time)
 {
+	clock_read_scope read;
 	const u64 result = time * (g_timebase_freq / 1000000ull) * g_cfg.core.clocks_scale / 100u;
 	ensure(result >= g_timebase_offs);
 	return result - g_timebase_offs;
@@ -152,6 +215,7 @@ u64 convert_to_timebased_time(u64 time)
 
 u64 get_timebased_time()
 {
+	clock_read_scope read;
 	if (u64 freq = utils::get_tsc_freq())
 	{
 		const u64 tsc = utils::get_tsc();
@@ -193,15 +257,20 @@ u64 get_timebased_time()
 // If none-zero arg is specified it will become the base time (for savestates)
 void initialize_timebased_time(u64 timebased_init, bool reset)
 {
+	clock_write_scope write;
 	g_timebase_offs = 0;
 
 	if (reset)
 	{
+		g_pbd_restored_timebase = 0;
+		g_pbd_restored_timebase_valid = false;
 		// We simply want to zero-out these values
 		systemtime_offset = 0;
 		return;
 	}
 
+	g_pbd_restored_timebase = timebased_init;
+	g_pbd_restored_timebase_valid = timebased_init != 0;
 	const u64 current = get_timebased_time();
 	timebased_init = current - timebased_init;
 
@@ -212,6 +281,7 @@ void initialize_timebased_time(u64 timebased_init, bool reset)
 // Returns some relative time in microseconds, don't change this fact
 u64 get_system_time()
 {
+	clock_read_scope read;
 	if (u64 freq = utils::get_tsc_freq())
 	{
 		const u64 tsc = utils::get_tsc();
@@ -252,6 +322,7 @@ u64 get_system_time()
 // As get_system_time but obeys Clocks scaling setting
 u64 get_guest_system_time(u64 time)
 {
+	clock_read_scope read;
 	const u64 result = (time != umax ? time : get_system_time()) * g_cfg.core.clocks_scale / 100;
 	return result - systemtime_offset;
 }
@@ -342,6 +413,7 @@ error_code sys_time_get_timezone(vm::ptr<s32> timezone, vm::ptr<s32> summertime)
 
 error_code sys_time_get_current_time(vm::ptr<s64> sec, vm::ptr<s64> nsec)
 {
+	clock_read_scope read;
 	sys_time.trace("sys_time_get_current_time(sec=*0x%x, nsec=*0x%x)", sec, nsec);
 
 	if (!sec)

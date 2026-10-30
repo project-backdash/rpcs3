@@ -1,22 +1,77 @@
 #include "stdafx.h"
 #include "VKGSRender.h"
+#include "Emu/RSX/pbd_frame_presentation.h"
+#include "Emu/CPU/pbd_ordinary_metrics.h"
 #include "vkutils/buffer_object.h"
 #include "vkutils/memory.h"
 #include "Emu/RSX/Overlays/overlay_manager.h"
 #include "Emu/RSX/Overlays/overlay_debug_overlay.h"
 #include "Emu/Cell/Modules/cellVideoOut.h"
+#include "Emu/PBD/pbd_held_presentation.h"
 
 #include "upscalers/bilinear_pass.hpp"
 #include "upscalers/fsr_pass.h"
 #include "upscalers/nearest_pass.hpp"
 #include "util/asm.hpp"
 #include "util/video_provider.h"
+#include "Emu/Cell/timers.hpp"
 
 extern atomic_t<bool> g_user_asked_for_screenshot;
 extern atomic_t<recording_mode> g_recording_mode;
 
 namespace
 {
+	// Black-frame probe (PBD_BLACK_PROBE=<absolute .jsonl>).
+	// Record only: rows are written on the RSX thread when a sampled frame's swap command buffer has completed.
+	constexpr u32 pbd_bp_grid_x = 32, pbd_bp_grid_y = 18, pbd_bp_samples = pbd_bp_grid_x * pbd_bp_grid_y;
+	struct pbd_black_probe_out
+	{
+		fs::file output;
+		std::mutex mutex;
+		bool enabled = false;
+		pbd_black_probe_out() noexcept
+		{
+			try
+			{
+#ifdef _WIN32
+				const auto requested = pbd::env::find_wide("PBD_BLACK_PROBE");
+				if (!requested || !*requested)
+					return;
+				const std::filesystem::path path(requested);
+				if (!path.is_absolute())
+					return;
+				const auto utf8 = path.u8string();
+				if (!output.open(std::string(utf8.begin(), utf8.end()), fs::write_new + fs::isfile))
+					return;
+				const std::string header = fmt::format("{\"type\":\"header\",\"schema\":1,\"grid\":[%u,%u],\"black_luma\":10,"
+													   "\"kinds\":{\"1\":\"post_window\",\"2\":\"in_flight_at_restore\",\"3\":\"baseline\"},"
+													   "\"src\":{\"0\":\"none\",\"1\":\"surface_store\",\"2\":\"texture_cache\",\"3\":\"guest_upload\",\"+10\":\"force_cast\"}}\n",
+					pbd_bp_grid_x, pbd_bp_grid_y);
+				enabled = output.write(header.data(), header.size()) == header.size();
+#endif
+			}
+			catch (...)
+			{
+				enabled = false;
+			}
+		}
+		static pbd_black_probe_out& get()
+		{
+			static pbd_black_probe_out instance;
+			return instance;
+		}
+		void write(const std::string& text) noexcept
+		{
+			std::lock_guard lock(mutex);
+			if (enabled && output.write(text.data(), text.size()) != text.size())
+				enabled = false;
+		}
+	};
+
+	u64 pbd_bp_now_ns()
+	{
+		return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+	}
 	VkFormat RSX_display_format_to_vk_format(u8 format)
 	{
 		switch (format)
@@ -30,6 +85,69 @@ namespace
 			return VK_FORMAT_R8G8B8A8_UNORM;
 		case CELL_VIDEO_OUT_BUFFER_COLOR_FORMAT_R16G16B16X16_FLOAT:
 			return VK_FORMAT_R16G16B16A16_SFLOAT;
+		}
+	}
+}
+
+// False when the presented frame could not be read back; the caller counts it as dropped.
+bool VKGSRender::clips_record(vk::image* image, u32 width, u32 height)
+{
+	if (!m_current_frame || !image || !width || !height || width > 8192 || height > 8192) return false;
+	if (image->format() != VK_FORMAT_B8G8R8A8_UNORM && image->format() != VK_FORMAT_B8G8R8A8_SRGB &&
+		image->format() != VK_FORMAT_R8G8B8A8_UNORM && image->format() != VK_FORMAT_R8G8B8A8_SRGB) return false;
+	const auto index = static_cast<usz>(m_current_frame - m_frame_context_storage.data());
+	if (index >= m_frame_context_storage.size()) return false;
+	// A ring of readbacks, not one per frame context: a buffer stays leased until the copy thread has taken its pixels,
+	// which can be after its frame context comes round again. Two spares cover that copy; buffers are made on first use.
+	if (m_clip_readbacks.size() < m_frame_context_storage.size() + 2) m_clip_readbacks.resize(m_frame_context_storage.size() + 2);
+	clip_readback* spare = nullptr;
+	for (auto& item : m_clip_readbacks)
+	{
+		if (!item) item = std::make_unique<clip_readback>();
+		if (!item->pending && !item->copying->load(std::memory_order_acquire)) { spare = item.get(); break; }
+	}
+	if (!spare) return false;
+	auto& slot = *spare;
+	if (!slot.pixels || slot.width != width || slot.height != height)
+	{
+		if (slot.mapped) { slot.pixels->unmap(); slot.mapped = nullptr; }
+		slot.pixels = std::make_unique<vk::buffer>(*m_device, static_cast<u64>(width) * height * 4,
+			m_device->get_memory_mapping().host_visible_coherent, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT, 0, VMM_ALLOCATION_POOL_UNDEFINED);
+		slot.width = width; slot.height = height; slot.mapped = slot.pixels->map(0, static_cast<u64>(width) * height * 4);
+	}
+	if (!slot.mapped) return false;
+	slot.bgra = image->format() == VK_FORMAT_B8G8R8A8_UNORM || image->format() == VK_FORMAT_B8G8R8A8_SRGB;
+	slot.time_us = get_system_time();
+	VkBufferImageCopy region{};
+	region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; region.imageSubresource.layerCount = 1;
+	region.imageExtent = {width, height, 1};
+	image->push_layout(*m_current_command_buffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	vk::copy_image_to_buffer(*m_current_command_buffer, image, slot.pixels.get(), region);
+	vk::insert_buffer_memory_barrier(*m_current_command_buffer, slot.pixels->value, 0, static_cast<u64>(width) * height * 4,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
+	image->pop_layout(*m_current_command_buffer);
+	slot.frame = m_current_frame;
+	slot.pending = true;
+	return true;
+}
+
+void VKGSRender::clips_resolve(vk::frame_context_t* ctx)
+{
+	// check_present_status cleans up every frame that finished since the last check, oldest first, so several
+	// readbacks can be offered here back to back; the copy queue keeps them all and a refusal is counted.
+	for (auto& item : m_clip_readbacks)
+	{
+		if (!item || !item->pending || item->frame != ctx) continue;
+		auto& slot = *item;
+		slot.pending = false;
+		if (!m_clip_copies.offer(slot.mapped, slot.width * 4, slot.width, slot.height, slot.bgra, slot.time_us, slot.copying,
+			[this](std::vector<u8>&& pixels, unsigned pitch, unsigned width, unsigned height, bool bgra, u64 time)
+			{
+				m_frame->present_frame_timed(std::move(pixels), pitch, width, height, bgra, time);
+			}))
+		{
+			g_fxo->get<utils::video_provider>().frame_dropped();
 		}
 	}
 }
@@ -90,6 +208,7 @@ bool VKGSRender::reinitialize_swapchain()
 	}
 
 	// Reset frame context storage
+	for (auto& slot : m_clip_readbacks) if (slot && std::exchange(slot->pending, false)) g_fxo->get<utils::video_provider>().frame_dropped();
 	for (auto& ctx : m_frame_context_storage)
 	{
 		ctx.destroy(*m_device);
@@ -155,6 +274,8 @@ void VKGSRender::present(vk::frame_context_t *ctx)
 
 	if (!swapchain_unavailable)
 	{
+		// PBD (record only): the queue-present call itself, inside the "vulkan_flip" scope of the same frame.
+		::pbd::ordinary_metrics::scope measure_present(4, "vulkan_queue_present");
 		switch (VkResult error = m_swapchain->present(ctx->present_wait_semaphore, ctx->present_image))
 		{
 		case VK_SUCCESS:
@@ -251,6 +372,11 @@ void VKGSRender::frame_context_cleanup(vk::frame_context_t *ctx)
 		// Lost surface/device, release swapchain
 		swapchain_unavailable = true;
 	}
+	else
+	{
+		pbd_black_probe_resolve(ctx);
+		clips_resolve(ctx);
+	}
 
 	// Resource cleanup.
 	{
@@ -302,9 +428,107 @@ void VKGSRender::frame_context_cleanup(vk::frame_context_t *ctx)
 	vk::advance_completed_frame_counter();
 }
 
+void VKGSRender::pbd_black_probe_record(const rsx::display_flip_info_t& info, vk::viewable_image* image, u32 w, u32 h, u64 flip)
+{
+	auto& out = pbd_black_probe_out::get();
+	if (!out.enabled || !info.pbd_bp_kind || !m_current_frame || m_frame_context_storage.empty())
+		return;
+	const auto index = static_cast<usz>(m_current_frame - m_frame_context_storage.data());
+	if (index >= m_frame_context_storage.size())
+		return;
+	if (m_pbd_bp_slots.size() != m_frame_context_storage.size())
+		m_pbd_bp_slots.resize(m_frame_context_storage.size());
+	auto& slot = m_pbd_bp_slots[index];
+	slot.pending = false;
+	slot.kind = info.pbd_bp_kind;
+	slot.marker = info.pbd_bp_marker;
+	slot.index = info.pbd_bp_index;
+	slot.flip = flip;
+	slot.t_ns = pbd_bp_now_ns();
+	slot.src = m_pbd_present_src;
+	slot.w = image ? std::min<u32>(w, image->width()) : 0;
+	slot.h = image ? std::min<u32>(h, image->height()) : 0;
+	slot.fmt = image ? static_cast<u32>(image->format()) : 0;
+	slot.samples = 0;
+	const bool four_bytes = image && (image->format() == VK_FORMAT_B8G8R8A8_UNORM || image->format() == VK_FORMAT_R8G8B8A8_UNORM ||
+										 image->format() == VK_FORMAT_B8G8R8A8_SRGB || image->format() == VK_FORMAT_R8G8B8A8_SRGB);
+	if (!image || !four_bytes || slot.w < pbd_bp_grid_x || slot.h < pbd_bp_grid_y)
+	{
+		// No source (the window is cleared to black) or an unsampled format: the row is written now, without pixels.
+		out.write(fmt::format("{\"type\":\"frame\",\"t_ns\":%u,\"kind\":%u,\"marker\":%u,\"index\":%u,\"flip\":%u,\"src\":%u,\"w\":%u,\"h\":%u,\"fmt\":%u,"
+							  "\"sampled\":false,\"no_source\":%s}\n",
+			slot.t_ns, slot.kind, slot.marker, slot.index, slot.flip, slot.src, slot.w, slot.h, slot.fmt,
+			image ? "false" : "true"));
+		return;
+	}
+	if (!slot.buf)
+	{
+		slot.buf = std::make_unique<vk::buffer>(*m_device, 0x1000, m_device->get_memory_mapping().host_visible_coherent,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_BUFFER_USAGE_TRANSFER_DST_BIT, 0, VMM_ALLOCATION_POOL_UNDEFINED);
+	}
+	std::array<VkBufferImageCopy, pbd_bp_samples> regions{};
+	for (u32 y = 0; y < pbd_bp_grid_y; ++y)
+	{
+		for (u32 x = 0; x < pbd_bp_grid_x; ++x)
+		{
+			auto& r = regions[y * pbd_bp_grid_x + x];
+			r.bufferOffset = (y * pbd_bp_grid_x + x) * 4;
+			r.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			r.imageSubresource.layerCount = 1;
+			r.imageOffset.x = static_cast<s32>(((2 * x + 1) * slot.w) / (2 * pbd_bp_grid_x));
+			r.imageOffset.y = static_cast<s32>(((2 * y + 1) * slot.h) / (2 * pbd_bp_grid_y));
+			r.imageExtent = {1, 1, 1};
+		}
+	}
+	image->push_layout(*m_current_command_buffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	vkCmdCopyImageToBuffer(*m_current_command_buffer, image->value, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, slot.buf->value, pbd_bp_samples, regions.data());
+	vk::insert_buffer_memory_barrier(*m_current_command_buffer, slot.buf->value, 0, pbd_bp_samples * 4, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
+	image->pop_layout(*m_current_command_buffer);
+	slot.samples = pbd_bp_samples;
+	slot.pending = true;
+}
+
+void VKGSRender::pbd_black_probe_resolve(vk::frame_context_t* ctx)
+{
+	if (m_pbd_bp_slots.empty() || m_frame_context_storage.empty())
+		return;
+	const auto index = static_cast<usz>(ctx - m_frame_context_storage.data());
+	if (index >= m_pbd_bp_slots.size())
+		return;
+	auto& slot = m_pbd_bp_slots[index];
+	if (!slot.pending || !slot.buf)
+		return;
+	slot.pending = false;
+	const bool bgra = slot.fmt == static_cast<u32>(VK_FORMAT_B8G8R8A8_UNORM) || slot.fmt == static_cast<u32>(VK_FORMAT_B8G8R8A8_SRGB);
+	const auto* px = static_cast<const u8*>(slot.buf->map(0, pbd_bp_samples * 4));
+	if (!px)
+		return;
+	double sum = 0, sum2 = 0, max_y = 0;
+	u32 black = 0;
+	for (u32 i = 0; i < slot.samples; ++i)
+	{
+		const u8* p = px + i * 4;
+		const double r = bgra ? p[2] : p[0], g = p[1], b = bgra ? p[0] : p[2];
+		const double y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+		sum += y;
+		sum2 += y * y;
+		max_y = std::max(max_y, y);
+		black += y < 10.0;
+	}
+	slot.buf->unmap();
+	const double n = slot.samples ? slot.samples : 1;
+	const double mean = sum / n;
+	const double sd = std::sqrt(std::max(0.0, sum2 / n - mean * mean));
+	pbd_black_probe_out::get().write(fmt::format("{\"type\":\"frame\",\"t_ns\":%u,\"done_ns\":%u,\"kind\":%u,\"marker\":%u,\"index\":%u,\"flip\":%u,"
+												 "\"src\":%u,\"w\":%u,\"h\":%u,\"fmt\":%u,\"sampled\":true,\"mean\":%.2f,\"sd\":%.2f,\"max\":%.1f,\"black_share\":%.4f}\n",
+		slot.t_ns, pbd_bp_now_ns(), slot.kind, slot.marker, slot.index, slot.flip, slot.src, slot.w, slot.h, slot.fmt, mean, sd, max_y, black / n));
+}
+
 vk::viewable_image* VKGSRender::get_present_source(/* inout */ vk::present_surface_info* info, const rsx::avconf& avconfig)
 {
 	vk::viewable_image* image_to_flip = nullptr;
+	m_pbd_present_src = 0; // Black-frame probe: which path found the present source
 
 	// @FIXME: This entire function needs to be rewritten to go through the texture cache's "upload_texture" routine.
 	// That method is not a 1:1 replacement due to handling of insets that is done differently here.
@@ -346,6 +570,7 @@ vk::viewable_image* VKGSRender::get_present_source(/* inout */ vk::present_surfa
 			if (viable)
 			{
 				image_to_flip = section.surface->get_surface(rsx::surface_access::transfer_read);
+				m_pbd_present_src = 1;
 
 				std::tie(info->width, info->height) = rsx::apply_resolution_scale<true>(
 					resolution_scaling_config,
@@ -360,6 +585,7 @@ vk::viewable_image* VKGSRender::get_present_source(/* inout */ vk::present_surfa
 		// Hack - this should be the first location to check for output
 		// The render might have been done offscreen or in software and a blit used to display
 		image_to_flip = dynamic_cast<vk::viewable_image*>(surface->get_raw_texture());
+		m_pbd_present_src = 2;
 	}
 
 	// The correct output format is determined by the AV configuration set in CellVideoOutConfigure by the game.
@@ -390,6 +616,7 @@ vk::viewable_image* VKGSRender::get_present_source(/* inout */ vk::present_surfa
 
 		m_texture_cache.invalidate_range(*m_current_command_buffer, range, rsx::invalidation_cause::read);
 		image_to_flip = m_texture_cache.upload_image_simple(*m_current_command_buffer, expected_format, info->address, info->width, info->height, info->pitch);
+		m_pbd_present_src = 3;
 	}
 	else if (image_to_flip->format() != expected_format)
 	{
@@ -415,6 +642,7 @@ vk::viewable_image* VKGSRender::get_present_source(/* inout */ vk::present_surfa
 			}
 
 			image_to_flip = dst_img.get();
+			m_pbd_present_src += 10;
 			m_texture_cache.dispose_reusable_image(dst_img);
 		}
 	}
@@ -424,6 +652,17 @@ vk::viewable_image* VKGSRender::get_present_source(/* inout */ vk::present_surfa
 
 void VKGSRender::flip(const rsx::display_flip_info_t& info)
 {
+	if (pbd::held_presentation::output().parked())
+		return;
+	// PBD: a frame flipped without its draw calls (replay draw skipping) shows nothing new; named apart so the
+	// presented-frame intervals can be computed over frames that reached the screen.
+	::pbd::ordinary_metrics::scope measure_flip(4, info.skip_frame ? "vulkan_flip_skipped" : "vulkan_flip", info.emu_flip);
+	const u64 pbd_flip = int_flip_index + ::pbd::frame_presentation::flip_base.load(std::memory_order_acquire);
+	if (info.emu_flip && pbd::fight_timing::requested() && !m_frame->shown())
+		pbd::fight_timing::samples.delivered(info.pbd_token.session_epoch, info.pbd_token.boundary,
+			1, info.pbd_token.live, false, false);
+	if (info.emu_flip)
+		::pbd::frame_presentation::last_reported_flip.store(pbd_flip, std::memory_order_release);
 	// Check swapchain condition/status
 	if (!m_swapchain->supports_automatic_wm_reports())
 	{
@@ -454,7 +693,7 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 
 			if (Emu.IsStopped())
 			{
-				m_frame->flip(m_context);
+				m_frame->flip(m_context, true);
 				rsx::thread::flip(info);
 				return;
 			}
@@ -493,6 +732,9 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 
 	if (info.skip_frame || swapchain_unavailable)
 	{
+		if (info.emu_flip && ::pbd::frame_presentation::queue_tags_enabled())
+			::pbd::frame_presentation::tag_trace::get().token_state(info.skip_frame ? "image_withheld" : "faulted",
+				info.pbd_token, pbd_flip, info.skip_frame ? "frame_skip_or_replay_withhold" : "swapchain_unavailable");
 		if (!info.skip_frame)
 		{
 			ensure(swapchain_unavailable);
@@ -504,7 +746,7 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 			frame_context_cleanup(m_current_frame);
 		}
 
-		m_frame->flip(m_context);
+		m_frame->flip(m_context, true);
 		rsx::thread::flip(info);
 		return;
 	}
@@ -660,7 +902,13 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 	const bool has_overlay = (m_overlay_manager && m_overlay_manager->has_visible());
 	const bool user_asked_for_screenshot = g_user_asked_for_screenshot.exchange(false);
 	const bool user_is_recording = (g_recording_mode != recording_mode::stopped && m_frame->can_consume_frame());
-	const bool need_media_capture = user_asked_for_screenshot || user_is_recording;
+	const bool pbd_capture = info.emu_flip && ::pbd::frame_presentation::capture::get().wants_frame();
+	if (info.emu_flip && ::pbd::frame_presentation::queue_tags_enabled())
+		::pbd::frame_presentation::tag_trace::get().present(info.pbd_context, pbd_flip, info.buffer, info.pbd_sequence, info.pbd_boundary, info.pbd_live);
+	const bool pbd_identity_capture = info.emu_flip && ::pbd::frame_presentation::identity_capture::get().wants_frame(pbd_flip,
+														   info.pbd_context, info.pbd_sequence, info.pbd_boundary, info.pbd_live, info.pbd_token);
+	const bool pbd_target_capture = info.emu_flip && ::pbd::frame_presentation::target_capture::get().wants_frame(pbd_flip, info.pbd_token);
+	const bool need_media_capture = user_asked_for_screenshot || user_is_recording || pbd_capture || pbd_identity_capture || pbd_target_capture;
 
 	const auto render_overlays = [&](vk::framebuffer_holder* fbo, const areau& area)
 	{
@@ -684,9 +932,6 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 	{
 		const usz sshot_size = buffer_height * buffer_width * 4;
 
-		vk::buffer sshot_vkbuf(*m_device, utils::align(sshot_size, 0x100000), m_device->get_memory_mapping().host_visible_coherent,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_BUFFER_USAGE_TRANSFER_DST_BIT, 0, VMM_ALLOCATION_POOL_UNDEFINED);
-
 		VkBufferImageCopy copy_info{};
 		copy_info.bufferOffset = 0;
 		copy_info.bufferRowLength = 0;
@@ -704,7 +949,8 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 
 		vk::image* image_to_copy = image_to_flip;
 
-		if (g_cfg.video.record_with_overlays && has_overlay)
+		const bool asynchronous = user_is_recording && m_frame->asynchronous_capture() && !user_asked_for_screenshot && !pbd_capture && !pbd_identity_capture && !pbd_target_capture;
+		if (!pbd_capture && !pbd_identity_capture && !pbd_target_capture && (g_cfg.video.record_with_overlays || asynchronous) && has_overlay)
 		{
 			const auto key = vk::get_renderpass_key(m_swapchain->get_surface_format());
 			single_target_pass = vk::get_renderpass(*m_device, key);
@@ -748,27 +994,63 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 			image_to_copy = m_overlay_recording_img.get();
 		}
 
+		if (asynchronous)
+		{
+			if (!clips_record(image_to_copy, buffer_width, buffer_height))
+				g_fxo->get<utils::video_provider>().frame_dropped();
+		}
+		else
+		{
+		vk::buffer sshot_vkbuf(*m_device, utils::align(sshot_size, 0x100000), m_device->get_memory_mapping().host_visible_coherent,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_BUFFER_USAGE_TRANSFER_DST_BIT, 0, VMM_ALLOCATION_POOL_UNDEFINED);
 		image_to_copy->push_layout(*m_current_command_buffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 		vk::copy_image_to_buffer(*m_current_command_buffer, image_to_copy, &sshot_vkbuf, copy_info);
+		// PBD: make the transfer write available to the host read below (coherence removes only the invalidate).
+		if (pbd_identity_capture || pbd_target_capture)
+			vk::insert_buffer_memory_barrier(*m_current_command_buffer, sshot_vkbuf.value, 0, sshot_size, VK_PIPELINE_STAGE_TRANSFER_BIT,
+				VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
 		image_to_copy->pop_layout(*m_current_command_buffer);
 
 		flush_command_queue(true);
+		// PBD: an identity capture additionally waits for the whole device before the host read, so no queued work
+		// can still write the copied image or the buffer; the wait's result gates the capture.
+		const bool pbd_device_fence = (pbd_identity_capture || pbd_target_capture) && ::pbd::frame_presentation::queue_tags_enabled();
+		const VkResult pbd_fence = pbd_device_fence ? vkDeviceWaitIdle(*m_device) : VK_SUCCESS;
+		const char* pbd_fence_name = pbd_device_fence ? "flush_command_queue_hard_sync+device_wait_idle" : "flush_command_queue_hard_sync";
 		const auto src = sshot_vkbuf.map(0, sshot_size);
 		std::vector<u8> sshot_frame(sshot_size);
 		memcpy(sshot_frame.data(), src, sshot_size);
 		sshot_vkbuf.unmap();
 
 		const bool is_bgra = image_to_copy->format() == VK_FORMAT_B8G8R8A8_UNORM;
+		if (pbd_identity_capture && ::pbd::frame_presentation::queue_tags_enabled())
+			::pbd::frame_presentation::tag_trace::get().token_state("readback_complete", info.pbd_token, pbd_flip,
+				pbd_fence == VK_SUCCESS ? "captured" : "fence_failed", buffer_width, buffer_height, buffer_pitch, buffer_width * 4,
+				static_cast<u32>(image_to_copy->format()), pbd_fence_name);
+
+		if (pbd_capture)
+			::pbd::frame_presentation::capture::get().append(sshot_frame, buffer_width, buffer_height, is_bgra, info.buffer, pbd_flip);
+		if (pbd_identity_capture)
+			::pbd::frame_presentation::identity_capture::get().append(sshot_frame, buffer_width, buffer_height, is_bgra, info.buffer,
+				pbd_flip, buffer_pitch, static_cast<u32>(image_to_copy->format()), pbd_fence_name, pbd_fence == VK_SUCCESS);
+		if (pbd_target_capture)
+			::pbd::frame_presentation::target_capture::get().append(sshot_frame, buffer_width, buffer_height, is_bgra, info.buffer,
+				pbd_flip, buffer_pitch, static_cast<u32>(image_to_copy->format()), pbd_fence_name, pbd_fence == VK_SUCCESS);
 
 		if (user_asked_for_screenshot)
 		{
 			m_frame->take_screenshot(std::move(sshot_frame), buffer_width, buffer_height, is_bgra);
 		}
-		else
+		else if (user_is_recording)
 		{
 			m_frame->present_frame(std::move(sshot_frame), buffer_width * 4, buffer_width, buffer_height, is_bgra);
 		}
+		}
 	}
+
+	// Black-frame probe (record only; no stall: read back in frame_context_cleanup once this frame completed).
+	if (info.emu_flip && info.pbd_bp_kind)
+		pbd_black_probe_record(info, image_to_flip, buffer_width, buffer_height, pbd_flip);
 
 	if (!image_to_flip || aspect_ratio.x1 || aspect_ratio.y1)
 	{
@@ -973,10 +1255,37 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 	}
 
 	queue_swap_request();
+	if (info.emu_flip && pbd::held_presentation::output().play_image(info.pbd_token,
+							 static_cast<u64>(Emu.GetEmulationIdentifier()), image_to_flip && !swapchain_unavailable))
+		pbd::stall_metrics::point("match_vs_image_ready", info.pbd_token.boundary, info.pbd_token.session_epoch, info.pbd_token.scene);
+	if (info.emu_flip && pbd::fight_timing::requested())
+	{
+		const auto& token = info.pbd_token;
+		const bool proved = token.verified();
+		const auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+		pbd::fight_timing::samples.delivered(token.session_epoch, token.boundary, static_cast<u64>(now), token.live,
+			proved, image_to_flip && !swapchain_unavailable && m_frame->shown());
+		// Carry the command's proved boundary, never the PPU's newer temporal label. Joining scene8/12 in tick-boundary
+		// identifies the first VS image accepted for presentation; this is not a monitor scan-out timestamp.
+		if (token.live && proved && image_to_flip && !swapchain_unavailable && m_frame->shown())
+			pbd::stall_metrics::point("image_present_accepted", token.boundary, token.session_epoch, token.token_segment);
+		else if (image_to_flip && !swapchain_unavailable)
+		{
+			const u64 state = (m_frame->shown() ? 1ull : 0ull) | (token.live ? 2ull : 0ull) | (proved ? 4ull : 0ull) |
+			                  (static_cast<u64>(token.command) << 8) | (token.accepted ? 0x10000ull : 0ull) | (token.flip_head_verified ? 0x20000ull : 0ull);
+			pbd::stall_metrics::point("image_present_unavailable", token.boundary, token.caller_thread, state);
+		}
+	}
+	if (info.emu_flip && image_to_flip && !swapchain_unavailable)
+		pbd::held_presentation::output().picture(m_frame->shown());
+	if (info.emu_flip && ::pbd::frame_presentation::queue_tags_enabled())
+		::pbd::frame_presentation::tag_trace::get().token_state("image_displayed", info.pbd_token, pbd_flip,
+			image_to_flip ? "present_queue_accepted" : "present_queue_accepted_no_source_image", buffer_width, buffer_height, buffer_pitch,
+			buffer_width * 4, image_to_flip ? static_cast<u32>(image_to_flip->format()) : 0u);
 
 	m_frame_stats.flip_time = m_profiler.duration();
 
-	m_frame->flip(m_context);
+	m_frame->flip(m_context, swapchain_unavailable);
 	rsx::thread::flip(info);
 
 	// Data sync

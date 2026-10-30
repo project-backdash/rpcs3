@@ -1,5 +1,8 @@
 #include "stdafx.h"
+#include "Emu/CPU/pbd_ordinary_metrics.h"
 #include "RSXThread.h"
+#include "pbd_frame_presentation.h"
+std::string pbd_flip_debug_state(); // sys_rsx.cpp (PBD flip completion counting)
 
 #include "Capture/rsx_capture.h"
 #include "Common/surface_store.h"
@@ -22,6 +25,7 @@
 #include "Emu/Cell/lv2/sys_event.h"
 #include "Emu/Cell/lv2/sys_time.h"
 #include "Emu/Cell/Modules/cellGcmSys.h"
+#include "Emu/RSX/pbd_replay_pacing.h"
 #include "util/serialization_ext.hpp"
 #include "Overlays/overlay_perf_metrics.h"
 #include "Overlays/overlay_debug_overlay.h"
@@ -1030,6 +1034,7 @@ namespace rsx
 
 	void thread::post_vblank_event(u64 post_event_time)
 	{
+		::pbd::ordinary_metrics::producer("vblank_post_attempt", 0, static_cast<u64>(isHLE), post_event_time);
 		vblank_count++;
 
 		if (isHLE)
@@ -1168,6 +1173,22 @@ namespace rsx
 			// TODO: exit condition
 			while (!is_stopped() && !unsent_gcm_events && thread_ctrl::state() != thread_state::aborting)
 			{
+				// PBD catch-up pacing: post one virtual vblank per credit immediately (see pbd_replay_pacing.h).
+				// The scheduled vblank below is unaffected: local_vblank_count and start_time are not touched here.
+				if (::pbd::replay_pacing::credits.load(std::memory_order_acquire))
+				{
+					::pbd::replay_pacing::credits.fetch_sub(1, std::memory_order_acq_rel);
+					::pbd::replay_pacing::posted.fetch_add(1, std::memory_order_relaxed);
+					post_vblank_event(get_system_time());
+					continue;
+				}
+				// A pending rate change (pbd::replay_pacing::vblank_request): the grid restarts at the last posted vblank, at the new rate.
+				if (const u32 want = ::pbd::replay_pacing::vblank_request.exchange(0, std::memory_order_acq_rel); want && want != vblank_rate)
+				{
+					start_time += local_vblank_count * vblank_period / vblank_rate;
+					local_vblank_count = 0;
+					vblank_rate = want;
+				}
 				// Get current time
 				const u64 current = get_system_time();
 
@@ -1203,11 +1224,22 @@ namespace rsx
 						}
 
 						post_vblank_event(post_event_time);
+						::pbd::replay_pacing::scheduled.fetch_add(1, std::memory_order_relaxed);
+
+						// PBD time sync: move the scheduled grid by one bounded step per vblank (see pbd_replay_pacing.h).
+						if (const s64 pending = ::pbd::replay_pacing::slew_us.load(std::memory_order_acquire))
+						{
+							const s64 step = std::clamp<s64>(pending, -::pbd::replay_pacing::slew_step_us, ::pbd::replay_pacing::slew_step_us);
+							start_time += static_cast<u64>(step);
+							::pbd::replay_pacing::slew_us.fetch_sub(step, std::memory_order_acq_rel);
+							::pbd::replay_pacing::slewed_us.fetch_add(step, std::memory_order_relaxed);
+						}
 					}
 				}
 				else if (wait_sleep)
 				{
-					thread_ctrl::wait_for(wait_sleep);
+					// PBD: while replay pacing is armed, wake often enough to serve a credit within ~0.2 ms.
+					thread_ctrl::wait_for(::pbd::replay_pacing::armed.load(std::memory_order_relaxed) ? std::min<u64>(wait_sleep, 200) : wait_sleep);
 				}
 				else if (wait_for >= host_min_quantum / 3 * 2)
 				{
@@ -3371,8 +3403,155 @@ namespace rsx
 		return performance_counters.approximate_load;
 	}
 
+	// PBD: walk guest FIFO words from EA `from` to EA `to`. Without `allow_methods` only NOPs (count 0 headers) and
+	// JUMPs may lie between them: that is what a segment-switch callback leaves in front of the next command. With it,
+	// complete method packets and one level of CALL ... RETURN are walked too (the title's flip sequence CALLs a static
+	// routine at IO offset 0), but no packet may touch the flip methods FLIP_HEAD..DRIVER_QUEUE (another flip) and a
+	// called routine may not nest flow control. Returns the number of words walked from `from`, or -1 when `to` is not
+	// reached within the bound; stop_pos/stop_word name the rejected word.
+	int thread::pbd_fifo_chain(u32 from, u32 to, bool allow_methods, u32* stop_pos, u32* stop_word) const
+	{
+		constexpr u32 flip_first = GCM_FLIP_HEAD << 2, flip_last = ((GCM_DRIVER_QUEUE + 8) << 2) - 4;
+		// A packet writes methods [m, m + 4 * (n - 1)] unless it is non-incrementing (only m).
+		const auto touches_flip = [&](u32 word, u32 n)
+		{
+			const u32 m = word & 0xfffc;
+			const u32 last = (word & RSX_METHOD_NON_INCREMENT_CMD_MASK) == RSX_METHOD_NON_INCREMENT_CMD ? m : m + 4 * (n - 1);
+			return n && m <= flip_last && last >= flip_first;
+		};
+		u32 pos = from;
+		int words = 0;
+		const auto stop = [&](u32 at, u32 word)
+		{
+			if (stop_pos)
+				*stop_pos = at;
+			if (stop_word)
+				*stop_word = word;
+			return -1;
+		};
+		for (int step = 0; step < 256 && pos != umax; step++)
+		{
+			if (pos == to)
+				return words;
+			if (!vm::check_addr(pos, vm::page_readable, 4))
+				return stop(pos, 0xffffffff);
+			const u32 word = vm::read32(pos);
+			if ((word & RSX_METHOD_OLD_JUMP_CMD_MASK) == RSX_METHOD_OLD_JUMP_CMD)
+			{
+				pos = iomap_table.get_addr(word & RSX_METHOD_OLD_JUMP_OFFSET_MASK);
+				words++;
+				continue;
+			}
+			if ((word & RSX_METHOD_NEW_JUMP_CMD_MASK) == RSX_METHOD_NEW_JUMP_CMD)
+			{
+				pos = iomap_table.get_addr(word & RSX_METHOD_NEW_JUMP_OFFSET_MASK);
+				words++;
+				continue;
+			}
+			if (allow_methods && (word & RSX_METHOD_CALL_CMD_MASK) == RSX_METHOD_CALL_CMD)
+			{
+				u32 sub = iomap_table.get_addr(word & RSX_METHOD_CALL_OFFSET_MASK);
+				bool returned = false;
+				for (u32 inner = 0; inner < 0x4000 && sub != umax; inner++)
+				{
+					if (!vm::check_addr(sub, vm::page_readable, 4))
+						return stop(sub, 0xffffffff);
+					const u32 op = vm::read32(sub);
+					// As RSXFIFO.cpp: RETURN ends the single CALL layer, JUMPs are followed inside it, a nested CALL is an error.
+					if ((op & RSX_METHOD_RETURN_MASK) == RSX_METHOD_RETURN_CMD)
+					{
+						returned = true;
+						break;
+					}
+					if ((op & RSX_METHOD_OLD_JUMP_CMD_MASK) == RSX_METHOD_OLD_JUMP_CMD)
+					{
+						sub = iomap_table.get_addr(op & RSX_METHOD_OLD_JUMP_OFFSET_MASK);
+						continue;
+					}
+					if ((op & RSX_METHOD_NEW_JUMP_CMD_MASK) == RSX_METHOD_NEW_JUMP_CMD)
+					{
+						sub = iomap_table.get_addr(op & RSX_METHOD_NEW_JUMP_OFFSET_MASK);
+						continue;
+					}
+					if (op & RSX_METHOD_NON_METHOD_CMD_MASK)
+						return stop(sub, op);
+					const u32 n = (op >> 18) & 0x7ff;
+					if (touches_flip(op, n))
+						return stop(sub, op);
+					sub += 4 * (n + 1);
+				}
+				if (!returned)
+					return stop(pos, word);
+				pos += 4;
+				words++;
+				continue;
+			}
+			if (word & RSX_METHOD_NON_METHOD_CMD_MASK)
+				return stop(pos, word);
+			const u32 count = (word >> 18) & 0x7ff;
+			if (!count)
+			{
+				pos += 4;
+				words++;
+				continue;
+			}
+			if (!allow_methods || touches_flip(word, count))
+				return stop(pos, word);
+			pos += 4 * (count + 1);
+			words += static_cast<int>(count + 1);
+		}
+		return pos == to ? words : stop(pos, 0);
+	}
+
+	::pbd::frame_presentation::frame_tag_queue::record thread::pbd_pop_flip_token(u32 buffer, bool forced)
+	{
+		// The address of the DRIVER_QUEUE header being executed; none when this frame end is not that method (a forced or
+		// unqueued flip), which pop_command reports as an explicit fault.
+		u32 address = ::pbd::frame_presentation::frame_tag_queue::no_address;
+		if (!forced && is_current_thread() && fifo_ctrl)
+		{
+			const u32 method = fifo_ctrl->last_cmd() & 0xfffc;
+			const u32 pos = fifo_ctrl->pbd_cmd_pos();
+			if (pos != umax && method >= (GCM_DRIVER_QUEUE << 2) && method < ((GCM_DRIVER_QUEUE + 8) << 2))
+				address = iomap_table.get_addr(pos);
+		}
+		// The LLE leaves either nothing (the command is at the registered write pointer) or, when the segment is full
+		// (write pointer + 0x10 > end), exactly one JUMP at the write pointer; the RSX must have executed that JUMP.
+		const u32 jump_src = m_pbd_jump_src != umax ? iomap_table.get_addr(m_pbd_jump_src) : umax;
+		const u32 jump_dst = m_pbd_jump_dst != umax ? iomap_table.get_addr(m_pbd_jump_dst) : umax;
+		auto token = ::pbd::frame_presentation::frame_tags.pop_command(buffer, address,
+			[&](const ::pbd::frame_presentation::frame_tag_queue::record& r, u32 to) -> int
+			{
+				if (to == r.entry_current)
+					return 0;
+				const bool segment_full = r.gcm_end != umax && r.entry_current + 0x10 > r.gcm_end;
+				return segment_full && jump_src == r.entry_current && jump_dst == to ? 1 : -1;
+			});
+		if (address != ::pbd::frame_presentation::frame_tag_queue::no_address)
+		{
+			token.rsx_dq_seq = ++m_pbd_dq_seq;
+			m_pbd_jump_src = m_pbd_jump_dst = ~0u;
+		}
+		return token;
+	}
+
+	void thread::pbd_note_flip_head(u32 arg)
+	{
+		// Only the RSX thread, executing the FLIP_HEAD method itself, records it (a PPU syscall 0x102 never does).
+		if (!::pbd::frame_presentation::queue_tags_enabled() || !is_current_thread() || !fifo_ctrl)
+			return;
+		m_pbd_flip_head_address = ~0u;
+		m_pbd_flip_head_arg = arg;
+		m_pbd_fh_dq_seq = m_pbd_dq_seq;
+		const u32 method = fifo_ctrl->last_cmd() & 0xfffc;
+		const u32 pos = fifo_ctrl->pbd_cmd_pos();
+		if (pos != umax && method >= (GCM_FLIP_HEAD << 2) && method < ((GCM_FLIP_HEAD + 2) << 2))
+			m_pbd_flip_head_address = iomap_table.get_addr(pos);
+	}
+
 	void thread::on_frame_end(u32 buffer, bool forced)
 	{
+		pbd_publish_debug_state();
 		bool pause_emulator = false;
 
 		// MM sync. This is a pre-emptive operation, so we can use a deferred request.
@@ -3439,8 +3618,95 @@ namespace rsx
 
 		// Save current state
 		m_queued_flip.stats = m_frame_stats;
-		m_queued_flip.push(buffer);
+		const auto pbd_tag = ::pbd::frame_presentation::queue_tags_enabled() ?
+		                         pbd_pop_flip_token(buffer, forced) :
+		                         ::pbd::frame_presentation::frame_tag_queue::record{buffer};
+		m_queued_flip.push(buffer, pbd_tag);
+		if (::pbd::frame_presentation::queue_tags_enabled())
+			::pbd::frame_presentation::tag_trace::get().token_state("command_consumed", pbd_tag, 0,
+				::pbd::frame_presentation::command_state_name(pbd_tag.command));
+		const bool pbd_exact = ::pbd::replay_pacing::exact.load(std::memory_order_relaxed) != 0;
 		m_queued_flip.skip_frame = skip_current_frame;
+		// PBD_REPLAY_WITHHOLD_AT_RISK=1: a live frame ending while a started restore's marker is still ahead of the FIFO
+		// read position was drawn (at least partly) after the restore rewrote guest memory: withhold its image (draws already ran).
+		if (pbd_exact && !skip_current_frame && ::pbd::replay_pacing::withhold_at_risk.load(std::memory_order_relaxed) &&
+			::pbd::replay_pacing::restores_started.load(std::memory_order_acquire) != m_pbd_marker_read)
+		{
+			m_queued_flip.skip_frame = true;
+			::pbd::replay_pacing::frames_withheld_at_risk.fetch_add(1, std::memory_order_relaxed);
+		}
+		// Black-frame probe tag (record only; the backend flip reads it when PBD_BLACK_PROBE is set). Kind 2: a frame
+		// submitted before a restore that the renderer ends after it (in flight while the window runs); kind 1: live frames 1-4
+		// after a window's last withheld frame; kind 3: every 60th other live frame (baseline). Index: low byte = age+1 (kind 2),
+		// post-window index (kind 1) or 0; byte 1 = post-window index when a kind 2 frame is also post-window.
+		if (pbd_exact && !skip_current_frame && !m_queued_flip.buffer_queue.empty())
+		{
+			auto& pbd_q = m_queued_flip.buffer_queue.back();
+			const u32 pbd_post = m_pbd_bp_after;
+			if (m_pbd_bp_after)
+				m_pbd_bp_after = m_pbd_bp_after >= 4 ? 0 : m_pbd_bp_after + 1;
+			if (m_pbd_marker_read != ::pbd::replay_pacing::marker_write.load(std::memory_order_acquire) && !m_pbd_withhold_left)
+			{
+				pbd_q.pbd_bp_kind = 2;
+				pbd_q.pbd_bp_marker = m_pbd_marker_read + 1;
+				pbd_q.pbd_bp_index = (m_pbd_marker_age + 1) | (pbd_post << 8);
+			}
+			else if (pbd_post)
+			{
+				pbd_q.pbd_bp_kind = 1;
+				pbd_q.pbd_bp_marker = m_pbd_bp_marker;
+				pbd_q.pbd_bp_index = pbd_post;
+			}
+			else if (++m_pbd_bp_live % 60 == 0)
+			{
+				pbd_q.pbd_bp_kind = 3;
+				pbd_q.pbd_bp_marker = m_pbd_bp_marker;
+				pbd_q.pbd_bp_index = 0;
+			}
+		}
+		if (m_pbd_replay_skip && skip_current_frame)
+			::pbd::replay_pacing::frames_skipped.fetch_add(1, std::memory_order_relaxed);
+		::pbd::replay_pacing::frames_ended.fetch_add(1, std::memory_order_acq_rel);
+		if (pbd_exact)
+		{
+			// This frame end is in-band (queue_flip runs on the RSX thread): count the withheld frames down here.
+			if (m_pbd_withhold_left && --m_pbd_withhold_left == 0)
+			{
+				skip_current_frame = false;
+				m_pbd_replay_skip = false;
+				m_pbd_bp_after = 1;
+			}
+			// A marker the FIFO never stood at (three frame ends) is dropped so that later ones are not stuck behind it.
+			if (m_pbd_marker_read != ::pbd::replay_pacing::marker_write.load(std::memory_order_acquire) && !m_pbd_withhold_left && ++m_pbd_marker_age >= 3)
+			{
+				// With PBD_REPLAY_WITHHOLD_AT_RISK=1: the three frames ended while this marker was pending were withheld at
+				// risk; its restore re-executes `depth` ticks, so withhold the rest of them instead of showing re-executed frames once
+				// the marker is dropped (forced skew at depth 8 would otherwise present frames 4-8 of the window).
+				const u32 pbd_depth = static_cast<u32>(::pbd::replay_pacing::markers[m_pbd_marker_read % ::pbd::replay_pacing::markers.size()].load(std::memory_order_acquire) >> 32);
+				m_pbd_marker_read++;
+				m_pbd_marker_age = 0;
+				::pbd::replay_pacing::markers_missed.fetch_add(1, std::memory_order_relaxed);
+				if (::pbd::replay_pacing::withhold_at_risk.load(std::memory_order_relaxed) && pbd_depth > 3)
+				{
+					m_pbd_withhold_left = pbd_depth - 3;
+					skip_current_frame = true;
+					m_pbd_replay_skip = true;
+					::pbd::replay_pacing::markers_expired_withheld.fetch_add(pbd_depth - 3, std::memory_order_relaxed);
+				}
+			}
+		}
+		else
+			// PBD: frames submitted while the latch re-executes a corrected window are flipped without their
+			// draw calls; the first frame after the window is drawn again. Independent of the frame-skip setting.
+			if (const bool replaying = ::pbd::replay_pacing::skip_draws.load(std::memory_order_relaxed); replaying || m_pbd_replay_skip)
+			{
+				skip_current_frame = replaying;
+				m_pbd_replay_skip = replaying;
+			}
+		if (::pbd::frame_presentation::queue_tags_enabled())
+			::pbd::frame_presentation::tag_trace::get().consume(pbd_tag,
+				int_flip_index + ::pbd::frame_presentation::flip_base.load(std::memory_order_acquire), m_queued_flip.skip_frame,
+				m_pbd_replay_skip, m_pbd_withhold_left, +ctrl->get, +ctrl->put);
 
 		if (!forced) [[likely]]
 		{
@@ -3549,8 +3815,47 @@ namespace rsx
 		return true;
 	}
 
+	void thread::pbd_publish_debug_state()
+	{
+		pbd_diagnostic_snapshot snapshot;
+		if (ctrl)
+		{
+			snapshot.get = ctrl->get.load();
+			snapshot.put = ctrl->put.load();
+			snapshot.ref = ctrl->ref.load();
+		}
+		snapshot.label = label_addr;
+		snapshot.flip_status = flip_status;
+		snapshot.flip_index = int_flip_index;
+		snapshot.queued = m_queued_flip.in_progress;
+		snapshot.queued_skip = m_queued_flip.skip_frame;
+		snapshot.skip = skip_current_frame;
+		snapshot.withhold_left = m_pbd_withhold_left;
+		snapshot.marker_read = m_pbd_marker_read;
+		snapshot.marker_age = m_pbd_marker_age;
+		snapshot.replay_skip = m_pbd_replay_skip;
+		std::lock_guard lock(m_pbd_diagnostic_mutex);
+		m_pbd_diagnostic = snapshot;
+	}
+
+	std::string thread::pbd_debug_state() const
+	{
+		pbd_diagnostic_snapshot snapshot;
+		{
+			std::lock_guard lock(m_pbd_diagnostic_mutex);
+			snapshot = m_pbd_diagnostic;
+		}
+		return pbd_flip_debug_state() + fmt::format("; sampled ctrl get 0x%x put 0x%x ref 0x%x label_addr 0x%x; flip_status %u (0 = done under LLE libgcm always), int_flip_index %u, vblank_count %u, requested_vsync %d, async_flip_requested 0x%x, "
+													"queued_flip in_progress %d skip_frame %d, skip_current_frame %d, withhold_left %u, marker_read %u, marker_age %u, replay_skip %d",
+											snapshot.get, snapshot.put, snapshot.ref, snapshot.label, snapshot.flip_status, snapshot.flip_index, vblank_count.load(), requested_vsync.load() ? 1 : 0, static_cast<u32>(async_flip_requested.load()),
+											snapshot.queued ? 1 : 0, snapshot.queued_skip ? 1 : 0, snapshot.skip ? 1 : 0, snapshot.withhold_left, snapshot.marker_read, snapshot.marker_age, snapshot.replay_skip ? 1 : 0);
+	}
+
 	void thread::handle_emu_flip(u32 buffer)
 	{
+		pbd_publish_debug_state();
+		// PBD (record only): the guest's flip command reached the renderer (the frame's draw commands are all behind it).
+		::pbd::ordinary_metrics::scope measure_request(4, "guest_flip_request");
 		if (m_queued_flip.in_progress)
 		{
 			// Rescursion not allowed!
@@ -3562,6 +3867,47 @@ namespace rsx
 			// Frame was not queued before flipping
 			on_frame_end(buffer, true);
 			ensure(m_queued_flip.pop(buffer));
+		}
+
+		if (::pbd::frame_presentation::queue_tags_enabled())
+		{
+			// PBD: the FLIP_HEAD that requested this flip must follow the token's own DRIVER_QUEUE command in the
+			// same flip sequence (only complete non-flip methods, NOPs or JUMPs in between) and name the same buffer.
+			using ::pbd::frame_presentation::command_state;
+			auto& token = m_queued_flip.pbd_token;
+			const u32 head = std::exchange(m_pbd_flip_head_address, ~0u);
+			const bool bound = token.command == command_state::exact || token.command == command_state::via_chain;
+			token.flip_head_address = head;
+			u32 stop_pos = umax, stop_word = umax;
+			// The chain starts after the DRIVER_QUEUE packet (header + its argument count), and the flip's resolved buffer
+			// (sys_rsx 0x102 index, possibly "last queued") must be the token's.
+			const u32 dq_header = bound && token.fifo_address != umax && vm::check_addr(token.fifo_address, vm::page_readable, 4) ?
+			                          +vm::read32(token.fifo_address) :
+			                          0u;
+			const u32 dq_bytes = 4 * (((dq_header >> 18) & 0x7ff) + 1);
+			// Consumed stream: no other DRIVER_QUEUE executed between this token's and this FLIP_HEAD; the memory walk corroborates.
+			token.flip_head_verified = bound && head != umax && dq_header && buffer == token.buffer &&
+			                           token.rsx_dq_seq && token.rsx_dq_seq == m_pbd_fh_dq_seq &&
+			                           pbd_fifo_chain(token.fifo_address + dq_bytes, head, true, &stop_pos, &stop_word) >= 0;
+			if (bound && !token.flip_head_verified)
+				::pbd::frame_presentation::frame_tags.fault();
+			std::string disposition = token.flip_head_verified ? std::string("flip_head_chained") : head == umax ? std::string("no_flip_head") :
+			                                                                                                       fmt::format("flip_head_unchained arg 0x%x buffer %u stop 0x%08x (+0x%x) word 0x%08x", m_pbd_flip_head_arg, buffer, stop_pos, stop_pos == umax ? umax : stop_pos - token.fifo_address, stop_word);
+			// Diagnostic: the words between the two commands for the first failures only.
+			static u32 s_pbd_dumps = 0;
+			if (!token.flip_head_verified && head != umax && token.fifo_address != umax && head > token.fifo_address &&
+				head - token.fifo_address <= 0x100 && s_pbd_dumps++ < 4)
+			{
+				disposition += " words";
+				for (u32 at = token.fifo_address; at <= head; at += 4)
+					fmt::append(disposition, " %08x", vm::check_addr(at, vm::page_readable, 4) ? +vm::read32(at) : 0xdeadbeefu);
+				const u32 call0 = iomap_table.get_addr(0);
+				fmt::append(disposition, " io0_ea %08x sub", call0);
+				for (u32 i = 0; i < 24 && call0 != umax; i++)
+					fmt::append(disposition, " %08x", vm::check_addr(call0 + i * 4, vm::page_readable, 4) ? +vm::read32(call0 + i * 4) : 0xdeadbeefu);
+			}
+			::pbd::frame_presentation::tag_trace::get().token_state("flip_executed", token,
+				int_flip_index + ::pbd::frame_presentation::flip_base.load(std::memory_order_acquire), disposition.c_str());
 		}
 
 		double limit = 0.;
@@ -3587,6 +3933,8 @@ namespace rsx
 			// Apply a second limit
 			limit = limit2;
 		}
+		if (const auto rate = ::pbd::replay_pacing::pbd_player_rate.load(std::memory_order_acquire))
+			limit = rate;
 
 		if (limit)
 		{
@@ -3643,6 +3991,9 @@ namespace rsx
 
 		last_guest_flip_timestamp = get_system_time() - 1000000;
 		flip_status = CELL_GCM_DISPLAY_FLIP_STATUS_DONE;
+		if (::pbd::frame_presentation::queue_tags_enabled())
+			::pbd::frame_presentation::tag_trace::get().token_state("guest_completion_delivered", m_queued_flip.pbd_token,
+				int_flip_index + ::pbd::frame_presentation::flip_base.load(std::memory_order_acquire));
 		m_queued_flip.in_progress = false;
 
 		while (flip_notification_count--)
@@ -3886,6 +4237,14 @@ namespace rsx
 		std::swap(m_thread, thread);
 	}
 
+	void vblank_thread::notify()
+	{
+		if (m_thread)
+		{
+			thread_ctrl::notify(*m_thread);
+		}
+	}
+
 	vblank_thread& vblank_thread::operator=(thread_state state)
 	{
 		if (m_thread)
@@ -3896,3 +4255,9 @@ namespace rsx
 		return *this;
 	}
 } // namespace rsx
+
+void ::pbd::replay_pacing::notify_vblank()
+{
+	// The vblank thread polls credits in thread_ctrl::wait_for (alert); a notify ends that wait at once.
+	g_fxo->get<rsx::vblank_thread>().notify();
+}

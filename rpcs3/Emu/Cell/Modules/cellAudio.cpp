@@ -1,7 +1,9 @@
 #include "stdafx.h"
+#include "Emu/CPU/pbd_ordinary_metrics.h"
 #include "Emu/System.h"
 #include "Emu/system_config.h"
 #include "Emu/Audio/audio_utils.h"
+#include "Emu/PBD/pbd_output_gain.h"
 #include "Emu/Cell/PPUModule.h"
 #include "Emu/Cell/timers.hpp"
 #include "Emu/Cell/lv2/sys_process.h"
@@ -16,6 +18,13 @@ LOG_CHANNEL(cellAudio);
 extern atomic_t<recording_mode> g_recording_mode;
 
 extern void lv2_sleep(u64 timeout, ppu_thread* ppu = nullptr);
+
+// PBD: audio health counters, cumulative, read by the update latch's
+// correction rows. underruns = host backend callbacks that got less than they asked for (what the listener hears as stutter/static);
+// time_advances = periods skipped because the game had not touched its port buffers in time; silence_blocks = periods enqueued as
+// silence for the same reason (the game's mix was late).
+std::atomic<u64> g_pbd_audio_callbacks{0}, g_pbd_audio_underruns{0}, g_pbd_audio_underrun_bytes{0};
+std::atomic<u64> g_pbd_audio_time_advances{0}, g_pbd_audio_silence_blocks{0};
 
 vm::gvar<char, AUDIO_PORT_OFFSET * AUDIO_PORT_COUNT> g_audio_buffer;
 
@@ -200,7 +209,14 @@ u32 audio_ringbuffer::backend_write_callback(u32 size, void *buf)
 {
 	if (!backend_active.observe()) backend_active = true;
 
-	return static_cast<u32>(cb_ringbuf.pop(buf, size, true));
+	const u64 popped = cb_ringbuf.pop(buf, size, true);
+	g_pbd_audio_callbacks.fetch_add(1, std::memory_order_relaxed);
+	if (popped < size)
+	{
+		g_pbd_audio_underruns.fetch_add(1, std::memory_order_relaxed);
+		g_pbd_audio_underrun_bytes.fetch_add(size - popped, std::memory_order_relaxed);
+	}
+	return static_cast<u32>(popped);
 }
 
 void audio_ringbuffer::backend_state_callback(AudioStateEvent event)
@@ -517,6 +533,7 @@ void cell_audio_thread::reset_ports(s32 offset)
 		if (port.state != audio_port_state::started) continue;
 
 		memset(port.get_vm_ptr(offset), 0, port.block_size() * sizeof(float));
+		pbd::ordinary_metrics::producer("audio_block_cleared", vm::get_addr(port.get_vm_ptr(offset)), port.block_size() * sizeof(float), offset);
 
 		if (cfg.buffering_enabled)
 		{
@@ -544,6 +561,7 @@ void cell_audio_thread::advance(u64 timestamp)
 
 		port.cur_pos = port.position(1);
 		*port.index = port.cur_pos;
+		pbd::ordinary_metrics::producer("audio_index_written", port.index.addr(), 8, port.cur_pos);
 	}
 
 	if (cfg.buffering_enabled)
@@ -915,6 +933,7 @@ void cell_audio_thread::operator()()
 				{
 					// There's no audio in the buffers, simply advance time and hope the game recovers
 					cellAudio.trace("advancing time: untouched=%u/%u (expected=%u), enqueued_buffers=%llu", untouched, active_ports, untouched_expected, enqueued_buffers);
+					g_pbd_audio_time_advances.fetch_add(1, std::memory_order_relaxed);
 					untouched_expected = untouched;
 					advance(timestamp);
 					continue;
@@ -930,6 +949,7 @@ void cell_audio_thread::operator()()
 			{
 				// There's no audio in the buffers, simply advance time
 				cellAudio.trace("enqueuing silence: untouched=%u/%u (expected=%u), enqueued_buffers=%llu", untouched, active_ports, untouched_expected, enqueued_buffers);
+				g_pbd_audio_silence_blocks.fetch_add(1, std::memory_order_relaxed);
 				ringbuffer->enqueue_silence();
 				untouched_expected = untouched;
 				advance(timestamp);
@@ -1044,12 +1064,14 @@ audio_port* cell_audio_thread::open_port()
 template <AudioChannelCnt channels, AudioChannelCnt downmix>
 void cell_audio_thread::mix(float* out_buffer, s32 offset)
 {
+	pbd::stall_metrics::scope measure_mix("audio_mix");
 	AUDIT(out_buffer != nullptr);
 
 	constexpr u32 out_channels = static_cast<u32>(channels);
 	constexpr u32 out_buffer_sz = out_channels * AUDIO_BUFFER_SAMPLES;
 
-	const float master_volume = audio::get_volume();
+	// The master volume is applied to the whole mix by the output gain below, which ramps its changes.
+	const float master_volume = 1.0f;
 
 	// Reset out_buffer
 	std::memset(out_buffer, 0, out_buffer_sz * sizeof(float));
@@ -1173,6 +1195,8 @@ void cell_audio_thread::mix(float* out_buffer, s32 offset)
 			fmt::throw_exception("Unknown channel count (port=%u, channel=%d)", port.number, port.num_channels);
 		}
 	}
+
+	pbd::output_gain::output().apply(out_buffer, out_channels, AUDIO_BUFFER_SAMPLES, audio::get_volume());
 }
 
 void cell_audio_thread::finish_port_volume_stepping()

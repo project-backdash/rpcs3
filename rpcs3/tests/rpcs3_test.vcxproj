@@ -110,6 +110,7 @@
     <ClCompile Include="test_pair.cpp" />
     <ClCompile Include="test_types_util.cpp" />
   </ItemGroup>
+  <Import Project="pbd\pbd_tests.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" Condition="'$(GTestInstalled)' == 'true'">
     <!-- Use path instead of GTestPath variable to fix property pages -->

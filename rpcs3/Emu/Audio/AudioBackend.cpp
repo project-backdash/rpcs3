@@ -2,6 +2,7 @@
 #include "AudioBackend.h"
 #include "Emu/IdManager.h"
 #include "Emu//Cell/Modules/cellAudioOut.h"
+#include "Emu/PBD/pbd_held_presentation.h"
 #include <cstring>
 #include <cmath>
 
@@ -10,7 +11,39 @@ AudioBackend::AudioBackend() {}
 void AudioBackend::SetWriteCallback(std::function<u32(u32 /* byte_cnt */, void* /* buffer */)> cb)
 {
 	std::lock_guard lock(m_cb_mutex);
-	m_write_callback = cb;
+	if (!cb)
+	{
+		m_write_callback = {};
+		return;
+	}
+	m_write_callback = [this, callback = std::move(cb)](u32 requested, void* buffer)
+	{
+		const u32 written = callback(requested, buffer);
+		auto& presentation = pbd::held_presentation::output();
+		if (written && presentation.awaiting_audio())
+		{
+			bool signal = false;
+			const u32 bytes = std::min(written, requested);
+			if (get_convert_to_s16())
+			{
+				const auto* samples = static_cast<const s16*>(buffer);
+				signal = std::any_of(samples, samples + bytes / sizeof(s16), [](s16 sample)
+					{
+						return sample != 0;
+					});
+			}
+			else
+			{
+				const auto* samples = static_cast<const f32*>(buffer);
+				signal = std::any_of(samples, samples + bytes / sizeof(f32), [](f32 sample)
+					{
+						return std::isfinite(sample) && sample != 0.0f;
+					});
+			}
+			presentation.submitted(signal);
+		}
+		return written;
+	};
 }
 
 void AudioBackend::SetStateCallback(std::function<void(AudioStateEvent)> cb)
