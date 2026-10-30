@@ -11,13 +11,13 @@ using namespace pbd::replay_rewind;
 
 PBD_TEST(PbdReplayRewind, CapturesOneCheckpointPerSecondOfFightAndEveryRoundStart)
 {
-	check(capture_due(true, true, false, false, 0, 500));          // the first fight boundary
-	check(!capture_due(false, true, true, false, 0, 500));         // a taken side: the replay no longer plays the recording
-	check(!capture_due(true, false, true, false, 0, 500));         // between rounds the render thread owns the frame object
+	check(capture_due(true, true, false, false, 0, 500));  // the first fight boundary
+	check(!capture_due(false, true, true, false, 0, 500)); // a taken side: the replay no longer plays the recording
+	check(!capture_due(true, false, true, false, 0, 500)); // between rounds the render thread owns the frame object
 	check(!capture_due(true, true, false, true, 500, 500 + spacing - 1));
 	check(capture_due(true, true, false, true, 500, 500 + spacing));
-	check(capture_due(true, true, true, true, 500, 510));          // a round start is always kept
-	check(!capture_due(true, true, true, true, 900, 600));         // behind the newest after a restore: wait until past it
+	check(capture_due(true, true, true, true, 500, 510));  // a round start is always kept
+	check(!capture_due(true, true, true, true, 900, 600)); // behind the newest after a restore: wait until past it
 	check(!capture_due(true, true, false, true, 900, 900));
 }
 
@@ -89,8 +89,10 @@ PBD_TEST(PbdReplayRewind, WorkerCompressionRetainsExactPagesAndFirstWriteImages)
 {
 	using namespace pbd::replay_checkpoint;
 	std::vector<std::uint8_t> pages(616 * 4096, 0), journal(97 * 4096, 0);
-	for (std::size_t i = 0; i < pages.size(); i += 317) pages[i] = static_cast<std::uint8_t>(i >> 4);
-	for (std::size_t i = 0; i < journal.size(); ++i) journal[i] = static_cast<std::uint8_t>((i / 4096) ^ (i & 31));
+	for (std::size_t i = 0; i < pages.size(); i += 317)
+		pages[i] = static_cast<std::uint8_t>(i >> 4);
+	for (std::size_t i = 0; i < journal.size(); ++i)
+		journal[i] = static_cast<std::uint8_t>((i / 4096) ^ (i & 31));
 	const auto expected_pages = pages, expected_journal = journal;
 	std::shared_ptr<image> sealed;
 	{

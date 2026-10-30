@@ -64,4 +64,4 @@ namespace pbd::match_pad
 			return m_swap.value_or(false);
 		}
 	};
-}
+} // namespace pbd::match_pad

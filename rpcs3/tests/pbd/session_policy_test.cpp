@@ -45,4 +45,3 @@ PBD_TEST(PbdSessionPolicy, OnlyTheDirectPolicySkipsReplayDrawsAndWithholdsExactl
 		check(replay.skips.empty() && !replay.player_draw_gate && !replay.stage_camera_gate && !replay.withhold_exact);
 	}
 }
-

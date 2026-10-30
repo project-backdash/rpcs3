@@ -153,7 +153,6 @@ namespace pbd
 		{
 			return port < m_events.size() && !m_events[port].empty() && m_events[port ^ 1].empty();
 		}
-
 	};
 
 	// Exact identity of one checkpoint file: normalized path, byte size and SHA-256 of contents.

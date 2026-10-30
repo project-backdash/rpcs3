@@ -14,11 +14,11 @@ namespace pbd::practice::match_prompt
 		if (panel.kind != pbd::game_overlay::panel_kind::challenger)
 			return false;
 		return (panel.row_count == 0 && panel.timer.total_ms == 1000) || (panel.row_count == 2 &&
-			(panel.timer.total_ms == 15000 || panel.timer.total_ms == 20000 || panel.timer.total_ms == 24000));
+																			 (panel.timer.total_ms == 15000 || panel.timer.total_ms == 20000 || panel.timer.total_ms == 24000));
 	}
 
 	inline bool expired(const pbd::game_overlay::snapshot& panel, std::uint64_t now_ms) noexcept
 	{
 		return panel.timer.present && now_ms >= panel.timer.deadline_ms;
 	}
-}
+} // namespace pbd::practice::match_prompt

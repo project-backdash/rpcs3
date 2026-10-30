@@ -20,7 +20,8 @@ namespace pbd::practice::start
 	inline json::result<request> parse(std::string_view text)
 	{
 		auto parsed = json::detail::json_parser(text, 32, 4096, 128).parse();
-		if (!parsed.value) return {{}, parsed.error};
+		if (!parsed.value)
+			return {{}, parsed.error};
 		const auto& value = *parsed.value;
 		request out;
 		if (!json::detail::is(value.find("schema"), "pbd-practice-start-1") ||
@@ -46,17 +47,25 @@ namespace pbd::practice::start
 		std::uint32_t default_dummy)
 	{
 		const auto original = pbd::hidden_selection::resolve(tables, wanted.character_row);
-		if (!original || wanted.costume > 4 || !stage::valid(wanted.stage)) return {};
+		if (!original || wanted.costume > 4 || !stage::valid(wanted.stage))
+			return {};
 		// Option zero keeps the chosen roster row. Other options follow the game's verified costume list.
 		std::vector<std::uint32_t> rows{wanted.character_row};
 		for (const auto row : tables.costumes[original->character].rows)
-			if (row != wanted.character_row) rows.push_back(row);
-		if (wanted.costume >= rows.size() || !pbd::hidden_selection::resolve(tables, rows[wanted.costume])) return {};
-		if (!pbd::hidden_selection::resolve(tables, default_dummy)) default_dummy = rows[wanted.costume];
+			if (row != wanted.character_row)
+				rows.push_back(row);
+		if (wanted.costume >= rows.size() || !pbd::hidden_selection::resolve(tables, rows[wanted.costume]))
+			return {};
+		if (!pbd::hidden_selection::resolve(tables, default_dummy))
+			default_dummy = rows[wanted.costume];
 		// Mirror fighters need different costume rows or the stock selector substitutes the dummy's choice.
 		if (default_dummy == rows[wanted.costume])
 			for (const auto row : tables.costumes[original->character].rows)
-				if (row != default_dummy && pbd::hidden_selection::resolve(tables, row)) { default_dummy = row; break; }
+				if (row != default_dummy && pbd::hidden_selection::resolve(tables, row))
+				{
+					default_dummy = row;
+					break;
+				}
 		return selection{{rows[wanted.costume], default_dummy}, wanted.stage};
 	}
 	struct snapshot
@@ -65,7 +74,12 @@ namespace pbd::practice::start
 		std::array<std::uint32_t, 2> rows{};
 		bool models_ready = false;
 	};
-	enum class progress { waiting, ready, refused };
+	enum class progress
+	{
+		waiting,
+		ready,
+		refused
+	};
 	struct watch
 	{
 		selection wanted;
@@ -73,12 +87,16 @@ namespace pbd::practice::start
 		std::uint32_t advancing = 0;
 		progress step(const snapshot& now)
 		{
-			if (now.mode != 10) return progress::refused;
+			if (now.mode != 10)
+				return progress::refused;
 			if (now.scene != 17 || now.pending != 17 || !now.models_ready)
 			{
-				previous.reset(); advancing = 0; return progress::waiting;
+				previous.reset();
+				advancing = 0;
+				return progress::waiting;
 			}
-			if (now.rows != wanted.rows || now.stage != wanted.stage) return progress::refused;
+			if (now.rows != wanted.rows || now.stage != wanted.stage)
+				return progress::refused;
 			advancing = previous && now.counter == *previous + 1 ? advancing + 1 : 0;
 			previous = now.counter;
 			return advancing >= 3 ? progress::ready : progress::waiting;
@@ -94,4 +112,4 @@ namespace pbd::practice::start
 		std::string refusal;
 		std::chrono::steady_clock::time_point deadline{}, failed_at{};
 	};
-}
+} // namespace pbd::practice::start

@@ -36,7 +36,7 @@ PBD_TEST(PbdPracticeGuard, DummyActionListKeepsTheGameValuesAndAddsGuardAllChoic
 		check((choice.guard != guard::game) == !choice.help.empty(), "only the added choices explain themselves");
 	}
 	check(pbd_dummy_action_option(4, guard::game) == 4u && pbd_dummy_action_option(4, guard::after_first_hit) == 5u &&
-		pbd_dummy_action_option(4, guard::random) == 6u);
+		  pbd_dummy_action_option(4, guard::random) == 6u);
 	for (const auto choice : {guard::after_first_hit, guard::random})
 		check(pbd_dummy_action_option(1, choice) == 1u && pbd_dummy_action_option(10, choice) == 8u,
 			"a guard choice left from Guard All never renames another action");
@@ -155,7 +155,10 @@ PBD_TEST(PbdPracticeGuard, CounterHitRandomDrawsOnTheFirstFrameAndAfterEachConta
 PBD_TEST(PbdPracticeGuard, TheHostGeneratorGivesBothChoices)
 {
 	std::uint32_t rng = 0x9e3779b9u;
-	const auto draw = [&] { return pbd::practice::dummy_move::random(rng); };
+	const auto draw = [&]
+	{
+		return pbd::practice::dummy_move::random(rng);
+	};
 	pbd_guard_state state;
 	state.choose(guard::random);
 	pbd_counter_hit_draw counter;

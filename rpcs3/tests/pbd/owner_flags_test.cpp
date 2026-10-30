@@ -16,7 +16,7 @@ namespace
 	static_assert(!pbd::pbd_owner_flags_allowed(cpu_flag::suspend, true, false));
 	static_assert(!pbd::pbd_owner_flags_allowed(cpu_flag::notify, false, true));
 	static_assert(!pbd::pbd_owner_flags_allowed(cpu_flag::wait + cpu_flag::notify, true, true));
-}
+} // namespace
 
 PBD_TEST(PbdOwnerFlags, StrictOutsideAllowedScope)
 {

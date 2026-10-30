@@ -74,10 +74,10 @@ namespace
 	struct move_bank_model
 	{
 		static constexpr u32 bank = 0x20000000, moves = 0x21000000, commands = 0x22000000, groups = 0x23000000, requirements = 0x25000000,
-			extra = 0x26000000, properties = 0x27000000;
+							 extra = 0x26000000, properties = 0x27000000;
 		// Requirement lists, each ended by 327: always true, the contact tests, a tag, a side and a game condition.
 		static constexpr u32 always = requirements, on_hit = requirements + 8, on_block = requirements + 16,
-			on_whiff = requirements + 24, tag = requirements + 32, side = requirements + 40, condition = requirements + 48;
+							 on_whiff = requirements + 24, tag = requirements + 32, side = requirements + 40, condition = requirements + 48;
 		// Extra words: plain 0x80, the cursor-keeping 0x401 and 0x402, the 0x2400 marker and 0x3FFF (the end command).
 		static constexpr u32 plain = extra, extra_401 = extra + 4, marker = extra + 8, extra_402 = extra + 12, to_end = extra + 16;
 		static constexpr u32 standing = 60, crouching = 61, lying = 62;
@@ -86,26 +86,48 @@ namespace
 
 		move_bank_model()
 		{
-			words[bank + 0x1e0] = moves; words[bank + 0x1e4] = 64;
-			words[bank + 0x1b0] = commands; words[bank + 0x1b4] = 512;
-			words[bank + 0x1b8] = groups; words[bank + 0x1bc] = 64;
-			words[bank + 0x190] = requirements; words[bank + 0x194] = 14;
-			words[bank + 0x1c0] = extra; words[bank + 0x1c4] = 5;
-			words[bank + 0x1c8] = properties; words[bank + 0x1cc] = 32;
+			words[bank + 0x1e0] = moves;
+			words[bank + 0x1e4] = 64;
+			words[bank + 0x1b0] = commands;
+			words[bank + 0x1b4] = 512;
+			words[bank + 0x1b8] = groups;
+			words[bank + 0x1bc] = 64;
+			words[bank + 0x190] = requirements;
+			words[bank + 0x194] = 14;
+			words[bank + 0x1c0] = extra;
+			words[bank + 0x1c4] = 5;
+			words[bank + 0x1c8] = properties;
+			words[bank + 0x1cc] = 32;
 			const auto list = [&](u32 at, u32 id)
 			{
 				words[at] = id << 16;
 				words[at + 4] = 327u << 16;
 			};
-			list(always, 0); list(on_hit, 42); list(on_block, 43); list(on_whiff, 44); list(tag, 0x8162); list(side, 113);
-			words[condition] = (135u << 16) | 4u; words[condition + 4] = 327u << 16;
-			words[plain] = 0x80; words[extra_401] = 0x401; words[marker] = 0x2400; words[extra_402] = 0x402; words[to_end] = 0x3fff;
+			list(always, 0);
+			list(on_hit, 42);
+			list(on_block, 43);
+			list(on_whiff, 44);
+			list(tag, 0x8162);
+			list(side, 113);
+			words[condition] = (135u << 16) | 4u;
+			words[condition + 4] = 327u << 16;
+			words[plain] = 0x80;
+			words[extra_401] = 0x401;
+			words[marker] = 0x2400;
+			words[extra_402] = 0x402;
+			words[to_end] = 0x3fff;
 			// Aliases 1 and 2 name the standing and crouching records, 4 and 0x17 a lying pose with a get-up from cursor 1.
-			words[bank + 0xac + 4] = standing; words[bank + 0xac + 8] = crouching;
-			words[bank + 0xac + 4 * 4] = lying; words[bank + 0xac + 0x17 * 4] = lying;
-			move(standing, 60, 0x1052); end(0x8001, 60);
-			move(crouching, 60, 0x1052); end(0x8002, 60);
-			move(lying, 60, 0x6004); command(0x0004, 0x8001, 1, 60, 0x50); end(0x8001, 60);
+			words[bank + 0xac + 4] = standing;
+			words[bank + 0xac + 8] = crouching;
+			words[bank + 0xac + 4 * 4] = lying;
+			words[bank + 0xac + 0x17 * 4] = lying;
+			move(standing, 60, 0x1052);
+			end(0x8001, 60);
+			move(crouching, 60, 0x1052);
+			end(0x8002, 60);
+			move(lying, 60, 0x6004);
+			command(0x0004, 0x8001, 1, 60, 0x50);
+			end(0x8001, 60);
 		}
 		u32 move(u32 index, u32 length, u32 flags = 0, u32 first = 0, u32 last = 0, u32 level = 0)
 		{
@@ -117,15 +139,28 @@ namespace
 			words[at + 0x44] = (first << 16) | last;
 			return at;
 		}
-		u32 attack(u32 index, u32 length) { return move(index, length, 0, 10, 12, 0x217); }
+		u32 attack(u32 index, u32 length)
+		{
+			return move(index, length, 0, 10, 12, 0x217);
+		}
 		void command(u32 input, u32 target, u32 first, u32 last, u32 option, u32 requirement = always, u32 data = plain, u32 execute = 0)
 		{
-			words[next] = input; words[next + 4] = requirement; words[next + 8] = target << 16; words[next + 12] = data;
-			words[next + 16] = (first << 16) | last; words[next + 20] = (execute << 16) | option;
+			words[next] = input;
+			words[next + 4] = requirement;
+			words[next + 8] = target << 16;
+			words[next + 12] = data;
+			words[next + 16] = (first << 16) | last;
+			words[next + 20] = (execute << 16) | option;
 			next += 24;
 		}
-		void automatic(u32 target, u32 at, u32 requirement = always, u32 data = plain) { command(0, target, at, at, 0x41, requirement, data); }
-		void end(u32 target, u32 first, u32 last = 255) { command(0x80000000, target, first, last, 0x50); }
+		void automatic(u32 target, u32 at, u32 requirement = always, u32 data = plain)
+		{
+			command(0, target, at, at, 0x41, requirement, data);
+		}
+		void end(u32 target, u32 first, u32 last = 255)
+		{
+			command(0x80000000, target, first, last, 0x50);
+		}
 		// A group of commands (0x8005 in the move's list, its commands in the group table up to 0x8006), written by `fill`.
 		template <class Fill>
 		void group(Fill fill)
@@ -147,23 +182,47 @@ namespace
 			// The entry after it reads frame 0: the list's end.
 			next_property += 16;
 		}
-		static u32 record(u32 index) { return moves + index * 0x4c; }
+		static u32 record(u32 index)
+		{
+			return moves + index * 0x4c;
+		}
 		std::optional<readiness_reading> read(u32 at, u32 cursor = 1, contact kind = contact::unavailable, bool reaction = false) const
 		{
-			const auto word = [&](u32 address) { const auto found = words.find(address); return found == words.end() ? 0u : found->second; };
-			const auto half = [&](u32 address) { return (word(address & ~3u) >> ((address & 2) ? 0 : 16)) & 65535u; };
+			const auto word = [&](u32 address)
+			{
+				const auto found = words.find(address);
+				return found == words.end() ? 0u : found->second;
+			};
+			const auto half = [&](u32 address)
+			{
+				return (word(address & ~3u) >> ((address & 2) ? 0 : 16)) & 65535u;
+			};
 			return pbd::move_list::readiness(bank, at, cursor, kind, word, half, reaction);
 		}
 		std::optional<u32> actionable(u32 at) const
 		{
-			const auto word = [&](u32 address) { const auto found = words.find(address); return found == words.end() ? 0u : found->second; };
-			const auto half = [&](u32 address) { return (word(address & ~3u) >> ((address & 2) ? 0 : 16)) & 65535u; };
+			const auto word = [&](u32 address)
+			{
+				const auto found = words.find(address);
+				return found == words.end() ? 0u : found->second;
+			};
+			const auto half = [&](u32 address)
+			{
+				return (word(address & ~3u) >> ((address & 2) ? 0 : 16)) & 65535u;
+			};
 			return pbd::move_list::actionable(bank, at, word, half);
 		}
 		std::optional<pbd::move_list::queued_reading> queued(u32 at, u32 execute, u32 parameter) const
 		{
-			const auto word = [&](u32 address) { const auto found = words.find(address); return found == words.end() ? 0u : found->second; };
-			const auto half = [&](u32 address) { return (word(address & ~3u) >> ((address & 2) ? 0 : 16)) & 65535u; };
+			const auto word = [&](u32 address)
+			{
+				const auto found = words.find(address);
+				return found == words.end() ? 0u : found->second;
+			};
+			const auto half = [&](u32 address)
+			{
+				return (word(address & ~3u) >> ((address & 2) ? 0 : 16)) & 65535u;
+			};
 			return pbd::move_list::queued_readiness(bank, at, execute, parameter, contact::block, word, half);
 		}
 	};
@@ -234,7 +293,10 @@ PBD_TEST(PbdPracticeReadiness, ReaderOpenPart)
 	data.automatic(7, 45);
 	data.end(0x8001, 60);
 	const u32 open = data.move(7, 60);
-	data.group([&] { data.command(0x0010, 0x8001, 3, 255, 0x50); });
+	data.group([&]
+		{
+			data.command(0x0010, 0x8001, 3, 255, 0x50);
+		});
 	data.end(0x8001, 38);
 	const auto group = data.read(grouped);
 	check(group && group->free == 48u && group->state == ready_state::stance, "a group's input into a neutral alias frees an entered part");
@@ -316,9 +378,12 @@ PBD_TEST(PbdPracticeReadiness, ReaderOutcomeGates)
 	data.automatic(21, 16, move_bank_model::on_block);
 	data.automatic(22, 17, move_bank_model::on_whiff);
 	data.end(0x8001, 40);
-	data.move(20, 20); data.end(0x8001, 5);
-	data.move(21, 20); data.end(0x8001, 6);
-	data.move(22, 20); data.end(0x8001, 7);
+	data.move(20, 20);
+	data.end(0x8001, 5);
+	data.move(21, 20);
+	data.end(0x8001, 6);
+	data.move(22, 20);
+	data.end(0x8001, 7);
 	check(free_of(data.read(gated, 12, contact::hit)) == 20u, "a hit takes the hit branch");
 	check(free_of(data.read(gated, 12, contact::block)) == 22u, "a block takes the block branch");
 	check(free_of(data.read(gated, 1, contact::unavailable)) == 24u, "an unknown contact takes the whiff branch");
@@ -345,8 +410,10 @@ PBD_TEST(PbdPracticeReadiness, ReaderExecuteCursor)
 	data.command(0, 43, 18, 25, 0x41, move_bank_model::on_whiff, move_bank_model::plain, 25);
 	data.command(0, 44, 18, 25, 0x41, move_bank_model::on_block, move_bank_model::plain, 25);
 	data.end(0x8001, 51);
-	data.move(43, 40); data.end(0x8001, 30);
-	data.move(44, 40); data.end(0x8001, 20);
+	data.move(43, 40);
+	data.end(0x8001, 30);
+	data.move(44, 40);
+	data.end(0x8001, 20);
 	check(free_of(data.read(gated)) == 55u && free_of(data.read(gated, 12, contact::block)) == 45u, "each fires on its execute cursor");
 }
 
@@ -512,11 +579,16 @@ PBD_TEST(PbdPracticeReadiness, ReaderRoutes)
 	data.command(0x0040, 34, 30, 43, 0x50);
 	data.command(0x0080, 35, 30, 43, 0x50);
 	data.end(0x8004, 52);
-	data.move(31, 30); data.end(0x8001, 25);
-	data.move(32, 60); data.end(0x8001, 40);
-	data.move(33, 60); data.end(0x8001, 41);
-	data.move(34, 60); data.end(0x8001, 42);
-	data.move(35, 30); data.end(0x8001, 5);
+	data.move(31, 30);
+	data.end(0x8001, 25);
+	data.move(32, 60);
+	data.end(0x8001, 40);
+	data.move(33, 60);
+	data.end(0x8001, 41);
+	data.move(34, 60);
+	data.end(0x8001, 42);
+	data.move(35, 30);
+	data.end(0x8001, 5);
 	const auto reading = data.read(falling, 1, contact::hit, true);
 	check(reading && reading->escape == 35u && reading->escape_target == move_bank_model::record(35) && reading->route_count == 4,
 		"the fastest escape is the alternative");
@@ -713,10 +785,13 @@ PBD_TEST(PbdPracticeReadiness, SwayCancel)
 PBD_TEST(PbdPracticeReadiness, QueuedCancelUsesMoveDataBeforeCommit)
 {
 	move_bank_model data;
-	data.attack(2, 39); data.end(0x8001, 30);
-	const u32 attack = data.attack(3, 60); data.end(0x8001, 40);
+	data.attack(2, 39);
+	data.end(0x8001, 30);
+	const u32 attack = data.attack(3, 60);
+	data.end(0x8001, 40);
 	const u32 sway = data.move(4, 40);
-	data.command(0x2002, 2, 1, 255, 0x50); data.end(0x8001, 30);
+	data.command(0x2002, 2, 1, 255, 0x50);
+	data.end(0x8001, 30);
 	const auto queued = data.queued(sway, 19, 0x80);
 	check(queued && queued->cursor == 1 && queued->readiness.own == 1u, "the queued sway starts at one and can act in its own stance at one");
 	calculator sample;
@@ -820,9 +895,11 @@ PBD_TEST(PbdPracticeReadiness, QueuedCancelUpdatesWhiffWithoutConsumingTheMove)
 PBD_TEST(PbdPracticeReadiness, QueuedEntryCursorFollowsPreparedTransition)
 {
 	move_bank_model data;
-	data.attack(2, 39); data.end(0x8001, 30);
+	data.attack(2, 39);
+	data.end(0x8001, 30);
 	const u32 sway = data.move(4, 40);
-	data.command(0x2002, 2, 1, 255, 0x50); data.end(0x8001, 35);
+	data.command(0x2002, 2, 1, 255, 0x50);
+	data.end(0x8001, 35);
 	for (const auto [parameter, cursor] : std::array<std::array<u32, 2>, 5>{{{0x80, 1}, {0x402, 19}, {0x1400, 19}, {0x2000, 18}, {0x3000, 18}}})
 	{
 		const auto queued = data.queued(sway, 18, parameter);
@@ -944,9 +1021,12 @@ PBD_TEST(PbdPracticeReadiness, ContactRewalk)
 	data.automatic(21, 16, move_bank_model::on_block);
 	data.automatic(22, 17, move_bank_model::on_whiff);
 	data.end(0x8001, 40);
-	data.move(20, 20); data.end(0x8001, 5);
-	data.move(21, 20); data.end(0x8001, 6);
-	data.move(22, 20); data.end(0x8001, 7);
+	data.move(20, 20);
+	data.end(0x8001, 5);
+	data.move(21, 20);
+	data.end(0x8001, 6);
+	data.move(22, 20);
+	data.end(0x8001, 7);
 	calculator sample;
 	sample.commit_reading(1, 900, 1, 1, plain_reading(1), false);
 	sample.commit_reading(0, gated, 300, 1, data.read(gated), true, 12, 10);

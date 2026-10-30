@@ -54,7 +54,8 @@ PBD_TEST(PbdPracticeLesson, PlaybackConsumesOnlyDeliveredAdvancingFrames)
 			play.observe(true);
 		}
 		check(!play.active());
-		play.stop(); check(play.position == 0 && !play.pending);
+		play.stop();
+		check(play.position == 0 && !play.pending);
 	}
 }
 
@@ -63,10 +64,14 @@ PBD_TEST(PbdPracticeLesson, ChannelRefusesBadSetupAndMenuWords)
 	using namespace pbd::practice::lesson;
 	using pbd::test::check;
 	const std::string prefix = R"({"schema":"pbd-practice-lesson-command-1","id":"one","generation":"1-1-0","kind":"play","port":1,"setup":{"characters":[9,0],"stage":37,"side":"right","stance":"crouching","hitCondition":"counter"},"words":)";
-	const auto document = [&](const std::vector<std::uint16_t>& words) { return prefix + pbd::json::quoted(pbd::practice_store::encode_words(words)) + "}"; };
+	const auto document = [&](const std::vector<std::uint16_t>& words)
+	{
+		return prefix + pbd::json::quoted(pbd::practice_store::encode_words(words)) + "}";
+	};
 	const auto valid = parse(document({1, 2, 4, 8, 0x2010}));
 	check(valid.value && valid.value->port == 1 && valid.value->words.size() == 5);
-	for (const auto word : {0x0100, 0x0800, 0x0900, 0x0910}) check(parse(document({static_cast<std::uint16_t>(word)})).error == "invalid_recording");
+	for (const auto word : {0x0100, 0x0800, 0x0900, 0x0910})
+		check(parse(document({static_cast<std::uint16_t>(word)})).error == "invalid_recording");
 	check(parse(document({0, 0})).error == "empty_recording");
 	check(!parse(prefix + "\"AQ\"}").value, "odd byte recording refuses");
 	check(!parse(prefix + "\"AAAA=\"}").value, "padded recording refuses");
@@ -80,7 +85,9 @@ PBD_TEST(PbdPracticeLesson, RejectedReplacementRetainsActiveCompletion)
 	using namespace pbd::practice::lesson;
 	using pbd::test::check;
 	channel state;
-	state.ack = "first"; state.outcome = "playing"; state.play.words = {0x2000};
+	state.ack = "first";
+	state.outcome = "playing";
+	state.play.words = {0x2000};
 	state.refuse("second", "lesson_busy");
 	check(state.ack == "first" && state.outcome == "playing" && state.play.active());
 	check(state.rejected == "second" && state.rejection == "lesson_busy");
@@ -127,7 +134,8 @@ PBD_TEST(PbdPracticeLesson, PlayerCaptureKeepsAdvancingFramesAndCanonicalFacing)
 	const auto serialized = capture_document(capture, "end", "run");
 	const auto document = pbd::json::detail::json_parser(serialized).parse();
 	check(document.value && document.value->find("words")->text == pbd::practice_store::encode_words(capture.words));
-	for (unsigned frame = 3; frame < 1801; ++frame) capture.observe(true, 0, pbd::practice::movement::screen_side::left);
+	for (unsigned frame = 3; frame < 1801; ++frame)
+		capture.observe(true, 0, pbd::practice::movement::screen_side::left);
 	check(capture.words.size() == 1800 && capture.limit_reached && !capture.active);
 	capture.begin(setup);
 	capture.observe(true, 0x2000, {});
@@ -189,16 +197,24 @@ PBD_TEST(PbdPracticeLesson, PlayerCaptureRefusesChangedSetupButSurvivesPause)
 		pbd_lesson_game observed{setup, 10, true, true};
 		capture.check_setup(observed);
 		check(capture.valid && capture.active, "pause retains the same situation");
-		if (change == 0) observed.setup.characters[0] = 7;
-		if (change == 1) observed.setup.stage = 29;
-		if (change == 2) observed.setup.side = pbd_lesson_side::left;
-		if (change == 3) observed.setup.stance = pbd_lesson_stance::crouching;
-		if (change == 4) observed.setup.hit_condition = pbd_lesson_hit_condition::counter;
-		if (change == 5) observed.mode = 2;
-		if (change == 6) observed.in_match = false;
+		if (change == 0)
+			observed.setup.characters[0] = 7;
+		if (change == 1)
+			observed.setup.stage = 29;
+		if (change == 2)
+			observed.setup.side = pbd_lesson_side::left;
+		if (change == 3)
+			observed.setup.stance = pbd_lesson_stance::crouching;
+		if (change == 4)
+			observed.setup.hit_condition = pbd_lesson_hit_condition::counter;
+		if (change == 5)
+			observed.mode = 2;
+		if (change == 6)
+			observed.in_match = false;
 		if (change == 7)
 		{
-			capture.active = false; capture.limit_reached = true;
+			capture.active = false;
+			capture.limit_reached = true;
 			observed.setup.characters[1] = 7;
 		}
 		capture.check_setup(observed);

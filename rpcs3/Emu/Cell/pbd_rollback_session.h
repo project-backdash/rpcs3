@@ -75,7 +75,7 @@ namespace pbd
 	{
 		struct peer_wait_fixture;
 		struct practice_moment_fixture;
-	}
+	} // namespace test
 
 	namespace match_bind
 	{

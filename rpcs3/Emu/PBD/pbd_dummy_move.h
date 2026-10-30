@@ -26,8 +26,17 @@ namespace pbd::practice
 namespace pbd::practice::dummy_move
 {
 	using u32 = std::uint32_t;
-	enum class source { off, recording, moves };
-	enum class contact { guard, hit };
+	enum class source
+	{
+		off,
+		recording,
+		moves
+	};
+	enum class contact
+	{
+		guard,
+		hit
+	};
 	struct reaction
 	{
 		source kind = source::off;
@@ -39,7 +48,10 @@ namespace pbd::practice::dummy_move
 	{
 		reaction after_guard, after_hit;
 		bool operator==(const settings&) const = default;
-		bool enabled() const { return after_guard.kind != source::off || after_hit.kind != source::off; }
+		bool enabled() const
+		{
+			return after_guard.kind != source::off || after_hit.kind != source::off;
+		}
 	};
 	inline thread_local settings current_settings;
 
@@ -70,17 +82,20 @@ namespace pbd::practice::dummy_move
 		std::optional<u32> earliest, read;
 		void applied(u32 counter, bool guard)
 		{
-			if (previous == counter) return;
+			if (previous == counter)
+				return;
 			previous = counter;
 			++(guard ? blocks : hits);
-			earliest.reset(); read.reset();
+			earliest.reset();
+			read.reset();
 		}
 		// The game's reading on frame `counter`: the dummy's cursor in its move and the first cursor of that move's standing
 		// end command window. A reading from the contact's own frame, or from before it, belongs to the move the contact
 		// interrupted.
 		void terminal(u32 counter, u32 cursor, u32 first)
 		{
-			if (!previous || counter <= *previous || cursor > 32767 || first > 32767) return;
+			if (!previous || counter <= *previous || cursor > 32767 || first > 32767)
+				return;
 			earliest = cursor < first ? counter + (first - cursor) : counter;
 			read = counter;
 		}
@@ -99,14 +114,20 @@ namespace pbd::practice::dummy_move
 
 	inline bool valid(const reaction& value)
 	{
-		if (value.kind == source::off) return value.ids.empty() && value.slot == 0;
-		if (value.kind == source::recording) return value.ids.empty() && value.slot < 8;
-		if (value.kind != source::moves || value.slot || value.ids.empty() || value.ids.size() > 64) return false;
+		if (value.kind == source::off)
+			return value.ids.empty() && value.slot == 0;
+		if (value.kind == source::recording)
+			return value.ids.empty() && value.slot < 8;
+		if (value.kind != source::moves || value.slot || value.ids.empty() || value.ids.size() > 64)
+			return false;
 		auto ordered = value.ids;
 		std::sort(ordered.begin(), ordered.end());
 		return ordered.back() < 4096 && std::adjacent_find(ordered.begin(), ordered.end()) == ordered.end();
 	}
-	struct variant_info { u32 count = 0, execution = 0; };
+	struct variant_info
+	{
+		u32 count = 0, execution = 0;
+	};
 	struct choice
 	{
 		source kind = source::off;
@@ -116,22 +137,27 @@ namespace pbd::practice::dummy_move
 	inline u32 random(u32& state)
 	{
 		u32 value = state ? state : 0x6d2b79f5;
-		value ^= value << 13; value ^= value >> 17; value ^= value << 5;
+		value ^= value << 13;
+		value ^= value >> 17;
+		value ^= value << 5;
 		return state = value;
 	}
 	// Randomness belongs entirely to this local scheduler. The game's chooser and its random state are never used.
 	template <class Lookup>
 	std::optional<choice> choose(const reaction& selected, u32& state, Lookup lookup)
 	{
-		if (!valid(selected) || selected.kind == source::off) return {};
-		if (selected.kind == source::recording) return choice{source::recording, 0, 0, selected.slot};
+		if (!valid(selected) || selected.kind == source::off)
+			return {};
+		if (selected.kind == source::recording)
+			return choice{source::recording, 0, 0, selected.slot};
 		std::vector<std::pair<u32, variant_info>> available;
 		for (const auto id : selected.ids)
 		{
 			const std::optional<variant_info> move = lookup(id);
 			// Reject the whole selection if the character catalog changed or one saved row is unavailable.
 			if (!move || !move->count || move->count > 64 || !move->execution ||
-				((move->execution == 2 || move->execution == 4) && move->count < 2)) return {};
+				((move->execution == 2 || move->execution == 4) && move->count < 2))
+				return {};
 			available.emplace_back(id, *move);
 		}
 		const auto& [id, move] = available[random(state) % available.size()];
@@ -147,10 +173,12 @@ namespace pbd::practice::dummy_move
 		std::optional<u32> actionable;
 		void finish()
 		{
-			if (due) seen = 0;
+			if (due)
+				seen = 0;
 			open = hit = due = false;
 			actionable.reset();
 		}
+
 	public:
 		u32 rng = 0x6d2b79f5;
 		// Counted hits and blocks since the last reaction.
@@ -158,27 +186,36 @@ namespace pbd::practice::dummy_move
 		std::optional<choice> pending;
 		void reset()
 		{
-			previous_contact.reset(); pending.reset(); actionable.reset();
-			open = hit = due = false; seen = 0;
+			previous_contact.reset();
+			pending.reset();
+			actionable.reset();
+			open = hit = due = false;
+			seen = 0;
 		}
-		bool series_open() const { return open; }
+		bool series_open() const
+		{
+			return open;
+		}
 		// The game reads the dummy able to act again from frame `earliest`. A reading from before the last contact belongs
 		// to the stun that contact ended, not to the one it started.
 		void recovered(u32 earliest)
 		{
-			if (open && earliest > last) actionable = earliest;
+			if (open && earliest > last)
+				actionable = earliest;
 		}
 		// Ends the recovery wait; a completed reaction starts the count again.
 		void advance(u32 counter, const gate&)
 		{
-			if (open && (actionable ? counter >= *actionable : counter - last > series_gap_frames)) finish();
+			if (open && (actionable ? counter >= *actionable : counter - last > series_gap_frames))
+				finish();
 		}
 		// A contact the game applied on frame `counter`. Later contacts extend the recovery wait; they cannot cancel a
 		// reaction already due, even when their kind is excluded by Count.
 		template <class Lookup>
 		bool applied_contact(u32 counter, contact kind, const settings& configured, Lookup lookup, const gate& when = {})
 		{
-			if (previous_contact == counter) return false;
+			if (previous_contact == counter)
+				return false;
 			previous_contact = counter;
 			advance(counter, when);
 			open = true;
@@ -186,13 +223,16 @@ namespace pbd::practice::dummy_move
 			actionable.reset();
 			if (counts(when.kind, kind == contact::hit))
 			{
-				if (!due) ++seen;
+				if (!due)
+					++seen;
 				due = due || seen >= std::clamp(when.times, min_reaction_times, max_reaction_times);
-				if (due) hit = kind == contact::hit;
+				if (due)
+					hit = kind == contact::hit;
 			}
 			pending.reset();
-			if (due) pending = choose(hit ? configured.after_hit : configured.after_guard, rng, lookup);
+			if (due)
+				pending = choose(hit ? configured.after_hit : configured.after_guard, rng, lookup);
 			return pending.has_value();
 		}
 	};
-}
+} // namespace pbd::practice::dummy_move

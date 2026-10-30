@@ -22,6 +22,7 @@ namespace pbd::clips
 		using delivery = std::function<void(std::vector<std::uint8_t>&&, unsigned, unsigned, unsigned, bool, std::uint64_t)>;
 		// More than the renderer's frames in flight. A waiting job holds only a pointer into its mapped readback.
 		static constexpr std::size_t capacity = 8;
+
 	private:
 		struct job
 		{
@@ -43,9 +44,15 @@ namespace pbd::clips
 			{
 				std::optional<job> next;
 				{
-					std::unique_lock lock(m_mutex); m_wake.wait(lock, [&] { return m_stop || !m_jobs.empty(); });
-					if (m_jobs.empty()) return;
-					next = std::move(m_jobs.front()); m_jobs.pop_front();
+					std::unique_lock lock(m_mutex);
+					m_wake.wait(lock, [&]
+						{
+							return m_stop || !m_jobs.empty();
+						});
+					if (m_jobs.empty())
+						return;
+					next = std::move(m_jobs.front());
+					m_jobs.pop_front();
 				}
 				try
 				{
@@ -54,15 +61,27 @@ namespace pbd::clips
 					next->lease->store(false, std::memory_order_release);
 					next->deliver(std::move(bytes), next->pitch, next->width, next->height, next->bgra, next->time_us);
 				}
-				catch (...) { next->lease->store(false, std::memory_order_release); }
+				catch (...)
+				{
+					next->lease->store(false, std::memory_order_release);
+				}
 			}
 		}
+
 	public:
-		~frame_copy() { stop(); }
+		~frame_copy()
+		{
+			stop();
+		}
 		void stop()
 		{
-			{ std::lock_guard lock(m_mutex); m_stop = true; }
-			m_wake.notify_one(); if (m_worker.joinable()) m_worker.join();
+			{
+				std::lock_guard lock(m_mutex);
+				m_stop = true;
+			}
+			m_wake.notify_one();
+			if (m_worker.joinable())
+				m_worker.join();
 		}
 		// False means the frame is lost; the caller counts it as dropped. The worker holds the lock only to take a job,
 		// never while copying, so the renderer thread waits at most for that.
@@ -70,11 +89,17 @@ namespace pbd::clips
 			std::shared_ptr<std::atomic<bool>> lease, delivery deliver)
 		{
 			std::lock_guard lock(m_mutex);
-			if (m_stop || m_jobs.size() >= capacity || !pixels || !width || !height || lease->load(std::memory_order_acquire)) return false;
-			if (!m_worker.joinable()) m_worker = std::thread([this] { run(); });
+			if (m_stop || m_jobs.size() >= capacity || !pixels || !width || !height || lease->load(std::memory_order_acquire))
+				return false;
+			if (!m_worker.joinable())
+				m_worker = std::thread([this]
+					{
+						run();
+					});
 			lease->store(true, std::memory_order_release);
 			m_jobs.push_back(job{pixels, pitch, width, height, bgra, time_us, std::move(lease), std::move(deliver)});
-			m_wake.notify_one(); return true;
+			m_wake.notify_one();
+			return true;
 		}
 	};
-}
+} // namespace pbd::clips

@@ -30,7 +30,8 @@ namespace pbd::practice::dummy_move
 	inline json::result<configure_request> parse_configure(std::string_view text)
 	{
 		auto document = json::detail::json_parser(text, 1024, 32768, 1024).parse();
-		if (!document.value) return {{}, document.error};
+		if (!document.value)
+			return {{}, document.error};
 		const auto& value = *document.value;
 		using namespace json::detail;
 		configure_request out;
@@ -38,7 +39,8 @@ namespace pbd::practice::dummy_move
 			!plain_text(value.find("generation"), 1, 100) || !number32(value.find("character"), 0, 34, out.character))
 			return {{}, "invalid_command"};
 		auto reactions = read_settings(value.find("reactions"));
-		if (!reactions) return {{}, "invalid_reaction"};
+		if (!reactions)
+			return {{}, "invalid_reaction"};
 		out.id = value.find("id")->text;
 		out.generation = value.find("generation")->text;
 		out.reactions = std::move(*reactions);
@@ -48,13 +50,19 @@ namespace pbd::practice::dummy_move
 	{
 		for (const auto* reaction : {&configured.after_guard, &configured.after_hit})
 		{
-			if (!valid(*reaction)) return false;
-			if (reaction->kind != source::moves) continue;
+			if (!valid(*reaction))
+				return false;
+			if (reaction->kind != source::moves)
+				continue;
 			for (const auto id : reaction->ids)
 			{
 				const auto found = std::find_if(catalog.moves.begin(), catalog.moves.end(),
-					[id](const auto& row) { return row.id == id && row.selectable && row.variants; });
-				if (found == catalog.moves.end()) return false;
+					[id](const auto& row)
+					{
+						return row.id == id && row.selectable && row.variants;
+					});
+				if (found == catalog.moves.end())
+					return false;
 			}
 		}
 		return true;
@@ -65,11 +73,14 @@ namespace pbd::practice::dummy_move
 		std::string generation, seen, ack, error;
 		bool apply(const configure_request& request, const picker_catalog& catalog)
 		{
-			if (request.id == seen) return false;
+			if (request.id == seen)
+				return false;
 			seen = ack = request.id;
 			error = request.generation != catalog.generation || request.character != catalog.character ? "fighters_changed" :
-				!available(request.reactions, catalog) ? "move_unavailable" : "";
-			if (!error.empty()) return false;
+			        !available(request.reactions, catalog)                                             ? "move_unavailable" :
+			                                                                                             "";
+			if (!error.empty())
+				return false;
 			current_settings = request.reactions;
 			return true;
 		}
@@ -77,15 +88,20 @@ namespace pbd::practice::dummy_move
 		{
 			if (generation != catalog.generation)
 			{
-				generation = catalog.generation; seen.clear(); ack.clear(); error.clear();
+				generation = catalog.generation;
+				seen.clear();
+				ack.clear();
+				error.clear();
 			}
 			std::error_code ec;
 			const auto path = root / "command.json";
 			const auto bytes = std::filesystem::file_size(path, ec);
-			if (ec || !bytes || bytes > 32768) return false;
+			if (ec || !bytes || bytes > 32768)
+				return false;
 			std::string text(static_cast<std::size_t>(bytes), '\0');
 			std::ifstream file(path, std::ios::binary);
-			if (!file.read(text.data(), text.size())) return false;
+			if (!file.read(text.data(), text.size()))
+				return false;
 			auto parsed = parse_configure(text);
 			return parsed.value && apply(*parsed.value, catalog);
 		}
@@ -98,10 +114,11 @@ namespace pbd::practice::dummy_move
 					{"command", json_value::string(row.command)}, {"selectable", json_value::boolean(row.selectable)},
 					{"variants", json_value::number(row.variants)}}));
 			return json::detail::serialize(json_value::object({{"schema", json_value::string("pbd-practice-move-list-1")},
-				{"generation", json_value::string(catalog.generation)}, {"character", json_value::number(catalog.character)},
-				{"row", json_value::number(catalog.row)}, {"playerRow", json_value::number(player_row)},
-				{"moves", std::move(moves)}, {"reactions", encode(current_settings)},
-				{"ack", json_value::string(ack)}, {"error", json_value::string(error)}})) + '\n';
+					   {"generation", json_value::string(catalog.generation)}, {"character", json_value::number(catalog.character)},
+					   {"row", json_value::number(catalog.row)}, {"playerRow", json_value::number(player_row)},
+					   {"moves", std::move(moves)}, {"reactions", encode(current_settings)},
+					   {"ack", json_value::string(ack)}, {"error", json_value::string(error)}})) +
+			       '\n';
 		}
 	};
-}
+} // namespace pbd::practice::dummy_move

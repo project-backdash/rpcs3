@@ -25,7 +25,7 @@ namespace
 		state.clips = {0x216a4564, 0x218911cc};
 		return state;
 	}
-}
+} // namespace
 
 PBD_TEST(PbdPickTransition, RepairTable)
 {
@@ -56,28 +56,96 @@ PBD_TEST(PbdPickTransition, PreservesEveryOtherState)
 {
 	using change = void (*)(observation&);
 	constexpr change refused[] = {
-		[](auto& s) { s.pinned = false; },
-		[](auto& s) { s.mode = 10; },
-		[](auto& s) { s.manager = 0; },
-		[](auto& s) { s.manager = 10; },
-		[](auto& s) { s.scene = 3; },
-		[](auto& s) { s.scene = 12; },
-		[](auto& s) { s.scene = 17; },
-		[](auto& s) { s.model_state = 2; },
-		[](auto& s) { s.side = 2; },
-		[](auto& s) { s.actor += 4; },
-		[](auto& s) { s.model_actor += 0x8d0; },
-		[](auto& s) { s.built_row = 85; },
-		[](auto& s) { s.row = s.selected_row = 85; },
-		[](auto& s) { s.selected_row = 0x19; },
-		[](auto& s) { s.built_row = s.row; },
-		[](auto& s) { s.row_fighter = 8; },
-		[](auto& s) { s.fighter = s.row_fighter = 8; },
-		[](auto& s) { s.costume = 0; s.row = s.selected_row = 0x19; },
-		[](auto& s) { s.costume = 2; s.row = s.selected_row = 0x1b; },
-		[](auto& s) { s.bone_count = 0; },
-		[](auto& s) { s.loaded_clip = true; },
-		[](auto& s) { s.clips = {0, 0}; },
+		[](auto& s)
+		{
+			s.pinned = false;
+		},
+		[](auto& s)
+		{
+			s.mode = 10;
+		},
+		[](auto& s)
+		{
+			s.manager = 0;
+		},
+		[](auto& s)
+		{
+			s.manager = 10;
+		},
+		[](auto& s)
+		{
+			s.scene = 3;
+		},
+		[](auto& s)
+		{
+			s.scene = 12;
+		},
+		[](auto& s)
+		{
+			s.scene = 17;
+		},
+		[](auto& s)
+		{
+			s.model_state = 2;
+		},
+		[](auto& s)
+		{
+			s.side = 2;
+		},
+		[](auto& s)
+		{
+			s.actor += 4;
+		},
+		[](auto& s)
+		{
+			s.model_actor += 0x8d0;
+		},
+		[](auto& s)
+		{
+			s.built_row = 85;
+		},
+		[](auto& s)
+		{
+			s.row = s.selected_row = 85;
+		},
+		[](auto& s)
+		{
+			s.selected_row = 0x19;
+		},
+		[](auto& s)
+		{
+			s.built_row = s.row;
+		},
+		[](auto& s)
+		{
+			s.row_fighter = 8;
+		},
+		[](auto& s)
+		{
+			s.fighter = s.row_fighter = 8;
+		},
+		[](auto& s)
+		{
+			s.costume = 0;
+			s.row = s.selected_row = 0x19;
+		},
+		[](auto& s)
+		{
+			s.costume = 2;
+			s.row = s.selected_row = 0x1b;
+		},
+		[](auto& s)
+		{
+			s.bone_count = 0;
+		},
+		[](auto& s)
+		{
+			s.loaded_clip = true;
+		},
+		[](auto& s)
+		{
+			s.clips = {0, 0};
+		},
 	};
 	for (unsigned side = 0; side < 2; ++side)
 		for (const auto alter : refused)

@@ -11,7 +11,7 @@ namespace
 	using pbd::test::check;
 	using option = pbd_wakeup_option;
 	using position = pbd_ground_position;
-}
+} // namespace
 
 PBD_TEST(PbdPracticeWakeup, StockTechValuesAndUntechableFallback)
 {
@@ -102,12 +102,14 @@ PBD_TEST(PbdPracticeWakeup, AnUnavailableCharacterAttackFallsBackToStandUp)
 	pbd_floor_wakeup sequence;
 	sequence.reset(pbd_plan_wakeup(option::toe_kick, position::face_up_feet_toward, false));
 	check(sequence.next(true, true, false) == 0x4040);
-	for (unsigned frame = 0; frame < 7; ++frame) check(!sequence.next(true, true, false));
+	for (unsigned frame = 0; frame < 7; ++frame)
+		check(!sequence.next(true, true, false));
 	check(sequence.next(true, true, false) == 0x1000, "an unaccepted shared floor attack falls back to Stand Up");
 	sequence.reset(pbd_plan_wakeup(option::side_roll_up, position::face_up_feet_toward, false));
 	check(sequence.next(true, true, false) == 0x80);
 	check(!sequence.next(true, true, true));
-	for (unsigned frame = 0; frame < 120; ++frame) check(!sequence.next(true, true, false), "a completed side roll stays down instead of triggering fallback");
+	for (unsigned frame = 0; frame < 120; ++frame)
+		check(!sequence.next(true, true, false), "a completed side roll stays down instead of triggering fallback");
 }
 
 PBD_TEST(PbdPracticeWakeup, FloorOwnershipEndsAtStandingAndResetsAcrossClockGaps)
@@ -119,7 +121,8 @@ PBD_TEST(PbdPracticeWakeup, FloorOwnershipEndsAtStandingAndResetsAcrossClockGaps
 	check(control.sample(now) == 0 && control.floor.given == 0, "a repeated counter consumes no extra input");
 	now.counter++;
 	check(control.sample(now) == 0);
-	now.standing = true; now.on_floor = false;
+	now.standing = true;
+	now.on_floor = false;
 	check(!control.sample(now) && !control.active && !control.armed, "standing restores the neutral dummy action");
 	control.arm(option::spring_kick);
 	now = {34, 200, true, true, false, position::face_up_feet_toward};

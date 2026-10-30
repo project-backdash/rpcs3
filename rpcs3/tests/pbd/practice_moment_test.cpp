@@ -13,7 +13,7 @@ namespace pbd::test
 		u32 pc = rollback_session::pcs[0];
 		bool saved_anchor_live = g_pbd_takeover_anchor_live.load();
 		std::filesystem::path control_path = std::filesystem::temp_directory_path() /
-			("pbd-practice-moment-" + std::to_string(session_runtime::session_clock::now().time_since_epoch().count()) + ".jsonl");
+		                                     ("pbd-practice-moment-" + std::to_string(session_runtime::session_clock::now().time_since_epoch().count()) + ".jsonl");
 		const std::vector<u32> blocks{0x10080000, 0x10090000, 0x104c0000, 0x10740000};
 
 		practice_moment_fixture()
@@ -28,7 +28,10 @@ namespace pbd::test
 			struct construction_id
 			{
 				u32 previous = std::exchange(id_manager::g_id, ppu_thread::id_base);
-				~construction_id() { id_manager::g_id = previous; }
+				~construction_id()
+				{
+					id_manager::g_id = previous;
+				}
 			} identity;
 			owner = std::make_unique<ppu_thread>(ppu_thread_params{}, "practice-moment-test", 100);
 			runtime.m_storage = std::make_unique<rollback_session::storage>();
@@ -85,7 +88,10 @@ namespace pbd::test
 				vm::write32(0x10090b10, pass);
 				vm::write32(0x10749a00, 0);
 				rollback_session::boundary_call::checkpoint_restore_result result;
-				check(call.restore_checkpoint_memory(saved.checkpoint, 60 + pass, [] { return true; },
+				check(call.restore_checkpoint_memory(saved.checkpoint, 60 + pass, []
+					{
+						return true;
+					},
 					{true, true, false}, result));
 				std::vector<u8> restored;
 				check(session_runtime::read_pages(data.checkpoint.checkpoint_pages, restored));

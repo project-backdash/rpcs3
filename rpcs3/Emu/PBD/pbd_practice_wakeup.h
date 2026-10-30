@@ -102,7 +102,10 @@ namespace pbd::practice
 		}
 		switch (out.option)
 		{
-		case pbd_wakeup_option::stay_down: out.words = {}; out.count = 0; break;
+		case pbd_wakeup_option::stay_down:
+			out.words = {};
+			out.count = 0;
+			break;
 		case pbd_wakeup_option::back_roll: out.words[0] = 0x8000; break;
 		case pbd_wakeup_option::forward_roll: out.words[0] = 0x2000; break;
 		case pbd_wakeup_option::side_roll_up: out.words[0] = 0x0080; break;
@@ -110,7 +113,10 @@ namespace pbd::practice
 		case pbd_wakeup_option::rising_low_kick: out.words[0] = 0x0040; break;
 		case pbd_wakeup_option::rising_mid_kick: out.words[0] = 0x0020; break;
 		case pbd_wakeup_option::toe_kick: out.words[0] = 0x4040; break;
-		case pbd_wakeup_option::spring_kick: out.words = {0x8000, 0x0060}; out.count = 2; break;
+		case pbd_wakeup_option::spring_kick:
+			out.words = {0x8000, 0x0060};
+			out.count = 2;
+			break;
 		default: break;
 		}
 		return out;
@@ -135,11 +141,13 @@ namespace pbd::practice
 			}
 			if (plan.option == pbd_wakeup_option::stay_down)
 				return on_floor ? std::optional<std::uint16_t>(std::uint16_t{}) : std::nullopt;
-			if (given && response) responded = true;
+			if (given && response)
+				responded = true;
 			if (given >= plan.count || given >= plan.words.size())
 			{
 				// A character can lack a shared ground attack. If its opening never starts, use Stand Up.
-				if (!responded && on_floor && actionable && ++waited >= 8) return std::uint16_t{0x1000};
+				if (!responded && on_floor && actionable && ++waited >= 8)
+					return std::uint16_t{0x1000};
 				return {};
 			}
 			return plan.words[given++];
@@ -169,11 +177,15 @@ namespace pbd::practice
 		std::uint32_t origin = 0, random_word = 0;
 		std::uint16_t word = 0;
 		bool armed = false, engaged = false, active = false;
-		void reset() noexcept { *this = {}; }
+		void reset() noexcept
+		{
+			*this = {};
+		}
 		void arm(pbd_wakeup_option wanted, std::uint32_t seed = 0) noexcept
 		{
 			reset();
-			requested = wanted; random_word = seed;
+			requested = wanted;
+			random_word = seed;
 			choice = pbd_resolve_wakeup(wanted, pbd_ground_position::face_up_feet_toward, seed);
 			armed = true;
 		}
@@ -183,19 +195,32 @@ namespace pbd::practice
 		}
 		std::optional<std::uint16_t> sample(const pbd_wakeup_observation& now) noexcept
 		{
-			if (now.standing) { reset(); return {}; }
-			if (!armed) return {};
-			if (now.knocked_down || now.on_floor) engaged = true;
+			if (now.standing)
+			{
+				reset();
+				return {};
+			}
+			if (!armed)
+				return {};
+			if (now.knocked_down || now.on_floor)
+				engaged = true;
 			if (!active && now.on_floor)
 			{
-				active = true; origin = now.allocation;
+				active = true;
+				origin = now.allocation;
 				const bool pick_again = requested == pbd_wakeup_option::random &&
-					(!pbd_wakeup_available(choice, now.position) || pbd_wakeup_native_action(choice));
+				                        (!pbd_wakeup_available(choice, now.position) || pbd_wakeup_native_action(choice));
 				floor.reset(pbd_plan_wakeup(pick_again ? pbd_wakeup_option::random : choice, now.position, false, random_word));
 			}
-			if (!active) return {};
-			if (counter && now.counter == *counter) return word;
-			if (counter && now.counter != *counter + 1) { reset(); return {}; }
+			if (!active)
+				return {};
+			if (counter && now.counter == *counter)
+				return word;
+			if (counter && now.counter != *counter + 1)
+			{
+				reset();
+				return {};
+			}
 			counter = now.counter;
 			word = floor.next(now.on_floor, now.actionable, now.allocation != origin).value_or(0);
 			return word;

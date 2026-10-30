@@ -127,10 +127,22 @@ PBD_TEST(PbdSpectatorStandby, ABindTakesOnlyASetWithTheStandbysInputPolicy)
 	keyed.keyed_draws = true;
 	keyed.menu_hash_mask = 7;
 	check(policy_refusal(standby, keyed) == keyed_draws_refusal, "keyed draws are named first, for the launcher's sentence");
-	for (const auto change : {+[](pbd::spectator::manifest& m) { m.start_skip = false; },
-			 +[](pbd::spectator::manifest& m) { m.exit_gate = false; },
-			 +[](pbd::spectator::manifest& m) { m.battle_clock_version = 1; },
-			 +[](pbd::spectator::manifest& m) { m.menu_hash_mask = 2; }})
+	for (const auto change : {+[](pbd::spectator::manifest& m)
+			 {
+				 m.start_skip = false;
+			 },
+			 +[](pbd::spectator::manifest& m)
+			 {
+				 m.exit_gate = false;
+			 },
+			 +[](pbd::spectator::manifest& m)
+			 {
+				 m.battle_clock_version = 1;
+			 },
+			 +[](pbd::spectator::manifest& m)
+			 {
+				 m.menu_hash_mask = 2;
+			 }})
 	{
 		auto other = set;
 		change(other);
@@ -140,7 +152,8 @@ PBD_TEST(PbdSpectatorStandby, ABindTakesOnlyASetWithTheStandbysInputPolicy)
 	phase.phase_delay = true;
 	check(policy_refusal(standby, phase) == nullptr, "the source's phase delay is not applied to a watcher");
 	check(std::string_view(keyed_draws_refusal) == "spectator_keyed_draws_mismatch" &&
-		  std::string_view(input_policy_refusal) == "spectator_input_policy_mismatch", "the reasons the wire note lists");
+			  std::string_view(input_policy_refusal) == "spectator_input_policy_mismatch",
+		"the reasons the wire note lists");
 }
 
 PBD_TEST(PbdSpectatorStandby, ABriefDenialOfTheBoundManifestIsPolledAgain)

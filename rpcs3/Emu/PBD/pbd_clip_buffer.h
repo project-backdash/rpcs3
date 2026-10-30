@@ -39,10 +39,21 @@ namespace pbd::clips
 		std::size_t m_bytes = 0;
 		std::int64_t m_span_us = 30'000'000;
 		static constexpr std::size_t byte_limit = 384 * 1024 * 1024;
+
 	public:
-		void clear() { m_packets.clear(); m_bytes = 0; }
-		void seconds(unsigned value) { m_span_us = std::clamp(value, 15u, 300u) * 1'000'000ll; }
-		std::size_t bytes() const { return m_bytes; }
+		void clear()
+		{
+			m_packets.clear();
+			m_bytes = 0;
+		}
+		void seconds(unsigned value)
+		{
+			m_span_us = std::clamp(value, 15u, 300u) * 1'000'000ll;
+		}
+		std::size_t bytes() const
+		{
+			return m_bytes;
+		}
 		void push(packet_ptr value)
 		{
 			m_bytes += value->bytes.size();
@@ -56,29 +67,40 @@ namespace pbd::clips
 		}
 		std::vector<packet_ptr> snapshot() const
 		{
-			if (m_packets.empty()) return {};
+			if (m_packets.empty())
+				return {};
 			const auto cut = m_packets.back()->time_us - m_span_us;
 			std::int64_t start = -1;
 			for (const auto& value : m_packets)
 				if (!value->audio && value->keyframe)
 				{
-					if (start < 0 || value->time_us <= cut) start = value->time_us;
-					if (value->time_us > cut) break;
+					if (start < 0 || value->time_us <= cut)
+						start = value->time_us;
+					if (value->time_us > cut)
+						break;
 				}
-			if (start < 0) return {};
+			if (start < 0)
+				return {};
 			std::vector<packet_ptr> result;
 			for (const auto& value : m_packets)
-				if (value->time_us >= start) result.push_back(value);
+				if (value->time_us >= start)
+					result.push_back(value);
 			std::stable_sort(result.begin(), result.end(), [](const auto& a, const auto& b)
-			{
-				if (a->time_us != b->time_us) return a->time_us < b->time_us;
-				return a->audio < b->audio;
-			});
+				{
+					if (a->time_us != b->time_us)
+						return a->time_us < b->time_us;
+					return a->audio < b->audio;
+				});
 			return result;
 		}
 	};
 
-	enum class action { none, save, record };
+	enum class action
+	{
+		none,
+		save,
+		record
+	};
 	// A button only clips use (the touchpad, an Xbox Share button): a tap saves, a one-second hold starts or stops
 	// recording. A button the game also reads (Create/Share is the game's Select): only a half-second hold saves, as
 	// the consoles' own capture button does, so a tap stays a plain Select.
@@ -88,8 +110,17 @@ namespace pbd::clips
 		std::uint64_t since = 0;
 		action update(bool pressed, std::uint64_t now_ms, bool shared_with_game = false)
 		{
-			if (!armed) { armed = !pressed; return action::none; }
-			if (pressed && !down) { down = true; held = false; since = now_ms; }
+			if (!armed)
+			{
+				armed = !pressed;
+				return action::none;
+			}
+			if (pressed && !down)
+			{
+				down = true;
+				held = false;
+				since = now_ms;
+			}
 			const std::uint64_t hold_ms = shared_with_game ? 500 : 1000;
 			if (pressed && !held && now_ms >= since && now_ms - since >= hold_ms)
 			{
@@ -127,4 +158,4 @@ namespace pbd::clips
 			out.pop_back();
 		return out;
 	}
-}
+} // namespace pbd::clips

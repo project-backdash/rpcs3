@@ -95,7 +95,8 @@ namespace pbd::replay_rewind
 			if (points[i].frame <= frame)
 				best = i;
 		}
-		return best ? best : exact ? std::nullopt : first;
+		return best ? best : exact ? std::nullopt :
+		                             first;
 	}
 
 	// The pinned checkpoint at the start of `round` of `match`, if it is still held.

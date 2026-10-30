@@ -23,8 +23,7 @@ namespace pbd::pick_transition
 		}
 		bool pins()
 		{
-			constexpr std::array<std::pair<u32, u32>, 12> expected{{
-				{0x264f28, 0x807f0080}, {hook_pc, 0x4802357d}, {0x2656ac, 0x90be0054}, {0x2656b0, 0x90de0058},
+			constexpr std::array<std::pair<u32, u32>, 12> expected{{{0x264f28, 0x807f0080}, {hook_pc, 0x4802357d}, {0x2656ac, 0x90be0054}, {0x2656b0, 0x90de0058},
 				{0x2a3a9c, 0x38170878}, {0x2a3ab8, 0x2fb90000}, {0x2a3abc, 0x419e004c}, {0x2a3b74, 0x833f0000},
 				{0x13cac, 0x90090004}, {0x13cb0, 0x91690000}, {0xd53a4, 0x934a0004}, {0xd53a8, 0x900a0000}}};
 			for (const auto& [address, opcode] : expected)
@@ -35,7 +34,7 @@ namespace pbd::pick_transition
 			}
 			return true;
 		}
-	}
+	} // namespace
 
 	void event(ppu_thread& owner) noexcept
 	{

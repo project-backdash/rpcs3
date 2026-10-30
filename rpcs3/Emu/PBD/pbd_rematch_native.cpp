@@ -27,7 +27,7 @@ namespace pbd::rematch
 			std::array<be_t<u16>, 2> handicap{};
 			// The first select precedes round init, which copies this configured byte into the applied match word.
 			const bool rounds_read = initial_select ? vm::try_access(0x1008ebd4, &configured_rounds, sizeof(configured_rounds), false) :
-				word(0x1008f0a0, rounds);
+			                                          word(0x1008f0a0, rounds);
 			if (!rounds_read || !word(0x1008f09c, time) ||
 				!vm::try_access(0x1008ebf6, &handicap[0], 2, false) ||
 				!vm::try_access(0x1008ebfa, &handicap[1], 2, false))
@@ -70,7 +70,7 @@ namespace pbd::rematch
 			       owner.cia == t5dr::boundary_pc && owner.lr == t5dr::boundary_lr && owner.gpr[2] == t5dr::toc &&
 			       pbd::practice::native::boundary_readable(owner) &&
 			       (!initial_select || (word(t5dr::game_mode_address, mode) && mode == 4 &&
-			           word(t5dr::scene_address, scene) && scene == 3 && word(t5dr::subscene_address, subscene) && subscene == 44)) &&
+										   word(t5dr::scene_address, scene) && scene == 3 && word(t5dr::subscene_address, subscene) && subscene == 44)) &&
 			       read_options(out, initial_select);
 		}
 		catch (...)
@@ -103,7 +103,7 @@ namespace pbd::rematch
 			return false;
 		if (character_rule::banned(runtime) &&
 			(!character_rule::row_available(character_rule::rule::ban_jinpachi, selected.rows[0]) ||
-			 !character_rule::row_available(character_rule::rule::ban_jinpachi, selected.rows[1])))
+				!character_rule::row_available(character_rule::rule::ban_jinpachi, selected.rows[1])))
 			return false;
 		pending = target{selected, rules, {}, true};
 		generation = runtime;

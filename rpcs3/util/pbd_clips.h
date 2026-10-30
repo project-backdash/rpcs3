@@ -30,6 +30,7 @@ namespace pbd::clips
 	{
 		struct impl;
 		std::unique_ptr<impl> m;
+
 	public:
 		recorder(options config, std::function<void(status)> publish);
 		~recorder() override;
@@ -37,7 +38,10 @@ namespace pbd::clips
 		void save_clip();
 		void toggle_recording();
 		bool wants_frame() const override;
-		bool asynchronous_capture() const override { return true; }
+		bool asynchronous_capture() const override
+		{
+			return true;
+		}
 		bool offer_frame(std::vector<u8>& frame, u32 pitch, u32 width, u32 height, s32 pixel_format, usz timestamp_ms) override;
 		bool offer_samples(const u8* buf, u32 sample_count, u16 channels, usz timestamp_us) override;
 		void frame_dropped() override;
@@ -50,4 +54,4 @@ namespace pbd::clips
 	void request_record();
 	unsigned take_requests();
 	bool hardware_available();
-}
+} // namespace pbd::clips

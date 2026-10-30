@@ -180,7 +180,7 @@ void pbd::rollback_session::practice_steps::publish()
 	const bool situation_ready = pbd::game_lifecycle::requested() && practice_can_change_situation();
 	const bool moment_ready = remembered_moment_ready();
 	const bool remembered_ready = situation_ready && (moment_ready ||
-	                              pbd::game_lifecycle::placement_available(pbd::game_lifecycle::placement::remembered, lifecycle_scope(), data.practice.restart.placement));
+														 pbd::game_lifecycle::placement_available(pbd::game_lifecycle::placement::remembered, lifecycle_scope(), data.practice.restart.placement));
 	// R3 with an action is that action in the fight, and Remember Position is the Restart Settings row only.
 	const bool r3_remembers = pbd::practice::controls::r3_remembers(data.practice.button_map);
 	publish_control_hints(situation_ready, remembered_ready, r3_remembers);

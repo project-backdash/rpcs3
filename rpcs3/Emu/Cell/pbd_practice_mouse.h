@@ -186,7 +186,8 @@ namespace pbd::practice::mouse
 	{
 		auto& shared = state();
 		std::lock_guard lock(shared.mutex);
-		if (shared.current.active && shared.current.owner.generation) enqueue(shared, {shared.current.owner, action::back, 0});
+		if (shared.current.active && shared.current.owner.generation)
+			enqueue(shared, {shared.current.owner, action::back, 0});
 	}
 	inline int hovered_page(scope owner)
 	{

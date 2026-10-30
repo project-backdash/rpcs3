@@ -41,7 +41,7 @@ namespace pbd::character_rule
 			if (result == predicate::unverified)
 			{
 				pbd_character_log.error("Eligibility witness: generation %u/%u owner 0x%x toc 0x%x mode %u scene %u/%u grid %u "
-					"link 0x%x record 0x%x cursor %u, skippable %u pinned %u",
+										"link 0x%x record 0x%x cursor %u, skippable %u pinned %u",
 					observed.generation, observed.active_generation, observed.owner, observed.toc, observed.mode,
 					observed.scene, observed.subscene, observed.grid_mode, observed.link, observed.record,
 					observed.cursor, can_skip, observed.pinned);

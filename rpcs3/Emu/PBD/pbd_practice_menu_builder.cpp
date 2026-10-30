@@ -174,7 +174,7 @@ void pbd::rollback_session::practice_steps::native_menu::move_list()
 		moves_view.help = !focused                 ? std::string() :
 		                  !row_in_focus.selectable ? std::string("The dummy can't do this move from where it stands, so it can't be chosen.") :
 		                  list.on(row_in_focus.id) ? std::string("{cross} turns it off. {circle} keeps the moves that are on.") :
-		                  list.single_choice()    ? std::string("{cross} chooses this move, replacing the slot's previous move. {circle} keeps it.") :
+		                  list.single_choice()     ? std::string("{cross} chooses this move, replacing the slot's previous move. {circle} keeps it.") :
 		                                             std::string("{cross} turns it on. With several on, the dummy picks one at random each time.");
 		bar = {};
 		bar.add("{cross}", "On/Off", prompt_action::confirm);
