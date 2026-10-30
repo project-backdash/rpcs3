@@ -79,7 +79,7 @@ Unless qualified, session implementation files below are under `rpcs3/Emu/Cell/`
 | Ranked stakes and the game's rank screens | `pbd_rank_stakes.h` (rules, guest write plans), `pbd_rank_screens.cpp` (hooks, off by default) |
 | Practice | `pbd_practice_native.cpp`, `pbd_rollback_session_practice*.cpp`, `pbd_practice_*` domain modules |
 | Per-game recording and playback | `pbd_replay_*`, `pbd_live_replay.cpp`, `pbd_match_recording.h`, replay boundary operations |
-| Spectating | `pbd_spectator_channel.h`, `pbd_spectator_*`, `pbd_corner_chat.h` |
+| Spectating | `pbd_spectator_local_channel.h`, `pbd_spectator_channel_{model,controls,input,publication}.h`, `pbd_spectator_*`, `pbd_corner_chat.h` |
 | Input | `rpcs3/Input/pbd_pad_*`, `pbd_controller_ports.*`, `rpcs3/Emu/Cell/Modules/pbd_pad_*` |
 | Display and window | `rpcs3/Emu/RSX/Overlays/pbd/`, `rpcs3/rpcs3qt/pbd_game_host*`, `pbd_game_window*` |
 | Frame presentation | `rpcs3/Emu/RSX/pbd_frame_tags.h`, `pbd_replay_pacing.h`, `Utils/pbd_render_scale.h` |
