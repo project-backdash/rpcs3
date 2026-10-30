@@ -162,7 +162,8 @@ The movement suites invoke production generators, cursors and flow plans; the fo
 removed. Checkpoint tests drive the production byte-selection/write operation. The pinned HLE table's deterministic
 converter and identified compatible input are documented in [pbd-hle-order.md](docs/pbd-hle-order.md).
 
-`.github/workflows/pbd-bar.yml` runs C++ formatting. The inherited `rpcs3.yml` also builds and runs unit tests in its
-eligible pull-request jobs; its repository/event conditions do not make every fork push a native test run.
+`.github/workflows/pbd-bar.yml` runs C++ formatting. `pbd-windows.yml` builds Release x64 and runs the PBD and tools
+tests on pushes to `main` and pull requests. The inherited `rpcs3.yml` also builds and runs unit tests in its eligible
+pull-request jobs; its repository/event conditions do not make every fork push a native test run.
 [CODE-BAR.md](CODE-BAR.md) lists the actual local checks. Native behavior changes also need online match validation;
 formatting and portable unit tests alone cannot establish synchronization of a running game.
