@@ -28,7 +28,6 @@ jobs:
       CCACHE_DIR: 'C:\ccache'
       CCACHE_INODECACHE: 'true'
       CCACHE_SLOPPINESS: time_macros
-      CCACHE_LAUNCH_ARGS: '-DCMAKE_C_COMPILER_LAUNCHER=C:\ccache_bin\ccache.exe -DCMAKE_CXX_COMPILER_LAUNCHER=C:\ccache_bin\ccache.exe'
       DEPS_CACHE_DIR: ./dependency_cache
       QTDIR: 'C:\Qt\6.11.2\msvc2022_64'
       VULKAN_SDK: 'C:\VulkanSDK\1.4.341.1'
@@ -46,7 +45,7 @@ jobs:
       - uses: microsoft/setup-msbuild@v2
       - name: Build Release x64
         shell: pwsh
-        run: msbuild rpcs3.sln /m /p:Configuration=Release /p:Platform=x64 /p:PreferredToolArchitecture=x64 /p:CLToolPath="$env:CCACHE_BIN_DIR" /p:UseMultiToolTask=true /p:CustomAfterMicrosoftCommonTargets="$env:GITHUB_WORKSPACE\buildfiles\msvc\ci_only.targets" /v:minimal
+        run: msbuild rpcs3.sln /m /p:Configuration=Release /p:Platform=x64 /p:PreferredToolArchitecture=x64 /p:UseMultiToolTask=true /p:CustomAfterMicrosoftCommonTargets="$env:GITHUB_WORKSPACE\buildfiles\msvc\ci_only.targets" /v:minimal
       - name: Run PBD tests
         shell: pwsh
         run: |

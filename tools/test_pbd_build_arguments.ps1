@@ -36,6 +36,12 @@ try {
         if ($LASTEXITCODE -ne 0 -or ($output -join "`n").Trim() -cne '"file.c"') {
             throw "Compiler path trimming failed for ${source}: $($output -join "`n") $(Get-Content -Raw -LiteralPath $diagnostics)"
         }
+        Set-Content -LiteralPath $inputFile -Value 'int answer(void) { return 42; }' -Encoding ascii
+        $object = Join-Path $source 'file.obj'
+        & $Compiler /nologo /c /TC "/Fo$object" $inputFile 2> $diagnostics | Out-Null
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $object)) {
+            throw "Compiler did not produce the object for ${source}: $(Get-Content -Raw -LiteralPath $diagnostics)"
+        }
     }
     Write-Host 'Compiler path trimming passed for plain paths and paths with spaces.'
 } finally {
