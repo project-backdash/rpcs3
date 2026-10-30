@@ -85,7 +85,9 @@ namespace pbd::controllers::settings
 	{
 		constexpr std::array<std::uint16_t, 4> bits{0x80, 0x10, 0x40, 0x20};
 		std::uint16_t result = 0;
-		for (const char c : assignment) if (c >= '1' && c <= '4') result |= bits[c - '1'];
+		for (const char c : assignment)
+			if (c >= '1' && c <= '4')
+				result |= bits[c - '1'];
 		return result;
 	}
 	// Slot `slot`'s attack bits in a packed attack_masks value.
@@ -124,7 +126,8 @@ namespace pbd::controllers::settings
 	// is that action alone. Directions, Start, Select and a stick click with none stay as they are.
 	inline std::uint16_t remap_attacks(std::uint16_t raw)
 	{
-		if (!mapping_changed.load(std::memory_order_acquire)) return raw;
+		if (!mapping_changed.load(std::memory_order_acquire))
+			return raw;
 		const auto packed = attack_masks.load(std::memory_order_acquire);
 		std::uint16_t result = static_cast<std::uint16_t>(raw & 0xff00 & ~clicks_with_actions(packed));
 		for (unsigned i = 0; i < slot_bits.size(); ++i)
@@ -152,9 +155,14 @@ namespace pbd::controllers::settings
 	inline bool submit(const values& value)
 	{
 		for (const auto& assignment : value.mapping)
-			if (std::find(assignments.begin(), assignments.end(), assignment) == assignments.end()) return false;
+			if (std::find(assignments.begin(), assignments.end(), assignment) == assignments.end())
+				return false;
 		std::lock_guard lock(mutex);
-		if (!current.available || std::none_of(current.devices.begin(), current.devices.end(), [&](const auto& d) { return d.id == value.device; })) return false;
+		if (!current.available || std::none_of(current.devices.begin(), current.devices.end(), [&](const auto& d)
+									  {
+										  return d.id == value.device;
+									  }))
+			return false;
 		// Keep only each device's latest layout, in submission order for the single-controller menu.
 		std::erase_if(requested, [&](const auto& pending)
 			{
@@ -176,4 +184,4 @@ namespace pbd::controllers::settings
 		seen = revision;
 		return result;
 	}
-}
+} // namespace pbd::controllers::settings

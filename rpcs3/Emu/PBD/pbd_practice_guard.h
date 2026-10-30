@@ -30,8 +30,7 @@ namespace pbd::practice
 		pbd_guard_option guard = pbd_guard_option::game;
 		std::string_view help;
 	};
-	inline constexpr std::array<pbd_dummy_action_choice, 9> pbd_dummy_action_choices{{
-		{"Standing", 0},
+	inline constexpr std::array<pbd_dummy_action_choice, 9> pbd_dummy_action_choices{{{"Standing", 0},
 		{"Standing Guard", 1},
 		{"Crouching", 2},
 		{"Crouching Guard", 3},

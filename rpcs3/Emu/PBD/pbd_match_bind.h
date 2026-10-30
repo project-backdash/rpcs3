@@ -60,7 +60,8 @@ namespace pbd::match_bind
 				(!detail::is(delay, "auto") && !detail::number32(delay, 0, 5, frames)))
 				return {{}, "match_bind_delay_invalid"};
 			out.prediction_bound = limit;
-			if (!detail::is(delay, "auto")) out.input_delay = frames;
+			if (!detail::is(delay, "auto"))
+				out.input_delay = frames;
 		}
 		out.set_id = value.find("setId")->text;
 		out.spectator_from_start = stream && stream->truth;
@@ -84,13 +85,17 @@ namespace pbd::match_bind
 		       ",\"checkpointSha256\":" + json::quoted(value.checkpoint) + ",\"emulatorSha256\":" + json::quoted(value.emulator) +
 		       ",\"recipeSha256\":" + json::quoted(value.recipe) +
 		       (peer && peer->prediction_bound ? ",\"inputDelay\":" + (peer->input_delay ? std::to_string(*peer->input_delay) : "\"auto\"") +
-		         ",\"predictionBound\":" + std::to_string(*peer->prediction_bound) : "") + "}\n";
+													 ",\"predictionBound\":" + std::to_string(*peer->prediction_bound) :
+												 "") +
+		       "}\n";
 	}
 	inline bool activates(std::string_view text, const identity& expected, std::string_view set)
 	{
-		if (text.size() > 2048) return false;
+		if (text.size() > 2048)
+			return false;
 		const auto parsed = json::detail::json_parser(text).parse();
-		if (!parsed.value) return false;
+		if (!parsed.value)
+			return false;
 		const auto& value = *parsed.value;
 		return value.kind == json::json_kind::object && value.fields.size() == 4 &&
 		       json::detail::is(value.find("schema"), "pbd-match-activate-1") &&

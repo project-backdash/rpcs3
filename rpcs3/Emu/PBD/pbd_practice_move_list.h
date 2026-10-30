@@ -65,7 +65,10 @@ namespace pbd::practice::move_list_view
 			current.erase(std::unique(current.begin(), current.end()), current.end());
 			for (const auto id : current)
 				if ((!single_choice() || chosen.empty()) &&
-					std::any_of(rows.begin(), rows.end(), [&](const row& each) { return !each.header && each.id == id; }))
+					std::any_of(rows.begin(), rows.end(), [&](const row& each)
+						{
+							return !each.header && each.id == id;
+						}))
 					chosen.push_back(id);
 			focus = rows.empty() ? 0 : static_cast<u32>(rows.size());
 			for (u32 at = 0; at < rows.size() && focus == rows.size(); ++at)

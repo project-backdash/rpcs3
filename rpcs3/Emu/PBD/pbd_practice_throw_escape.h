@@ -27,7 +27,9 @@ namespace pbd::practice
 
 	constexpr std::uint16_t throw_escape_word(std::uint32_t wanted) noexcept
 	{
-		return wanted == 1 ? 0x0080 : wanted == 2 ? 0x0010 : wanted == 3 ? 0x0090 : 0;
+		return wanted == 1 ? 0x0080 : wanted == 2 ? 0x0010 :
+		                          wanted == 3     ? 0x0090 :
+		                                            0;
 	}
 
 	// Random consumes one caller-supplied host word per throw.
@@ -46,7 +48,10 @@ namespace pbd::practice
 		std::uint16_t word = 0;
 		bool active = false, breaks = false, done = false;
 
-		void reset() noexcept { *this = {}; }
+		void reset() noexcept
+		{
+			*this = {};
+		}
 		constexpr bool fresh(const std::optional<throw_escape_view>& now) const noexcept
 		{
 			return now && (!active || now->allocation != allocation);
@@ -58,7 +63,10 @@ namespace pbd::practice
 			allocation = now.allocation;
 			breaks = will_break;
 		}
-		constexpr bool owns() const noexcept { return active && breaks && !done; }
+		constexpr bool owns() const noexcept
+		{
+			return active && breaks && !done;
+		}
 		// Release the port as soon as the game latches an input or retries run out.
 		std::optional<std::uint16_t> next(const std::optional<throw_escape_view>& now) noexcept
 		{

@@ -9,6 +9,7 @@ namespace pbd::clips
 	{
 		struct impl;
 		std::unique_ptr<impl> m;
+
 	public:
 		explicit controller(gs_frame* window);
 		~controller();
@@ -19,4 +20,4 @@ namespace pbd::clips
 		bool recording() const;
 		bool native_event(void* message);
 	};
-}
+} // namespace pbd::clips

@@ -31,7 +31,8 @@ namespace pbd::practice::reference
 	{
 		result out;
 		out.startup = frames::startup(attack.first, attack.last, attack.length, attack.attack);
-		if (!out.startup) return out;
+		if (!out.startup)
+			return out;
 		out.active = attack.last - attack.first + 1;
 		if (!attack.fixed_timing || !standing(attack.end) || attack.end.first < attack.last || attack.end.first > attack.length)
 			return out;
@@ -50,4 +51,4 @@ namespace pbd::practice::reference
 		return out;
 	}
 
-}
+} // namespace pbd::practice::reference

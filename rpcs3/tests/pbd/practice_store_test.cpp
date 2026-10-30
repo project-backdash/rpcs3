@@ -15,8 +15,10 @@ PBD_TEST(PbdPractice, MoveReactionChoices)
 	using namespace pbd::practice::dummy_move;
 	const auto lookup = [](u32 id) -> std::optional<variant_info>
 	{
-		if (id == 7) return variant_info{1, 1};
-		if (id == 12) return variant_info{2, 2};
+		if (id == 7)
+			return variant_info{1, 1};
+		if (id == 12)
+			return variant_info{2, 2};
 		return {};
 	};
 	scheduler player;
@@ -32,7 +34,8 @@ PBD_TEST(PbdPractice, MoveReactionChoices)
 		const auto selected = *player.pending;
 		check(selected.id == 7 || selected.id == 12, "selection stays within the selected rows");
 		check(selected.variant == (selected.id == 12 ? 1u : 0u), "native categories two and four use variant one");
-		first |= selected.id == 7; second |= selected.id == 12;
+		first |= selected.id == 7;
+		second |= selected.id == 12;
 		const auto state = player.rng;
 		check(!player.applied_contact(frame, contact::guard, configured, lookup) && player.rng == state,
 			"repeated callbacks for the same contact do not choose twice");
@@ -221,13 +224,15 @@ PBD_TEST(PbdPractice, MoveReactionChannel)
 	check(link.apply({"first", catalog.generation, 9, selected}, catalog) && current_settings == selected,
 		"a native acknowledgement applies exactly the current character's selection");
 	check(!link.apply({"stale", "older-generation", 9, {}}, catalog) && link.error == "fighters_changed" &&
-		current_settings == selected, "a stale selection never changes the current reactions");
+			  current_settings == selected,
+		"a stale selection never changes the current reactions");
 	check(!link.apply({"wrong-character", catalog.generation, 13, {}}, catalog) && current_settings == selected,
 		"the character is checked independently of the generation");
 	auto unavailable = selected;
 	unavailable.after_guard.ids.push_back(8);
 	check(!link.apply({"missing", catalog.generation, 9, unavailable}, catalog) && link.error == "move_unavailable" &&
-		current_settings == selected, "an unavailable selected move refuses the entire setting");
+			  current_settings == selected,
+		"an unavailable selected move refuses the entire setting");
 	const auto status = pbd::json::detail::json_parser(link.status(catalog)).parse();
 	check(status.value && status.value->find("moves")->items.size() == 1 && status.value->find("ack")->text == "missing",
 		"the status carries the current catalog and the matching native acknowledgement");
@@ -245,7 +250,8 @@ PBD_TEST(PbdPractice, MoveReactionPersistence)
 	check(decoded.value && decoded.value->dummies == saved.dummies, "reaction settings survive per-character profile reload");
 	check(!read_settings(nullptr), "an older profile has no reaction settings");
 	const auto invalid = pbd::json::detail::json_parser(
-		R"({"afterGuard":{"source":"moves","ids":[7,7]},"afterHit":{"source":"off"}})").parse();
+		R"({"afterGuard":{"source":"moves","ids":[7,7]},"afterHit":{"source":"off"}})")
+	                         .parse();
 	check(invalid.value && !read_settings(&*invalid.value), "duplicate selected rows are refused");
 }
 
@@ -430,7 +436,7 @@ PBD_TEST(PbdPracticeStore, OlderProfileKeepsSettings)
 	check(loaded.state == load_state::loaded && loaded.value == expected);
 	check(parse_profile(serialize(loaded.value, "x")).value == expected);
 	for (const auto& invalid : {R"({"playerRow":85,"dummyRow":69,"stage":17})", R"({"playerRow":37,"dummyRow":-1,"stage":17})",
-		R"({"playerRow":37,"dummyRow":69,"stage":256})", R"({"playerRow":37,"stage":17})"})
+			 R"({"playerRow":37,"dummyRow":69,"stage":256})", R"({"playerRow":37,"stage":17})"})
 	{
 		const auto rejected = parse_profile(changed(text, R"({"playerRow":37,"dummyRow":69,"stage":17})", invalid));
 		check(rejected.value && !rejected.value->pick && rejected.value->options == expected.options,

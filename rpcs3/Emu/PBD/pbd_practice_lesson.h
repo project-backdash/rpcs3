@@ -7,9 +7,21 @@
 
 namespace pbd::practice
 {
-	enum class pbd_lesson_side : std::uint8_t { left, right };
-	enum class pbd_lesson_stance : std::uint8_t { standing, crouching };
-	enum class pbd_lesson_hit_condition : std::uint8_t { normal, counter };
+	enum class pbd_lesson_side : std::uint8_t
+	{
+		left,
+		right
+	};
+	enum class pbd_lesson_stance : std::uint8_t
+	{
+		standing,
+		crouching
+	};
+	enum class pbd_lesson_hit_condition : std::uint8_t
+	{
+		normal,
+		counter
+	};
 
 	struct pbd_lesson_setup
 	{

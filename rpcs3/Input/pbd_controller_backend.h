@@ -9,6 +9,7 @@ namespace pbd::controllers
 	{
 		struct impl;
 		std::unique_ptr<impl> m;
+
 	public:
 		explicit backend(std::string config, bool standalone = false);
 		~backend();
@@ -23,4 +24,4 @@ namespace pbd::controllers
 
 	// A hidden, parent-bound stream of normalized and raw SDL samples for the launcher.
 	int run_controller_stream(int argc, char** argv);
-}
+} // namespace pbd::controllers

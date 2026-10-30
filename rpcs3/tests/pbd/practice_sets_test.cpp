@@ -130,7 +130,10 @@ PBD_TEST(PbdPracticeSets, NamesSurviveRelaunchOverwriteAndFailedWrites)
 	check(reopened.find(13, 3)->name == "Low parry drills 2");
 	check(reopened.select(13, 3) == content);
 	check(!reopened.find(12, 3));
-	writer failing([](const auto&, const auto&) { return false; });
+	writer failing([](const auto&, const auto&)
+		{
+			return false;
+		});
 	check(reopened.submit(failing, dir.root, 3, content, saved_at, "Replacement"));
 	failing.wait_idle();
 	check(!reopened.poll()[0].saved);
@@ -148,7 +151,9 @@ PBD_TEST(PbdPracticeSets, NamesAreOptionalForOldSetsAndValidatedForNewOnes)
 	const auto old = parse_set(serialize_set({content, saved_at}), 13);
 	check(old.value && old.value->name.empty());
 	check(set_name(&*old.value, 9) == "Set 10");
-	for (const std::string name : {std::string("Punish \"low\""), std::string("D\xC3\xA9" "fense"), std::string(32, 'x')})
+	for (const std::string name : {std::string("Punish \"low\""), std::string("D\xC3\xA9"
+																			  "fense"),
+			 std::string(32, 'x')})
 	{
 		const auto parsed = parse_set(serialize_set({content, saved_at, name}), 13);
 		check(parsed.value && parsed.value->name == name && parsed.value->content == content);

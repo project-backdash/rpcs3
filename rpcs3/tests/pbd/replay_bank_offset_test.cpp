@@ -96,9 +96,11 @@ PBD_TEST(ReplayBankOffset, OwnSlotIsTriedAfterTheOpposingSlot)
 	const auto right = identify(0x216cacf8, seen_from_right(16, 31), cursor_alignment);
 	pbd::test::check(same(right, {base_kind::own, 0x216cacf8 - right_slot, 31}), "Right slot word not named as own");
 	pbd::test::check(span({left_slot, 16, left_slot + max_bank_span}, {right_slot, 31, right_slot + max_bank_span}) ==
-		right_slot - left_slot, "Lower slot overlaps the higher");
+						 right_slot - left_slot,
+		"Lower slot overlaps the higher");
 	pbd::test::check(span({right_slot, 31, right_slot + max_bank_span}, {left_slot, 16, left_slot + max_bank_span}) ==
-		max_bank_span, "Higher slot span changed");
+						 max_bank_span,
+		"Higher slot span changed");
 }
 
 PBD_TEST(ReplayBankOffset, LoadedImageEndExcludesTheMotionArchive)

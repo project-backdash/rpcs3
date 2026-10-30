@@ -202,4 +202,3 @@ PBD_TEST(PbdPracticePunish, AnEarlierThrowIsNoAnswer)
 	const auto judged = watch.boundary(frames.latest[0], frames.latest[1], 136);
 	check(judged && judged->outcome == punish::verdict::punished && judged->frames == 3, "the punish after it is judged");
 }
-

@@ -8,23 +8,29 @@ namespace pbd::practice::dummy_move
 	inline std::optional<reaction> read_reaction(const json::json_value* value)
 	{
 		using namespace json::detail;
-		if (!value || value->kind != json::json_kind::object) return {};
+		if (!value || value->kind != json::json_kind::object)
+			return {};
 		reaction out;
-		if (is(value->find("source"), "off")) return out;
+		if (is(value->find("source"), "off"))
+			return out;
 		if (is(value->find("source"), "recording"))
 		{
 			out.kind = source::recording;
-			if (!number32(value->find("slot"), 0, 7, out.slot)) return {};
+			if (!number32(value->find("slot"), 0, 7, out.slot))
+				return {};
 			return out;
 		}
-		if (!is(value->find("source"), "moves")) return {};
+		if (!is(value->find("source"), "moves"))
+			return {};
 		out.kind = source::moves;
 		const auto* ids = value->find("ids");
-		if (!ids || ids->kind != json::json_kind::array || ids->items.empty() || ids->items.size() > 64) return {};
+		if (!ids || ids->kind != json::json_kind::array || ids->items.empty() || ids->items.size() > 64)
+			return {};
 		for (const auto& item : ids->items)
 		{
 			u32 id = 0;
-			if (!number32(&item, 0, 4095, id)) return {};
+			if (!number32(&item, 0, 4095, id))
+				return {};
 			out.ids.push_back(id);
 		}
 		std::sort(out.ids.begin(), out.ids.end());
@@ -32,9 +38,11 @@ namespace pbd::practice::dummy_move
 	}
 	inline std::optional<settings> read_settings(const json::json_value* value)
 	{
-		if (!value || value->kind != json::json_kind::object) return {};
+		if (!value || value->kind != json::json_kind::object)
+			return {};
 		auto guard = read_reaction(value->find("afterGuard")), hit = read_reaction(value->find("afterHit"));
-		if (!guard || !hit) return {};
+		if (!guard || !hit)
+			return {};
 		return settings{std::move(*guard), std::move(*hit)};
 	}
 	inline json::json_value encode(const reaction& value)
@@ -45,7 +53,8 @@ namespace pbd::practice::dummy_move
 		if (value.kind == source::moves)
 		{
 			auto ids = json_value::array();
-			for (const auto id : value.ids) ids.items.push_back(json_value::number(id));
+			for (const auto id : value.ids)
+				ids.items.push_back(json_value::number(id));
 			return json_value::object({{"source", json_value::string("moves")}, {"ids", std::move(ids)}});
 		}
 		return json_value::object({{"source", json_value::string("off")}});
@@ -54,4 +63,4 @@ namespace pbd::practice::dummy_move
 	{
 		return json::json_value::object({{"afterGuard", encode(value.after_guard)}, {"afterHit", encode(value.after_hit)}});
 	}
-}
+} // namespace pbd::practice::dummy_move

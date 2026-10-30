@@ -41,7 +41,12 @@ namespace pbd::practice_store
 		std::string text;
 		inline static constexpr std::array<std::string_view, 7> letters{
 			"ABCDEFGHIJ", "KLMNOPQRST", "UVWXYZ", "abcdefghij", "klmnopqrst", "uvwxyz", "0123456789"};
-		enum class result { editing, save, cancel };
+		enum class result
+		{
+			editing,
+			save,
+			cancel
+		};
 		std::string name() const
 		{
 			const auto end = text.find_last_not_of(' ');

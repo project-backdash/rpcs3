@@ -15,13 +15,34 @@ namespace pbd::controllers
 {
 	enum action : unsigned
 	{
-		cross, circle, square, triangle, l1, r1, l2, r2, select, start, l3, r3, home, touchpad, up, down, left, right, count
+		cross,
+		circle,
+		square,
+		triangle,
+		l1,
+		r1,
+		l2,
+		r2,
+		select,
+		start,
+		l3,
+		r3,
+		home,
+		touchpad,
+		up,
+		down,
+		left,
+		right,
+		count
 	};
 	inline constexpr std::array<std::string_view, count> names{
 		"cross", "circle", "square", "triangle", "l1", "r1", "l2", "r2", "select", "start", "l3", "r3", "home", "touchpad", "up", "down", "left", "right"};
 	inline constexpr std::array<std::uint16_t, count> ps3_bits{
 		0x0040, 0x0020, 0x0080, 0x0010, 0x0004, 0x0008, 0x0001, 0x0002, 0x0100, 0x0800, 0x0200, 0x0400, 0, 0, 0x1000, 0x4000, 0x8000, 0x2000};
-	inline constexpr std::uint32_t bit(unsigned a) { return 1u << a; }
+	inline constexpr std::uint32_t bit(unsigned a)
+	{
+		return 1u << a;
+	}
 
 	struct state
 	{
@@ -52,7 +73,12 @@ namespace pbd::controllers
 
 	struct binding
 	{
-		enum kind { button, axis, hat } type = button;
+		enum kind
+		{
+			button,
+			axis,
+			hat
+		} type = button;
 		unsigned index = 0;
 		int direction = 1;
 		float rest = 0.f;
@@ -71,7 +97,7 @@ namespace pbd::controllers
 		if (b.type == binding::hat)
 			return b.index < raw.hats.size() && (raw.hats[b.index] & b.direction) == static_cast<unsigned>(b.direction);
 		return b.index < raw.axes.size() && std::isfinite(raw.axes[b.index]) &&
-			(raw.axes[b.index] - b.rest) * b.direction > .5f;
+		       (raw.axes[b.index] - b.rest) * b.direction > .5f;
 	}
 
 	inline state map(state defaults, const raw_state& raw, const layout& overrides)
@@ -81,24 +107,35 @@ namespace pbd::controllers
 			if (overrides[i])
 			{
 				defaults.buttons &= ~bit(i);
-				if (pressed(raw, *overrides[i])) defaults.buttons |= bit(i);
+				if (pressed(raw, *overrides[i]))
+					defaults.buttons |= bit(i);
 			}
 		return defaults;
 	}
 
 	inline bool neutral(const raw_state& rest, const raw_state& now)
 	{
-		if (std::any_of(now.buttons.begin(), now.buttons.end(), [](bool down) { return down; })) return false;
-		if (std::any_of(now.hats.begin(), now.hats.end(), [](unsigned hat) { return hat != 0; })) return false;
+		if (std::any_of(now.buttons.begin(), now.buttons.end(), [](bool down)
+				{
+					return down;
+				}))
+			return false;
+		if (std::any_of(now.hats.begin(), now.hats.end(), [](unsigned hat)
+				{
+					return hat != 0;
+				}))
+			return false;
 		for (unsigned i = 0; i < now.axes.size(); ++i)
-			if (!std::isfinite(now.axes[i]) || std::abs(now.axes[i] - (i < rest.axes.size() ? rest.axes[i] : 0.f)) > .20f) return false;
+			if (!std::isfinite(now.axes[i]) || std::abs(now.axes[i] - (i < rest.axes.size() ? rest.axes[i] : 0.f)) > .20f)
+				return false;
 		return true;
 	}
 
 	inline std::optional<binding> learn(const raw_state& rest, const raw_state& before, const raw_state& now)
 	{
 		for (unsigned i = 0; i < now.buttons.size(); ++i)
-			if (now.buttons[i] && (i >= before.buttons.size() || !before.buttons[i])) return binding{binding::button, i};
+			if (now.buttons[i] && (i >= before.buttons.size() || !before.buttons[i]))
+				return binding{binding::button, i};
 		for (unsigned i = 0; i < now.hats.size(); ++i)
 			if (now.hats[i] && (now.hats[i] & (now.hats[i] - 1)) == 0 && (i >= before.hats.size() || before.hats[i] != now.hats[i]))
 				return binding{binding::hat, i, static_cast<int>(now.hats[i])};
@@ -123,21 +160,33 @@ namespace pbd::controllers
 	// The caller replaces one complete pad report while holding the pad lock. Releases never change ownership.
 	class selector
 	{
-		struct history { std::uint32_t buttons = 0, withheld = 0; std::array<bool, 4> moved{}, withheld_axes{}; };
+		struct history
+		{
+			std::uint32_t buttons = 0, withheld = 0;
+			std::array<bool, 4> moved{}, withheld_axes{};
+		};
 		std::map<std::string, history, std::less<>> m_history;
 		std::string m_owner;
 		std::uint64_t m_serial = 0;
 		bool m_focused = false;
+
 	public:
 		explicit selector(std::string initial = "keyboard") : m_owner(std::move(initial)) {}
-		const std::string& owner() const { return m_owner; }
-		std::uint64_t serial() const { return m_serial; }
+		const std::string& owner() const
+		{
+			return m_owner;
+		}
+		std::uint64_t serial() const
+		{
+			return m_serial;
+		}
 		state sample(std::span<const source> sources, bool focused, bool typing, std::string_view locked = {})
 		{
 			std::map<std::string, history, std::less<>> next;
 			for (const auto& input : sources)
 			{
-				if (!input.value.connected) continue;
+				if (!input.value.connected)
+					continue;
 				const auto old = m_history.find(input.id);
 				history h;
 				h.buttons = input.value.buttons;
@@ -153,19 +202,26 @@ namespace pbd::controllers
 					h.withheld_axes[i] = (old == m_history.end() || focus_lost || old->second.withheld_axes[i]) && value > .20f;
 					claim |= old != m_history.end() && h.moved[i] && !held;
 				}
-				if ((!input.keyboard || (focused && m_focused)) && claim && !(typing && input.keyboard) && locked.empty()) { m_owner = input.id; ++m_serial; }
+				if ((!input.keyboard || (focused && m_focused)) && claim && !(typing && input.keyboard) && locked.empty())
+				{
+					m_owner = input.id;
+					++m_serial;
+				}
 				next.emplace(input.id, h);
 			}
 			m_history = std::move(next);
 			m_focused = focused;
-			if (!locked.empty()) m_owner = locked;
+			if (!locked.empty())
+				m_owner = locked;
 			for (const auto& input : sources)
 				if (input.id == m_owner && input.value.connected && !(typing && input.keyboard) && (focused || !input.keyboard))
 				{
 					auto value = input.value;
 					const auto& h = m_history.at(m_owner);
 					value.buttons &= ~h.withheld;
-					for (unsigned i = 0; i < value.sticks.size(); ++i) if (h.withheld_axes[i]) value.sticks[i] = 0.f;
+					for (unsigned i = 0; i < value.sticks.size(); ++i)
+						if (h.withheld_axes[i])
+							value.sticks[i] = 0.f;
 					return value;
 				}
 			return {};
@@ -186,7 +242,9 @@ namespace pbd::controllers
 	inline std::uint16_t canonical(const state& value)
 	{
 		std::uint16_t word = 0;
-		for (unsigned i = 0; i < count; ++i) if (value.buttons & bit(i)) word |= ps3_bits[i];
+		for (unsigned i = 0; i < count; ++i)
+			if (value.buttons & bit(i))
+				word |= ps3_bits[i];
 		return word;
 	}
-}
+} // namespace pbd::controllers

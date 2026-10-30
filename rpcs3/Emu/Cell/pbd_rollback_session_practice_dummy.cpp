@@ -457,8 +457,8 @@ void pbd::rollback_session::dummy_word_steps::end_reaction(const char* reason)
 bool pbd::rollback_session::dummy_word_steps::next_cycle()
 {
 	const u32 interval = data.practice.interval == 0 ? 6 : data.practice.interval == 1 ? 60 :
-	                                                    data.practice.interval == 2     ? 120 :
-	                                                                                      30 + practice_dummy_random() % 91;
+	                                                   data.practice.interval == 2     ? 120 :
+	                                                                                     30 + practice_dummy_random() % 91;
 	data.practice.dummy.wait = interval;
 	data.practice.dummy.cycles++;
 	// With no action left to play a continuous movement carries on alone (the gap below does not end); with

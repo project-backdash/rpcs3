@@ -156,4 +156,4 @@ namespace pbd::fight_timing
 		}
 	};
 	inline counter samples;
-}
+} // namespace pbd::fight_timing

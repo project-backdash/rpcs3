@@ -217,8 +217,8 @@ namespace pbd::replay_capture
 			return value && std::string_view(value) == expected;
 		};
 		return is("PBD_REPLAY_CONTROLS", "1") &&
-			(is("PBD_REPLAY_TAKEOVER", "fast") ||
-			 ((is("PBD_REPLAY_TAKEOVER", "1") || is("PBD_REPLAY_TAKEOVER", "relaunch")) &&
-			  is("PBD_REPLAY_TAKEOVER_FAST", "1")));
+		       (is("PBD_REPLAY_TAKEOVER", "fast") ||
+				   ((is("PBD_REPLAY_TAKEOVER", "1") || is("PBD_REPLAY_TAKEOVER", "relaunch")) &&
+					   is("PBD_REPLAY_TAKEOVER_FAST", "1")));
 	}
-}
+} // namespace pbd::replay_capture

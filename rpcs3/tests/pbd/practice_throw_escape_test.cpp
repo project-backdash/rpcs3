@@ -11,7 +11,7 @@ namespace
 	using pbd::test::check;
 	using view = std::optional<throw_escape_view>;
 	constexpr std::uint16_t neutral = 0, button_1 = 0x0080, button_2 = 0x0010, buttons_1_2 = 0x0090;
-}
+} // namespace
 
 PBD_TEST(PbdPracticeThrowEscape, OptionsAndBreakWords)
 {

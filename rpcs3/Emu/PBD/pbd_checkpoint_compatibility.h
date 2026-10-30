@@ -11,4 +11,4 @@ namespace pbd::checkpoint_compatibility
 	{
 		return !captured || !*captured || std::string_view(captured) == key;
 	}
-}
+} // namespace pbd::checkpoint_compatibility

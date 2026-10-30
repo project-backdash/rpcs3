@@ -28,22 +28,32 @@ namespace pbd::replay_controls
 			return side;
 		const auto pressed = static_cast<std::uint16_t>(held & ~previous);
 		const auto direction = pressed & (pbd_buttons.step_back | pbd_buttons.step_forward);
-		return direction == pbd_buttons.step_back ? 1 : direction == pbd_buttons.step_forward ? 2 : side;
+		return direction == pbd_buttons.step_back ? 1 : direction == pbd_buttons.step_forward ? 2 :
+		                                                                                        side;
 	}
 	constexpr std::uint16_t pbd_taken_word(std::uint16_t game,
 		const std::array<std::uint16_t, 2>& pads, std::uint32_t side) noexcept
 	{
 		return side >= 1 && side <= 2 && !(game & pbd_buttons.select) ?
-			static_cast<std::uint16_t>(game & pads[side - 1] & ~(pbd_buttons.start | pbd_buttons.select)) : 0;
+		           static_cast<std::uint16_t>(game & pads[side - 1] & ~(pbd_buttons.start | pbd_buttons.select)) :
+		           0;
 	}
 	// Foreground keys share the controllers' canonical word. Esc belongs to Settings; Triangle uses the player's keyboard map.
-	inline constexpr std::array<std::pair<int, std::uint16_t>, 8> pbd_keyboard{{
-		{0x0d, pbd_buttons.start}, {0x20, pbd_buttons.start}, {0x27, pbd_buttons.step_forward},
+	inline constexpr std::array<std::pair<int, std::uint16_t>, 8> pbd_keyboard{{{0x0d, pbd_buttons.start}, {0x20, pbd_buttons.start}, {0x27, pbd_buttons.step_forward},
 		{0x25, pbd_buttons.step_back}, {0xdd, pbd_buttons.faster}, {0xdb, pbd_buttons.slower},
 		{0xbe, pbd_buttons.jump_forward}, {0xbc, pbd_buttons.jump_back}}};
 	enum class pbd_command
 	{
-		none, leave, pause, step, slower, faster, skip_scene, take, retry, return_to_replay
+		none,
+		leave,
+		pause,
+		step,
+		slower,
+		faster,
+		skip_scene,
+		take,
+		retry,
+		return_to_replay
 	};
 	constexpr pbd_command pbd_attempt_command(std::uint16_t held, std::uint16_t previous) noexcept
 	{
@@ -78,7 +88,8 @@ namespace pbd::replay_controls
 		if (pressed & pbd_buttons.select)
 			return pbd_command::leave;
 		if (pressed & pbd_buttons.start)
-			return fighting ? pbd_command::pause : can_skip_scene ? pbd_command::skip_scene : pbd_command::none;
+			return fighting ? pbd_command::pause : can_skip_scene ? pbd_command::skip_scene :
+			                                                        pbd_command::none;
 		if (paused && (held & pbd_buttons.step_forward))
 			return pbd_command::step;
 		if (pressed & pbd_buttons.slower)

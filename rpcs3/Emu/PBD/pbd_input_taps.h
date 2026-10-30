@@ -60,7 +60,10 @@ namespace pbd::input_taps
 			return word;
 		}
 
-		std::uint16_t level() const noexcept { return m_level; }
+		std::uint16_t level() const noexcept
+		{
+			return m_level;
+		}
 
 	private:
 		std::uint16_t m_level = 0;
@@ -105,4 +108,4 @@ namespace pbd::input_taps
 		std::uint16_t m_word = 0;
 		bool m_valid = false;
 	};
-}
+} // namespace pbd::input_taps
