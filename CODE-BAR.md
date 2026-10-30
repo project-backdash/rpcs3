@@ -8,8 +8,9 @@ python tools/pbd_check_format.py
 python tools/pbd_check_format.py --changed <merge-base>
 ```
 
-The inherited `.github/workflows/rpcs3.yml` has its own build and unit-test jobs. Eligible pull requests run
-`rpcs3_test`; repository/event conditions limit fork push builds. The formatting workflow does not enforce file size,
+`.github/workflows/pbd-windows.yml` builds Release x64 and runs PBD and tools tests on pushes to `main` and pull
+requests. It uses the upstream Windows CI dependency setup. The inherited `.github/workflows/rpcs3.yml` has its own
+build and unit-test jobs with repository/event restrictions. The formatting workflow does not enforce file size,
 function size, environment registration, clang-tidy or a new warning policy. Line-count rules and their historical
 exception ledger are retired; a file should contain the least code its job needs.
 

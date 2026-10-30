@@ -1,0 +1,68 @@
+name: PBD Windows build and tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Release x64 and tests
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 360
+    env:
+      COMPILER: msvc
+      QT_VER_MAIN: '6'
+      QT_VER: '6.11.2'
+      QT_VER_MSVC: msvc2022
+      QT_DATE: '202608131017'
+      LLVM_VER: '22.1.8'
+      VULKAN_VER: '1.4.341.1'
+      VULKAN_SDK_SHA: 'bcf2d75aa9556889ab974858666e20b3655b6055a0db704ccb47279ff33b5bfe'
+      CCACHE_SHA: '859141059ac950e1e8cd042c66f842f26b9e3a62a1669a69fe6ba180cb58bbdf'
+      CCACHE_BIN_DIR: 'C:\ccache_bin'
+      CCACHE_DIR: 'C:\ccache'
+      CCACHE_INODECACHE: 'true'
+      CCACHE_SLOPPINESS: time_macros
+      CCACHE_LAUNCH_ARGS: '-DCMAKE_C_COMPILER_LAUNCHER=C:\ccache_bin\ccache.exe -DCMAKE_CXX_COMPILER_LAUNCHER=C:\ccache_bin\ccache.exe'
+      DEPS_CACHE_DIR: ./dependency_cache
+      QTDIR: 'C:\Qt\6.11.2\msvc2022_64'
+      VULKAN_SDK: 'C:\VulkanSDK\1.4.341.1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: nuget/setup-nuget@v4
+      - name: Restore NuGet packages
+        run: nuget restore rpcs3.sln
+      - name: Restore Windows dependencies
+        shell: bash
+        run: .ci/setup-windows.sh
+      - uses: microsoft/setup-msbuild@v2
+      - name: Build Release x64
+        shell: pwsh
+        run: msbuild rpcs3.sln /m /p:Configuration=Release /p:Platform=x64 /p:PreferredToolArchitecture=x64 /p:CLToolPath="$env:CCACHE_BIN_DIR" /p:UseMultiToolTask=true /p:CustomAfterMicrosoftCommonTargets="$env:GITHUB_WORKSPACE\buildfiles\msvc\ci_only.targets" /v:minimal
+      - name: Run PBD tests
+        shell: pwsh
+        run: |
+          $tests = & build\lib\Release-x64\rpcs3_test.exe '--gtest_filter=Pbd*' --gtest_list_tests
+          if ($LASTEXITCODE -ne 0 -or -not ($tests | Select-String '^Pbd')) { throw 'No PBD tests found' }
+          & build\lib\Release-x64\rpcs3_test.exe '--gtest_filter=Pbd*'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run Python tools tests
+        run: python -m unittest discover -s tools -p 'test_pbd_*.py' -v
+      - name: Run dependency setup test
+        shell: pwsh
+        run: ./tools/test_pbd_setup_dependencies.ps1
+      - name: Run compiler argument test
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $compiler = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Tools\MSVC\*\bin\Hostx64\x64\cl.exe' | Select-Object -First 1
+          if (-not $compiler) { throw 'Visual Studio x64 compiler not found' }
+          ./tools/test_pbd_build_arguments.ps1 -Compiler $compiler

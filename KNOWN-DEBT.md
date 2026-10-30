@@ -14,8 +14,8 @@ of the current fork, including additions inside upstream files.
 - **Diagnostics and failures.** Hook/input event capture is opt-in, high-volume input records are queued, and renderer
   freeze diagnostics use a synchronized snapshot. Continue reviewing other optional diagnostic paths and shared
   observations. New failures should retain structured causes at their owning boundary.
-- **Automation.** Formatting runs in the PBD workflow and unit tests run in eligible inherited pull-request jobs.
-  Portable sanitizers and broader native static checks are additional work, not current guarantees.
+- **Automation.** Formatting runs in the PBD bar workflow. The PBD Windows workflow builds and runs PBD and tools tests on
+  `main` pushes and pull requests. Portable sanitizers and broader native static checks remain additional work.
 
 Peer authentication and directional sequence checks are implemented. The upstream overlay, pad and window additions
 have already been reduced; earlier line totals no longer describe them. Input-script compatibility is separate from
