@@ -102,6 +102,7 @@ struct pbd_direct_match::state
 	bool pbd_external_inputs = false;
 	std::array<std::string, 2> player_names;
 	std::array<u32, 2> player_ranks{};
+	std::array<pbd::game_profile::record, 2> player_records{};
 	std::optional<pbd::rank_stakes::game_values> rank_screens;
 	std::optional<pbd::replay_notices::placements> placements;
 	std::chrono::steady_clock::time_point accepted;
@@ -454,6 +455,7 @@ struct pbd_direct_match::state
 		carry_values = std::move(start.carry);
 		placements = start.placements;
 		player_ranks = start.ranks;
+		player_records = start.records;
 		handicaps = start.handicaps;
 		recorded_input_counter = start.input_counter;
 		recorded_input_context = start.input_context;

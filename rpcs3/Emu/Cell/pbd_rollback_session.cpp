@@ -140,6 +140,31 @@ void pbd::rollback_session::send_session_end(u32 reason)
 #endif
 }
 
+bool pbd::rollback_session::write_peer_stop(storage& d, const char* reason, u32 remote_reason, u32 remote_tick, u64 last_valid_us) noexcept
+{
+	// The receiver's silence, recovery and end watches and the record writer's stall watch share one record. The first one
+	// written stands; a record that cannot be opened leaves the next notice free to try.
+	try
+	{
+		std::lock_guard lock(d.peer.link.stop_mutex);
+		if (d.peer.link.stop_recorded.load(std::memory_order_relaxed))
+			return false;
+		const auto text = fmt::format("{\"schema\":1,\"reason\":\"%s\",\"peer_role\":%u,\"session\":%u,\"remote_reason\":%u,\"remote_tick\":%u,\"last_valid_receive_us\":%u}\n",
+			reason, 1 - d.peer.role, d.peer.session, remote_reason, remote_tick, last_valid_us);
+		const auto path = (d.checkpoint.capture_directory / "session-peer-stop.json").u8string();
+		fs::file out(std::string(path.begin(), path.end()), fs::rewrite);
+		if (!out)
+			return false;
+		out.write(text.data(), text.size());
+		d.peer.link.stop_recorded.store(true, std::memory_order_release);
+		return true;
+	}
+	catch (...)
+	{
+		return false;
+	}
+}
+
 void pbd::rollback_session::restore_session_presentation()
 {
 	if (m_storage && m_storage->replay.fast.active)
@@ -239,7 +264,12 @@ void pbd::rollback_session::finalize() noexcept
 		m_storage->practice.inputs.flush();
 	write_dummy_health();
 	write_input_policy();
+	write_host_timing(true);
 	send_session_end(reason);
+	// Every thread that writes the correction journal has joined: drain it, close it with its summary row. After the end
+	// notice, so a stalled disk never delays it to the other PC.
+	if (m_storage)
+		m_storage->correction.file.close();
 	restore_session_presentation();
 	g_pbd_takeover_anchor_live.store(false, std::memory_order_release);
 	pbd::replay_pacing::armed.store(0);
@@ -310,19 +340,27 @@ void pbd::rollback_session::observe(ppu_thread& ppu, u32 pc) noexcept
 	// flush its end marker while the owner is parked; the host watchdog authenticates exit.
 	struct session_end_scope_t
 	{
+		rollback_session& session;
 		storage& d;
 		ppu_thread& ppu;
 		~session_end_scope_t()
 		{
 			if (!d.session.enabled || !d.session.failstop || d.reason.load() == collecting || Emu.IsStopped())
 				return;
+			// The host ends the process while the owner is parked, so finalize() never runs. The end notice goes out here,
+			// on the thread that sends every other datagram of the session; finalize() then finds it sent.
+			session.send_session_end(d.reason.load());
+			session.write_host_timing(true);
 			pbd_session_log.warning("session ended (%s): gameplay owner parked until host shutdown", reason_text(d.reason.load()));
 			d.in_callback.store(false);
 			vm::temporary_unlock(ppu);
+			// The closing host_timing row can follow the summary the session's end already waited for, when the end came
+			// between two callbacks. This thread parks anyway: give the journal a bounded wait for a summary covering it.
+			d.correction.file.finish();
 			while (!(ppu.state & (cpu_flag::exit + cpu_flag::req_exit)) && !Emu.IsStopped())
 				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
-	} session_end_scope{data, ppu};
+	} session_end_scope{*this, data, ppu};
 	if (!m_active.load())
 		return;
 	data.in_callback.store(true);
@@ -388,4 +426,9 @@ void pbd::rollback_session::configure_live_recording()
 			(s.replay.session_replay && !checkpoint_source) || s.practice.rewind || pbd_direct_match::requested(),
 			s.session.seed, std::move(players), checkpoint_source))
 		pbd_session_log.warning("Replay recording unavailable; gameplay continues.");
+	// Each game's start records the PLAYER DATA numbers a lobby set's bars show (boundary_call::write_game_profiles).
+	s.match_replay.live.pbd_records([&s]
+		{
+			return s.lobby.records_shown;
+		});
 }

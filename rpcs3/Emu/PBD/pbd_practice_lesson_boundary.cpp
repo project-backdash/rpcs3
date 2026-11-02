@@ -11,15 +11,8 @@ void pbd::rollback_session::practice_steps::lesson_boundary()
 	namespace lesson = pbd::practice::lesson;
 	using namespace pbd::practice;
 	auto& channel = lesson::current;
-	const char* configured = pbd::env::find("PBD_PRACTICE_LESSON_CHANNEL");
-	if (!configured || !*configured)
-	{
-		channel = {};
-		return;
-	}
-	const std::filesystem::path root = std::filesystem::u8path(configured);
-	if (!root.is_absolute() || std::string_view(configured).starts_with("\\\\") ||
-		std::string_view(configured).starts_with("//"))
+	const std::filesystem::path root = pbd::env::local_path("PBD_PRACTICE_LESSON_CHANNEL");
+	if (root.empty())
 	{
 		channel = {};
 		return;

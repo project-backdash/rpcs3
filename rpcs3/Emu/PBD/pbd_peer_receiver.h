@@ -16,7 +16,10 @@ struct pbd::rollback_session::peer_receiver
 			const u64 now_us = std::chrono::duration_cast<std::chrono::microseconds>(session_clock::now().time_since_epoch()).count();
 			const auto active_epoch = d.peer.link.auth.epoch();
 			if (active_epoch != key_epoch || d.peer.link.auth.retired() || d.peer.link.terminal_idle.load(std::memory_order_acquire))
+			{
 				last_valid_us = 0; // A completed authenticated set is quiescent until its fresh next key arrives.
+				d.peer.link.watched_valid_us.store(0, std::memory_order_release);
+			}
 			key_epoch = active_epoch;
 			d.peer.link.recovery.poll(now_us, d.peer.link.auth.retired() || d.peer.link.terminal_idle.load(std::memory_order_acquire));
 			const auto recovery = d.peer.link.recovery.traffic();
@@ -24,7 +27,7 @@ struct pbd::rollback_session::peer_receiver
 			pbd::session_wait::recovering().store(protected_match && recovery.recovering, std::memory_order_release);
 			if (protected_match && d.peer.link.recovery.expired(now_us))
 				peer_notice("peer_recovery_timeout", ~0u, ~0u);
-			if (watch_peer && !protected_match && last_valid_us && now_us - last_valid_us >= 10000000)
+			if (watch_peer && !protected_match && last_valid_us && now_us - last_valid_us >= pbd::session_health::peer_silence_us)
 				peer_notice("peer_silence_timeout", ~0u, ~0u);
 
 			fd_set set;
@@ -81,6 +84,7 @@ struct pbd::rollback_session::peer_receiver
 				{
 					last_valid_us = packet.arrival_us;
 					d.peer.link.last_valid_us.store(last_valid_us, std::memory_order_release);
+					d.peer.link.watched_valid_us.store(last_valid_us, std::memory_order_release);
 					// The echo tells whether this side's own sends under the key have reached the peer.
 					d.peer.link.recovery.received(packet.auth_epoch, last_valid_us, pbd::peer_message::input_echo_us(bytes));
 				}
@@ -101,14 +105,9 @@ struct pbd::rollback_session::peer_receiver
 		d.peer.link.stop_noticed.store(true, std::memory_order_release);
 		if (peer_notice_written)
 			return;
-		const auto text = fmt::format("{\"schema\":1,\"reason\":\"%s\",\"peer_role\":%u,\"session\":%u,\"remote_reason\":%u,\"remote_tick\":%u,\"last_valid_receive_us\":%u}\n",
-			reason, 1 - d.peer.role, d.peer.session, remote_reason, remote_tick, last_valid_us);
-		const auto path = (d.checkpoint.capture_directory / "session-peer-stop.json").u8string();
-		if (fs::file out(std::string(path.begin(), path.end()), fs::rewrite); out)
-		{
-			out.write(text.data(), text.size());
-			peer_notice_written = true;
+		if (write_peer_stop(d, reason, remote_reason, remote_tick, last_valid_us))
 			pbd_session_log.warning("peer stop %s: peer role %u; host fail-stop requested", reason, 1 - d.peer.role);
-		}
+		// A stall record written first already ends the session; this notice adds none.
+		peer_notice_written = d.peer.link.stop_recorded.load(std::memory_order_acquire);
 	}
 };

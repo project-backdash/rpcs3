@@ -63,6 +63,10 @@ namespace pbd::set_channel
 		// rank_stakes only: what a set win and a set loss give each player (left, right), and each placing player's count.
 		pbd::rank_stakes::stakes stakes{};
 		std::array<std::optional<pbd::rank_stakes::placement>, 2> placements;
+		// rank_stakes and next_set: each player's PLAYER DATA record from before the set the command names, when it names a valid
+		// one (left, right); next_set names a table instead for a player who picks in the game's select. Display only.
+		std::array<std::optional<game_record>, 2> records;
+		std::array<std::optional<std::vector<record_group>>, 2> record_tables;
 		// Display-only optional fields that were present but invalid, by name ("vs_cards.mode"): read as left out, never a
 		// refusal, since a refused display command would end the set. The latch logs them.
 		std::vector<std::string> ignored;
@@ -104,8 +108,9 @@ namespace pbd::set_channel
 	}
 
 	// next_set's optional "left" and "right" carry each player's rank for the new set ("rank": the game's rank index, null or
-	// left out for none), so a Ranked set's plates show the rank the finished set gave. Their "memberId" and "character" are
-	// optional and may only repeat the set's own.
+	// left out for none), so a Ranked set's plates show the rank the finished set gave, and the player's PLAYER DATA record for
+	// it ("record", or "records" in a set that picks in the game's select; an invalid one is read as left out). Their
+	// "memberId" and "character" are optional and may only repeat the set's own.
 	inline std::string_view read_next_fighters(const json_value& value, const manifest& expected, command& out)
 	{
 		using player = std::tuple<std::string_view, const pbd::set_channel::fighter*, std::size_t>;
@@ -127,6 +132,7 @@ namespace pbd::set_channel
 					return "bad_next_set";
 				out.ranks[index] = held;
 			}
+			read_records(*repeated, "next_set." + std::string(key), in_game(expected), out.records[index], out.record_tables[index], out.ignored);
 		}
 		return {};
 	}
@@ -340,7 +346,8 @@ namespace pbd::set_channel
 	{
 		// A Ranked set's stakes (display only, applied at once and acknowledged): what a set win and a set loss give each player,
 		// {"left":{"win","winRank","loss","lossRank"},"right":{...}}. The envelope names the set they belong to; the launcher sends
-		// them again after next_set and whenever they change, and each replaces the last.
+		// them again after next_set and whenever they change, and each replaces the last. A side's optional "record" is the
+		// player's PLAYER DATA record from before this set; it is not part of the stakes word the two PCs compare.
 		out.kind = command_kind::rank_stakes;
 		for (const auto& [key, index] : {std::pair<std::string_view, std::size_t>{"left", 0}, {"right", 1}})
 		{
@@ -353,6 +360,7 @@ namespace pbd::set_channel
 			out.placements[index] = pbd::rank_stakes::read_placement(side);
 			if (const auto* given = side->find("placement"); given && given->kind != json_kind::null && !out.placements[index])
 				out.ignored.push_back("rank_stakes." + std::string(key) + ".placement");
+			read_records(*side, "rank_stakes." + std::string(key), false, out.records[index], out.record_tables[index], out.ignored);
 		}
 		return {};
 	}

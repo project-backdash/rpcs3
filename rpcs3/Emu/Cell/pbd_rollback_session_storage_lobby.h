@@ -43,6 +43,12 @@ namespace pbd::session_runtime
 		std::array<std::string, 2> vs_characters;
 		std::array<std::optional<pbd::rank_stakes::placement>, 2> placements;
 		bool game_replay = false, vs_seen = false, fight_seen = false, ignored_logged = false;
+		// The PLAYER DATA numbers (left, right; none shows zeros): those this PC announced at the current scene barrier
+		// (pbd::game_profile::records_word), those the bars show now, which a game's start records, and whether both PCs
+		// announced the same at the last barrier that could change them. An invalid record in a command is logged once, apart
+		// from the other display fields.
+		std::array<std::optional<pbd::game_profile::record>, 2> records_plan, records_shown;
+		bool records_agreed = true, records_ignored_logged = false;
 		bool start_attempted = false;
 		bool battle_seen = false;
 		std::optional<pbd::set_channel::command> pending_command;

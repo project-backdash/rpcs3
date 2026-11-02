@@ -78,6 +78,12 @@ namespace rsx
 				std::lock_guard lock(manager);
 				practice_overlay->init();
 			}
+			if (!manager.get<rsx::overlays::pbd_clip_overlay>())
+			{
+				auto clip_overlay = manager.create<rsx::overlays::pbd_clip_overlay>();
+				std::lock_guard lock(manager);
+				clip_overlay->init();
+			}
 			const bool spectator = ::pbd::spectator::requested_directory().has_value();
 			if ((::pbd::corner_chat::requested() || spectator) && !manager.get<rsx::overlays::pbd_corner_chat_overlay>())
 			{

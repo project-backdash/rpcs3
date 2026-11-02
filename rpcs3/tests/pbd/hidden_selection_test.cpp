@@ -444,6 +444,23 @@ namespace
 		}
 	}
 
+	void chooser_save_load_checks(const tables& mapping)
+	{
+		{
+			// L1 in a character state would load each PC's own save into the chooser's side, so the chooser's word never carries
+			// it; the other buttons still pass.
+			constexpr u16 l1 = 0x0004;
+			driver chooser;
+			check(chooser.begin({12, 84, 17, 3, 1, 1u, selection_samples + 1800}, mapping, 0));
+			auto now = selecting(1);
+			check(chooser.sample(0, now, 0x0080 | l1) == 0x0080);
+			now.state = 2;
+			check(chooser.sample(1, now, l1) == 0 && chooser.healthy());
+			now.state = 7;
+			check(chooser.sample(2, now, 0x2000 | l1) == 0x2000 && chooser.healthy());
+		}
+	}
+
 	void invalid_repick_checks(const tables& mapping)
 	{
 		{
@@ -487,5 +504,6 @@ PBD_TEST(PbdHiddenSelection, Checks)
 	fixed_input_ownership_checks(mapping);
 	kept_fighter_checks(mapping);
 	chooser_input_checks(mapping);
+	chooser_save_load_checks(mapping);
 	invalid_repick_checks(mapping);
 }

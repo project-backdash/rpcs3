@@ -32,9 +32,9 @@ bool pbd::rollback_session::tick_dispatch::apply_correction_undo()
 		if (!e.valid || e.index != t || e.undo_overflow)
 			return false;
 		for (u32 f : e.foreign_pages)
-			data.correction.foreign_pages += fmt::format("%s[%u,%u]", data.correction.foreign_pages.empty() ? "" : ",", f, t);
+			fmt::append(data.correction.foreign_pages, "%s[%u,%u]", data.correction.foreign_pages.empty() ? "" : ",", f, t);
 		for (usz k = 0; k < e.skip_pages.size(); k++)
-			data.correction.skip_pages += fmt::format("%s[%u,%u,%u]", data.correction.skip_pages.empty() ? "" : ",", e.skip_pages[k], e.skip_pcs[k], t);
+			fmt::append(data.correction.skip_pages, "%s[%u,%u,%u]", data.correction.skip_pages.empty() ? "" : ",", e.skip_pages[k], e.skip_pcs[k], t);
 	}
 	const auto copies = undo.copies();
 	for (auto copy = copies.rbegin(); copy != copies.rend(); ++copy)
@@ -43,7 +43,7 @@ bool pbd::rollback_session::tick_dispatch::apply_correction_undo()
 		const auto k = copy->slot;
 		if (!data.checkpoint.memory.write_page_except_ranges(copy->address, e.undo_bytes.data() + k * 4096, data.correction.undo_excluded))
 			return false;
-		data.correction.undo_pages += fmt::format("%s[%u,%u,%u,%u]", data.correction.undo_applied ? "," : "", copy->address, e.undo_pcs[k], e.undo_lrs[k], copy->journal);
+		fmt::append(data.correction.undo_pages, "%s[%u,%u,%u,%u]", data.correction.undo_applied ? "," : "", copy->address, e.undo_pcs[k], e.undo_lrs[k], copy->journal);
 		data.correction.undo_applied++;
 	}
 	return true;
@@ -51,7 +51,9 @@ bool pbd::rollback_session::tick_dispatch::apply_correction_undo()
 
 void pbd::rollback_session::tick_dispatch::write_correction_summary(const char* reason)
 {
-	const auto text = fmt::format(
+	auto& text = data.correction.row_text;
+	text.clear();
+	fmt::append(text,
 		"{\"type\":\"correction\",\"correct_at\":%u,\"depth\":%u,\"predict_raw\":%u,\"restored\":%s,\"reason\":%s,\"locks_free\":%s,\"locks_wait_ns\":%u,\"locks_busy\":[%s],\"locks_forced\":%s,\"suspend_ns\":%u,\"suspend_skipped\":%s,"
 		"\"restored_bytes\":%u,\"readback_ok\":%s,\"readback_differing_bytes\":%u,\"readback_differing_excluded_bytes\":%u,\"readback_spans\":[%s],\"restore_ns\":%u,\"rewind_ns\":%u,\"readback_ns\":%u,\"rearm_ns\":%u,\"readback_checked\":%s,\"exclusion_file_ranges\":%u,"
 		"\"undo_pages_applied\":%u,\"undo_pages_available\":%u,\"undo_duplicates_omitted\":%u,\"undo_restore\":\"%s\",\"undo_excluded_bytes\":%u,\"undo_saves_total\":%u,\"undo_hook\":\"interpreter_store_sites_hle_untracked\",\"undo_overflows\":%u,\"undo_pages\":[%s],\"undo_library_skipped\":[%s],\"published_before\":%u,\"capture\":\"%s\",\"fault_captures\":%u,\"fault_foreign\":%u,\"fault_foreign_pages\":%u,\"fault_armed_pages\":%u,\"fault_capture_ns\":%u,\"fault_arm_ns\":%u,\"fault_arm_calls\":%u,\"fault_remaps\":%u,\"undo_foreign_pages\":[%s],"
@@ -67,7 +69,7 @@ void pbd::rollback_session::tick_dispatch::write_correction_summary(const char* 
 		data.correction.render.rsx_ended, data.correction.render.rsx_skipped, data.correction.render.rsx_parked, data.correction.render.rsx_get, data.correction.render.rsx_put,
 		json_bool(data.correction.render.waited), json_bool(data.correction.render.wait_ok), data.correction.render.wait_ns,
 		json_bool(data.correction.render.safe_point_stale));
-	data.correction.file.write(text.data(), text.size());
+	data.correction.file.write(pbd::correction_journal::kind::correction, text.data(), text.size());
 }
 
 void pbd::rollback_session::tick_dispatch::wait_correction_renderer()

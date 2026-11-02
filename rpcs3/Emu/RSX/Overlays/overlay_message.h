@@ -35,6 +35,9 @@ namespace rsx
 
 			void set_label_text(std::string_view text);
 
+			// Shown on screen only: screenshots, recordings and clips leave it out.
+			bool screen_only = false;
+
 		private:
 			localized_string_id m_loc_id = localized_string_id::INVALID;
 			label m_text{};
@@ -55,6 +58,7 @@ namespace rsx
 		public:
 			void update(u64 timestamp_us) override;
 			compiled_resource get_compiled() override;
+			compiled_resource get_capture_compiled() override;
 
 			template <typename T>
 			void queue_message(
@@ -64,7 +68,8 @@ namespace rsx
 				message_pin_location location = message_pin_location::top_left,
 				std::shared_ptr<overlay_element> icon = {},
 				bool allow_refresh = false,
-				bool compare_id = false)
+				bool compare_id = false,
+				bool screen_only = false)
 			{
 				std::lock_guard lock(m_mutex_queue);
 
@@ -92,13 +97,13 @@ namespace rsx
 					{
 						if (!message_exists(location, id, allow_refresh, compare_id))
 						{
-							queue->emplace_back(id, expiration, refs, icon);
+							queue->emplace_back(id, expiration, refs, icon).screen_only = screen_only;
 						}
 					}
 				}
 				else if (!message_exists(location, msg_id, allow_refresh, compare_id))
 				{
-					queue->emplace_back(msg_id, expiration, std::move(refs), icon);
+					queue->emplace_back(msg_id, expiration, std::move(refs), icon).screen_only = screen_only;
 				}
 
 				visible = true;
@@ -122,6 +127,7 @@ namespace rsx
 			std::deque<message_item> m_visible_items_top_left;
 
 			void update_queue(std::deque<message_item>& vis_set, std::deque<message_item>& ready_set, message_pin_location origin);
+			compiled_resource compile(bool capture);
 
 			// Stacking. Extends the lifetime of a message instead of inserting a duplicate
 			bool check_lists(message_pin_location location, std::function<bool(std::deque<message_item>& list)> check_list);
@@ -139,7 +145,8 @@ namespace rsx
 			message_pin_location location = message_pin_location::top_left,
 			std::shared_ptr<overlay_element> icon = {},
 			bool allow_refresh = false,
-			bool compare_id = false)
+			bool compare_id = false,
+			bool screen_only = false)
 		{
 			if (auto manager = g_fxo->try_get<rsx::overlays::display_manager>())
 			{
@@ -149,7 +156,7 @@ namespace rsx
 					msg_overlay = std::make_shared<rsx::overlays::message>();
 					msg_overlay = manager->add(msg_overlay);
 				}
-				msg_overlay->queue_message(msg_id, expiration, std::move(refs), location, std::move(icon), allow_refresh, compare_id);
+				msg_overlay->queue_message(msg_id, expiration, std::move(refs), location, std::move(icon), allow_refresh, compare_id, screen_only);
 			}
 		}
 

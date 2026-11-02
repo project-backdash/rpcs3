@@ -398,7 +398,7 @@ namespace gl
 		}
 	}
 
-	void ui_overlay_renderer::run(gl::command_context& cmd_, const areau& viewport, GLuint target, rsx::overlays::overlay& ui, bool flip_vertically)
+	void ui_overlay_renderer::run(gl::command_context& cmd_, const areau& viewport, GLuint target, rsx::overlays::overlay& ui, bool flip_vertically, bool capture)
 	{
 		ui.set_render_viewport(
 		    static_cast<u16>(std::min<u32>(viewport.width(), std::numeric_limits<u16>::max())),
@@ -419,7 +419,8 @@ namespace gl
 			ui.status_flags.clear(rsx::overlays::status_bits::invalidate_image_cache);
 		}
 
-		for (auto& cmd : ui.get_compiled().draw_commands)
+		auto compiled = capture ? ui.get_capture_compiled() : ui.get_compiled();
+		for (auto& cmd : compiled.draw_commands)
 		{
 			set_primitive_type(cmd.config.primitives);
 			upload_vertex_data(cmd.verts.data(), ::size32(cmd.verts));

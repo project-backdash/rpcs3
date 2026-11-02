@@ -8,6 +8,7 @@
 #include "../VulkanAPI.h"
 #include "image.h"
 
+#include <functional>
 #include <memory>
 
 namespace vk
@@ -44,6 +45,8 @@ namespace vk
 		u32 m_width = 0;
 		u32 m_height = 0;
 		VkFormat m_surface_format = VK_FORMAT_B8G8R8A8_UNORM;
+		// PBD: the presented images can be copied from (the game host's on-screen check, VKPresent.cpp).
+		bool m_readable = false;
 
 		virtual void init_swapchain_images(render_device& dev, u32 count) = 0;
 
@@ -66,6 +69,32 @@ namespace vk
 		virtual bool supports_automatic_wm_reports() const
 		{
 			return false;
+		}
+
+		// PBD: drops the swapchain and the surface it was made for, and takes the surface `make` creates for the same
+		// window; init() then builds a new swapchain on it. For a surface the driver reports lost.
+		virtual bool replace_surface(const std::function<VkSurfaceKHR()>& /*make*/)
+		{
+			return false;
+		}
+
+		// PBD: what the driver answered the last swapchain creation of the last init(); VK_SUCCESS when it asked for none.
+		// A surface lost there is replaced before the next init() (VKPresent.cpp).
+		virtual VkResult last_create_result() const
+		{
+			return VK_SUCCESS;
+		}
+
+		bool readable() const
+		{
+			return m_readable;
+		}
+
+		// PBD: the size of the images the last init() made. A surface with a fixed current extent sets it, so it can differ
+		// from the size init() was asked for.
+		VkExtent2D get_image_extent() const
+		{
+			return { m_width, m_height };
 		}
 
 		bool init(u32 w, u32 h)
@@ -167,6 +196,7 @@ namespace vk
 		VkSurfaceKHR m_surface = VK_NULL_HANDLE;
 		VkColorSpaceKHR m_color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 		VkSwapchainKHR m_vk_swapchain = nullptr;
+		VkResult m_last_create_result = VK_SUCCESS;
 
 		PFN_vkCreateSwapchainKHR _vkCreateSwapchainKHR = nullptr;
 		PFN_vkDestroySwapchainKHR _vkDestroySwapchainKHR = nullptr;
@@ -184,8 +214,11 @@ namespace vk
 
 		~swapchain_WSI() override = default;
 
-		void create(display_handle_t&) override
-		{}
+		// PBD: the window presented to. Its monitor is the one asked about full-screen exclusive mode (swapchain.cpp).
+		void create(display_handle_t& handle) override
+		{
+			window_handle = handle;
+		}
 
 		void destroy(bool = true) override;
 
@@ -197,6 +230,13 @@ namespace vk
 		bool supports_automatic_wm_reports() const override
 		{
 			return m_wm_reports_flag;
+		}
+
+		bool replace_surface(const std::function<VkSurfaceKHR()>& make) override;
+
+		VkResult last_create_result() const override
+		{
+			return m_last_create_result;
 		}
 
 		VkResult acquire_next_swapchain_image(VkSemaphore semaphore, u64 timeout, u32* result) override

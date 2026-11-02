@@ -118,7 +118,6 @@ namespace pbd::match_recording
 		bool phase_verified = false;
 		bool reexecution = false;
 		bool result_verified = false;
-		bool draw_verified = false;
 		u32 score_left = 0, score_right = 0;
 		winner outcome = winner::none;
 	};
@@ -212,8 +211,11 @@ namespace pbd::match_recording
 					o.score_left > m_rounds_to_win || o.score_right > m_rounds_to_win ||
 					o.score_left - m_score_left > 1 || o.score_right - m_score_right > 1)
 					return refusal::score_invalid;
-				const u32 advanced = o.score_left - m_score_left + o.score_right - m_score_right;
-				if (advanced != 1 && !o.draw_verified)
+				// A decided round raises only its winner's count. The stock draw branch (0x44938, taken when the result word
+				// 0x10093200 has 0x20 set: a double K.O., or a time-out at equal life) raises both counts by one in the same
+				// update. It marks the leader's +0x92 with 1 when that takes it alone to the rounds to win, so the markers do
+				// not identify a draw; the counts do. A closed round that raised neither count has no result.
+				if (o.score_left == m_score_left && o.score_right == m_score_right)
 					return refusal::outcome_invalid;
 				m_score_left = o.score_left;
 				m_score_right = o.score_right;

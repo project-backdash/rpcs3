@@ -698,10 +698,15 @@ std::unique_ptr<gs_frame> gui_application::get_gs_frame()
 		// Center above main window or inside screen if the saved geometry is invalid
 		frame_geometry = gui::utils::create_centered_window_geometry(screen, base_geometry, w, h);
 	}
-	else if (resize_game_window)
+	else
 	{
-		// Apply size override to our saved geometry if needed
-		frame_geometry.setSize(QSize(w, h));
+		if (resize_game_window)
+		{
+			// Apply size override to our saved geometry if needed
+			frame_geometry.setSize(QSize(w, h));
+		}
+		// Saved positions and sizes may no longer fit after a monitor or scaling change.
+		frame_geometry = gui::utils::create_centered_window_geometry(screen, frame_geometry, frame_geometry.width(), frame_geometry.height());
 	}
 
 	gui_log.notice("gui_application: game window geometry: x=%d, y=%d, w=%d, h=%d, screen=%d, resize=%d, manually=%d", frame_geometry.left(), frame_geometry.top(), frame_geometry.width(), frame_geometry.height(), screen_index, resize_game_window, resize_manually);

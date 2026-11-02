@@ -63,10 +63,13 @@ written, and kept until the next game's command. Its `game_preparing` and `game_
 set, so the two starts stay equal apart from `nativeRound`), and the replay's game start as `capsule.rankScreens` with the
 same four integer keys. A watcher's `begin_game` control carries them back as a root `rankScreens`, and a replay file as
 `games[0].capsule.rankScreens`. The two PCs receive `rank_stakes` from their own launchers at different times, so each
-announces its stakes with every scene barrier (`rank_stakes` and `prev_rank_stakes`, the last two words of the
-version-11 input message); a command plans from the stakes both PCs announced at the barrier before it, and from none while
-they differ, so both games and all four records agree. A set's first game, and a game whose stakes reached one PC only
-after that barrier, has none. The test switches `PBD_TEST_RANK_STAKE=left:<0..4>,right:<0..4>` and
+announces its stakes with every scene barrier (`rank_stakes` and `prev_rank_stakes` in the version-12 input message); a
+command plans from the stakes both PCs announced at the barrier before it, and from none while they differ, so both games and
+all four records agree. A set's first game, and a game whose stakes reached one PC only after that barrier, has none. The
+PLAYER DATA numbers under the life bars (a fighter's `record` in the manifest, `rank_stakes` or `next_set`, or an in-game
+fighter's `records` table, plus the set's games) are announced the same way (`records` and `prev_records`, the last two
+words): each scene barrier outside the stretch from the end of the VS screen to the end of the fight writes the numbers both
+PCs announced, and zeros while they differ, so a record that reached only one PC shows on neither. The test switches `PBD_TEST_RANK_STAKE=left:<0..4>,right:<0..4>` and
 `PBD_TEST_RANK_PROMOTE=left:<0..36>,right:<0..36>` force values into every VS game of offline play (`PBD_OFFLINE_PLAY=1`
 without `PBD_SESSION=1`) and log the game's words at both hook points. A set, a watcher and the replay viewer ignore them,
 and a replay refuses to start while either is set.
@@ -93,6 +96,33 @@ the text `ranked-notices-1`.
 `you=`. A rank plate `r0`-`r34` requires MMR 0-99999; a placement plate `p<done>/<total>` requires `-` (total 1-10,
 done at most total). The opposite side shows this settled standing at the result's large size instead of its small HUD
 plate. The launcher omits the key unless the executable contains `opponent-results-1`.
+
+`rpcs3 --pbd-host-info` prints, without booting, `{"schema":"pbd-host-info-1","host":"windows"|"wine"|"other","seen":...,
+"wine","build","system","release","probe":{"thread_times_us","cycle_time","protect_us","write_fault_us","clock_ns"}}`: the
+host and what one GetThreadTimes call, one VirtualProtect call, one write fault on a protected private page and one clock read
+cost there. The launcher asks only under Wine, and only an executable that contains the text `--pbd-host-info`. The emulator
+runs under Wine when ntdll exports `wine_get_version` (or, with that export hidden, when `HKCU\Software\Wine` and
+`system32\winecfg.exe` both exist); `PBD_HOST_FORCE=wine` makes a test run on Windows act the same, and a player's session never
+inherits it. Under Wine only, timed scopes and points are counted without reading a clock (`stall-metrics.csv` keeps its
+header, clock anchors and trace cost rows), the five-second process snapshot is skipped, RPCS3.log gets one `Host: Wine` line at
+boot, and `tick-correction.jsonl` gets a `host_timing` row every 600 live ticks and at the session's end: the stretch's
+`live_ticks`, `wall_ms`, `live_ticks_per_s`, `live_tick_ms_p50` and `live_tick_ms_p95` (0.5 ms bins), and the growth of
+`replayed_ticks`, `corrections`, `hold_ms`, `faults`, `fault_handler_ns`, `arm_calls`, `arm_ns`, `ring_ns`, `scopes`,
+`cpu_scopes` and `points`, with `wine`, `system`, `release` and `seen` repeated in every row.
+
+`tick-correction.jsonl` has its own writer thread: the game thread formats each row into a reused buffer, copies it into
+a 1 MiB queue and never waits for the disk. A row that does not fit is dropped whole and counted, so the file holds
+complete rows only. It ends with a `correction_journal_end` row: `rows_written`, `bytes_written`, `rows_dropped`,
+`bytes_dropped`, the drops per kind as `dropped_predicted_update`, `dropped_corrected_update`, `dropped_correction`,
+`dropped_correction_end`, `dropped_fault`, `dropped_host_timing` and `dropped_undo_policy` (flat keys, so no row type
+name appears quoted in this row), `rows_unwritten` (queued rows lost to a failed write), `queue_capacity_bytes`,
+`queue_high_water_bytes`, `owner_enqueue_max_ns`, `worker_write_max_ns`, `worker_writes_over_ms` (writes above 1, 5,
+16.7, 50 and 100 ms) and `write_failed`. Rows count lines: a correction's `correction_clock` and `correction_end` rows
+are two. The session's end waits up to 100 ms for the summary before it reports the end. A row that arrives after a
+summary (only Wine's closing `host_timing` row can, when the end came between two game callbacks) is followed by a new
+one; the parked game thread waits up to 100 ms for it, and a host that ends the process inside that wait leaves that row
+last. When teardown has to cancel a write stalled in the OS, the file can end mid-row and without a summary; readers
+treat a last line with no newline as cut off.
 
 Hook event capture defaults off; `PBD_FN_MAX_EVENTS` explicitly bounds capture. `PBD_PEER_TRACE_INPUTS=1` enables the
 bounded input trace queue, drained by the existing writer to `peer-inputs.jsonl` (recv/fill/assign rows and a final

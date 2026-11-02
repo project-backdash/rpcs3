@@ -16,6 +16,8 @@
 #include "VKOverlays.h"
 #include "VKProgramBuffer.h"
 #include "util/pbd_frame_copy.h"
+#include "Emu/PBD/pbd_screen_check.h"
+#include "Emu/PBD/pbd_swapchain_rebuild.h"
 #include "VKFramebuffer.h"
 #include "VKShaderInterpreter.h"
 #include "VKQueryPool.h"
@@ -246,6 +248,31 @@ private:
 	u32 m_pbd_present_src = 0; // 1 surface store, 2 texture cache, 3 upload from guest memory; +10 = force-cast copy
 	void pbd_black_probe_record(const rsx::display_flip_info_t& info, vk::viewable_image* image, u32 w, u32 h, u64 flip);
 	void pbd_black_probe_resolve(vk::frame_context_t* ctx);
+	// On-screen check (Emu/PBD/pbd_screen_check.h): when the game host asks, the check's 16 points of the image about to
+	// be presented, overlays included, are copied into a small host-visible buffer and answered once the frame has
+	// completed.
+	struct pbd_screen_check_slot
+	{
+		std::unique_ptr<vk::buffer> buf;
+		bool pending = false, bgra = false;
+		pbd::screen_check::frame_colours colours;
+	};
+	std::vector<pbd_screen_check_slot> m_pbd_screen_slots;
+	void pbd_screen_check_record(VkImage target, VkImageLayout& layout, const VkImageSubresourceRange& range);
+	void pbd_screen_check_resolve(vk::frame_context_t* ctx);
+	// A surface the driver reported lost is created again for the same window before the next swapchain.
+	bool m_pbd_surface_lost = false;
+	// Rebuilds that only a suboptimal report asks for, for an unchanged window, are bounded (Emu/PBD/pbd_swapchain_rebuild.h).
+	pbd::swapchain_rebuild::rule m_pbd_rebuilds;
+	u32 m_pbd_swapchain_number = 1; // the swapchains made so far, the first one included, to tell them apart in the log
+	u64 m_pbd_status_count = 0;     // present and acquire results other than success in this session
+	u32 m_pbd_failed_rebuilds = 0;  // rebuilds that made no swapchain in this session
+	uptr m_pbd_monitor = 0;         // the monitor the window was on when the current swapchain was made (Windows)
+	uptr pbd_window_monitor() const;
+	void pbd_suboptimal();
+	void pbd_log_status(const char* call, VkResult status);
+	void pbd_log_window(std::string_view made_for);
+	bool pbd_rebuild_swapchain();
 	struct clip_readback
 	{
 		std::unique_ptr<vk::buffer> pixels;

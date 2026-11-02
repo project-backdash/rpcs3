@@ -452,11 +452,5 @@ void pbd::rollback_session::tick_dispatch::read_replay_score(pbd::match_recordin
 	{
 		observed.score_left = static_cast<u32>(s16{left_result[0]});
 		observed.score_right = static_cast<u32>(s16{right_result[0]});
-		u32 health_left = 0, health_right = 0, timer = 0;
-		// The draw branch writes both round-result markers to -1. Require its native terminal health/timer condition too.
-		observed.draw_verified = s16{left_result[1]} == -1 && s16{right_result[1]} == -1 &&
-		                         read_word(player_left + 0x6ac, health_left) && read_word(player_right + 0x6ac, health_right) &&
-		                         read_word(0x1008f054, timer) && health_left == health_right &&
-		                         (static_cast<s32>(health_left) <= 0 || static_cast<s32>(timer) <= 0);
 	}
 }

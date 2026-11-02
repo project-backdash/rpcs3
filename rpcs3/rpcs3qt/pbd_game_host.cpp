@@ -5,6 +5,7 @@
 #include "Emu/PBD/pbd_presentation_journal.h"
 #include "Emu/PBD/pbd_held_presentation.h"
 #include "Emu/PBD/pbd_output_gain.h"
+#include "Emu/PBD/pbd_screen_check.h"
 #include "util/atomic.hpp"
 #include "util/logs.hpp"
 #include "Utilities/StrFmt.h"
@@ -19,7 +20,9 @@
 #include <QWindow>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <chrono>
 #include <future>
 #include <stdexcept>
 #include <thread>
@@ -29,6 +32,8 @@
 #include <windows.h>
 #include <windowsx.h>
 #endif
+
+#include "pbd_game_host_visibility.h"
 
 extern atomic_t<bool> g_game_window_focused;
 LOG_CHANNEL(game_host_log, "PBD Game Host");
@@ -99,7 +104,26 @@ namespace pbd::game_host
 			}
 			const int action = parse_control(std::string_view(bytes, length), static_cast<std::uint32_t>(token));
 			bool valid = action != 0;
-			if (valid)
+			bool verified_visible = false, player_in_front = false, check_pending = false;
+			if (action == 5)
+			{
+				const auto answer = observe_visibility("check");
+				verified_visible = answer.verified;
+				player_in_front = answer.front;
+				check_pending = answer.pending;
+			}
+			else if (action == 6)
+			{
+				valid = presentation_ready();
+				if (valid && hosted)
+				{
+					const auto child = render_window.load();
+					valid = child && PostMessageW(child, control_message, token, action);
+				}
+				else if (valid)
+					post(new QEvent(static_cast<QEvent::Type>(recovery_event)));
+			}
+			else if (valid)
 			{
 				if (action == 2)
 					update_refresh();
@@ -111,10 +135,10 @@ namespace pbd::game_host
 				else if (action == 1)
 					valid = PostMessageW(qt_window, WM_CLOSE, 0, 0) != FALSE;
 			}
-			const char* reply = valid ? "OK\n" : "ERR\n";
+			const auto reply = control_response(action, valid, verified_visible, player_in_front, check_pending);
 			DWORD written = 0;
 			ResetEvent(completed.value);
-			if (!WriteFile(pipe.value, reply, valid ? 3 : 4, &written, &operation) &&
+			if (!WriteFile(pipe.value, reply.data(), static_cast<DWORD>(reply.size()), &written, &operation) &&
 				GetLastError() == ERROR_IO_PENDING)
 				io_complete(operation, 1000);
 			// The client confirms receipt before disconnect; unread pipe output is otherwise discarded by Windows.
@@ -211,7 +235,7 @@ namespace pbd::game_host
 		if (pbd::held_presentation::output().active())
 		{
 			const auto child = m_state->render_window.load();
-			const auto top = m_state->detached ? child : m_state->parent;
+			const auto top = m_state->external_overlay ? child : m_state->parent;
 			return child && IsWindowVisible(child) && !IsIconic(top);
 		}
 		return true;
@@ -226,7 +250,8 @@ namespace pbd::game_host
 			return false;
 		MONITORINFO monitor{sizeof(monitor)};
 		RECT bounds{};
-		const auto target = m_state->detached ? m_state->render_window.load() : m_state->parent;
+		// A window inside or owned by the launcher is full screen when the launcher is.
+		const auto target = m_state->external_overlay ? m_state->render_window.load() : m_state->parent;
 		return GetWindowRect(target, &bounds) &&
 		       GetMonitorInfoW(MonitorFromWindow(target, MONITOR_DEFAULTTONEAREST), &monitor) &&
 		       EqualRect(&bounds, &monitor.rcMonitor);
@@ -245,7 +270,7 @@ namespace pbd::game_host
 	{
 #ifdef _WIN32
 		if (configured())
-			if (m_state->detached)
+			if (m_state->external_overlay)
 				PostMessageW(m_state->render_window.load(), control_message, m_state->token, 7);
 			else
 				PostMessageW(m_state->parent, host_message, m_state->token, 2);
@@ -254,7 +279,7 @@ namespace pbd::game_host
 	void window::first_frame()
 	{
 #ifdef _WIN32
-		if (configured())
+		if (managed())
 		{
 			ULONGLONG expected = 0;
 			if (m_state->first_frame.compare_exchange_strong(expected, GetTickCount64()))
@@ -273,12 +298,12 @@ namespace pbd::game_host
 #ifdef _WIN32
 		if (!managed() || m_state->closing.exchange(true))
 			return;
-		const bool return_grant = m_state->hosted && m_state->has_focus.load() && foreground_within(m_state->detached ? m_state->render_window.load() : m_state->parent);
+		const bool return_grant = m_state->hosted && m_state->has_focus.load() && m_state->game_root_foreground();
 		if (return_grant)
 			AllowSetForegroundWindow(m_state->launcher_pid);
 		// A game ending itself still covers the page until the launcher has painted its return frame. Older launchers
 		// do not opt in; a gone or unresponsive launcher never holds the close beyond this short paint budget.
-		if (m_state->painted_return && m_state->hosted && (!m_state->detached || m_state->external_overlay) && m_state->visible.load())
+		if (m_state->painted_return && m_state->hosted && m_state->visible.load())
 		{
 			PostMessageW(m_state->parent, host_message, m_state->token, (static_cast<LPARAM>(GetCurrentProcessId()) << 8) | 8);
 			const HANDLE waits[]{m_state->page_ready.value, m_state->launcher.value};
@@ -292,6 +317,11 @@ namespace pbd::game_host
 	bool window::event(QEvent* event)
 	{
 #ifdef _WIN32
+		if (managed() && event->type() == recovery_event)
+		{
+			m_state->recover(m_state->qt_window);
+			return true;
+		}
 		if (managed() && (event->type() == QEvent::ScreenChangeInternal || event->type() == QEvent::Move))
 			SetEvent(m_state->refresh_event.value);
 		if (configured() && event->type() == geometry_event)

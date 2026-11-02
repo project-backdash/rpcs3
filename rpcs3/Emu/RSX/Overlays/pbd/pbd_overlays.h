@@ -15,6 +15,7 @@
 #include "Emu/Cell/pbd_vs_cards.h"
 #include "Emu/PBD/pbd_set_notices.h"
 #include "Emu/PBD/pbd_settings_runtime.h"
+#include "Emu/PBD/pbd_clip_hud.h"
 
 #include <string>
 #include <string_view>
@@ -82,6 +83,20 @@ namespace rsx
 			f32 m_output_scale = 1.f;
 			bool m_show = false;
 			void refresh_now(u64 timestamp_us);
+		};
+
+		// The clip toast from pbd::clips::hud: 2 s under the timer when a clip saves or a recording starts or ends, in any mode.
+		// Created after the Practice HUD, whose toast slot it takes, and before every cover and menu, which draw over it.
+		struct pbd_clip_overlay final : overlay
+		{
+			void init();
+			void update(u64 timestamp_us) override;
+			compiled_resource get_compiled() override;
+			void set_render_viewport(u16 width, u16 height) override;
+
+		private:
+			compiled_resource m_compiled{};
+			f32 m_output_scale = 1.f;
 		};
 
 		// Fading corner messages from pbd::corner_chat. A stale emulation generation must never draw over a new session.
@@ -196,12 +211,15 @@ namespace rsx
 			compiled_resource m_compiled{};
 			f32 m_output_scale = 1.f, m_compiled_scale = 0.f;
 			u64 m_revision = 0;
+			// The clip keys its control bar ends with, as last drawn.
+			::pbd::clips::hud::legend m_legend{};
 			void refresh(const ::pbd::settings_menu::view& view);
 			// While the menu is closed in replays and spectating: a controller takeover's toast (pbd_controller_takeover.h).
 			// Practice shows its own toast. In offline play, the
 			// question which player a controller is (pbd_player_seats.h), and its Versus prompts, panels and menu (pbd_versus.h).
 			bool m_practice = false;
 			u64 m_notice_key = 0, m_seats_revision = 0, m_versus_revision = 0;
+			bool m_clip_toast = false;
 			compiled_resource m_notice_compiled{};
 			compiled_resource notices();
 		};

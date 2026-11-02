@@ -560,15 +560,66 @@ void run_platform_sanity_checks()
 }
 
 #include "Input/pbd_controller_backend.h"
+#include "util/pbd_install_argument.h"
 #include "util/pbd_clips.h"
 #include "Emu/Cell/pbd_ppu_object_name.h"
 #include "Emu/PBD/pbd_features.h"
+#include "Emu/PBD/pbd_host.h"
+
+static QString install_path(const wchar_t* option, const QString& fallback)
+{
+#ifdef _WIN32
+	int count = 0;
+	wchar_t** words = CommandLineToArgvW(GetCommandLineW(), &count);
+	if (!words) return fallback;
+	std::vector<std::wstring_view> args;
+	args.reserve(count);
+	for (int i = 0; i < count; ++i) args.emplace_back(words[i]);
+	const auto value = pbd::install_argument(args, option);
+	const QString path = value ? QString::fromWCharArray(value->data(), static_cast<qsizetype>(value->size())) : fallback;
+	LocalFree(words);
+	return path;
+#else
+	(void)option;
+	return fallback;
+#endif
+}
+
+static QStringList unicode_qt_arguments(const QStringList& retained, std::span<const QString> original)
+{
+#ifdef _WIN32
+	// Qt can rebuild arguments from the CRT's lossy ANSI argv after it consumes its own switches.
+	// Restore the surviving argument positions from Windows' original UTF-16 command line, retaining Qt's filtering.
+	const auto indices = pbd::retained_argument_indices(original, std::span<const QString>(retained.constData(), retained.size()));
+	if (!indices) return retained;
+	int count = 0;
+	wchar_t** words = CommandLineToArgvW(GetCommandLineW(), &count);
+	if (!words) return retained;
+	QStringList result;
+	if (static_cast<std::size_t>(count) >= original.size())
+	{
+		for (const auto index : *indices) result.push_back(QString::fromWCharArray(words[index]));
+	}
+	LocalFree(words);
+	return result.size() == retained.size() ? result : retained;
+#else
+	(void)original;
+	return retained;
+#endif
+}
 
 int run_rpcs3(int argc, char** argv)
 {
 	if (argc > 1 && std::string_view(argv[1]) == "--pbd-clips-probe")
 	{
 		std::printf("{\"schema\":\"pbd-clips-probe-1\",\"available\":%s}\n", pbd::clips::hardware_available() ? "true" : "false");
+		return 0;
+	}
+	// The host this build runs on and what the calls the game makes often cost there (pbd_host.h); the launcher asks under Wine only.
+	if (argc > 1 && std::string_view(argv[1]) == "--pbd-host-info")
+	{
+		const auto measured = pbd::host::probe();
+		std::printf("%s\n", pbd::host::info_json(pbd::host::current(), measured).c_str());
 		return 0;
 	}
 	// The lobby features this build speaks beyond its launcher's first contract (pbd::features).
@@ -751,6 +802,9 @@ int run_rpcs3(int argc, char** argv)
 	utils::init_arm_timer_scale();
 #endif
 
+	if (const auto& host = pbd::host::current(); host.host == pbd::host::kind::wine)
+		sys_log.notice("Host: Wine %s on %s %s (build %s, seen %s)", host.version, host.system, host.release, host.build, pbd::host::name(host.seen));
+
 #ifdef _WIN32
 	sys_log.notice("Initialization times before main(): %fGc", intro_cycles / 1000000000.);
 #elif defined(RUSAGE_THREAD)
@@ -834,6 +888,8 @@ int run_rpcs3(int argc, char** argv)
 	// but I haven't found an implicit way to check for style yet, so we naively check them both here for now.
 	const bool use_cli_style = find_arg(arg_style, qt_argv) != -1 || find_arg(arg_stylesheet, qt_argv) != -1;
 
+	std::vector<QString> original_qt_arguments;
+	for (const auto argument : qt_argv) original_qt_arguments.push_back(QString::fromLocal8Bit(argument));
 	QScopedPointer<QCoreApplication> app(create_application(qt_argv));
 	app->setApplicationVersion(QString::fromStdString(rpcs3::get_version().to_string()));
 	app->setApplicationName("RPCS3");
@@ -891,7 +947,7 @@ int run_rpcs3(int argc, char** argv)
 
 	parser.addOption(QCommandLineOption("N/A", "Arguments after \"--\" are considered emulation arguments."));
 
-	parser.process(app->arguments());
+	parser.process(unicode_qt_arguments(app->arguments(), original_qt_arguments));
 
 	for (const auto& opt : parser.optionNames())
 	{
@@ -1178,6 +1234,8 @@ int run_rpcs3(int argc, char** argv)
 	// Force install firmware or pkg first if specified through command-line
 	if (parser.isSet(arg_installfw) || parser.isSet(arg_installpkg))
 	{
+		const QString firmware_path = install_path(L"--installfw", parser.value(installfw_option));
+		const QString package_path = install_path(L"--installpkg", parser.value(installpkg_option));
 		if (auto gui_app = qobject_cast<gui_application*>(app.data()))
 		{
 			if (s_no_gui)
@@ -1193,11 +1251,11 @@ int run_rpcs3(int argc, char** argv)
 				}
 				else if (parser.isSet(arg_installfw))
 				{
-					main_window::InstallPup(gui_app->m_main_window, parser.value(installfw_option));
+					main_window::InstallPup(gui_app->m_main_window, firmware_path);
 				}
 				else
 				{
-					main_window::InstallPackages(gui_app->m_main_window, {parser.value(installpkg_option)});
+					main_window::InstallPackages(gui_app->m_main_window, {package_path});
 				}
 			}
 			else
@@ -1207,17 +1265,19 @@ int run_rpcs3(int argc, char** argv)
 		}
 		else
 		{
+			bool installed = true;
 			if (parser.isSet(arg_installfw))
 			{
-				main_window::InstallPup(nullptr, parser.value(installfw_option));
+				main_window::InstallPup(nullptr, firmware_path);
 			}
 
 			if (parser.isSet(arg_installpkg))
 			{
-				main_window::InstallPackages(nullptr, {parser.value(installpkg_option)});
+				installed = main_window::InstallPackages(nullptr, {package_path});
 			}
 
-			return 0;
+			Emu.Quit(true);
+			return installed ? 0 : 1;
 		}
 	}
 

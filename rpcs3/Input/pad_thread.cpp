@@ -28,6 +28,7 @@
 #include "Emu/Io/pad_config.h"
 #include "Emu/System.h"
 #include "Emu/system_config.h"
+#include "Emu/PBD/pbd_held_presentation.h"
 #include "Emu/RSX/Overlays/HomeMenu/overlay_home_menu.h"
 #include "Emu/RSX/Overlays/overlay_message.h"
 #include "Emu/Cell/lv2/sys_usbd.h"
@@ -740,7 +741,9 @@ void pad_thread::operator()()
 
 			Emu.BlockingCallFromMainThread([]()
 			{
-				Emu.Resume();
+				// A game parked during the countdown stays held until its activation resumes it.
+				if (!pbd::held_presentation::output().parked())
+					Emu.Resume();
 			});
 		}
 
@@ -769,6 +772,11 @@ void pad_thread::operator()()
 					}
 				}
 			}
+
+			// Pads keep working while the window is unfocused, so a START held for another game also reaches a parked
+			// standby game. That pause is held on purpose, and only the standby's activation resumes it.
+			if (pbd::held_presentation::output().parked())
+				pressed_mask = 0;
 
 			m_mask_start_press_to_resume &= pressed_mask;
 

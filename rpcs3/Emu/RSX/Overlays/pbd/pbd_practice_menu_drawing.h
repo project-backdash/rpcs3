@@ -1,6 +1,7 @@
 #pragma once
 
 #include "overlay_pbd_draw.h"
+#include "pbd_clip_drawing.h"
 #include "Emu/Cell/pbd_game_overlay.h"
 #include "Emu/PBD/pbd_practice_presentation.h"
 #include "Emu/Cell/pbd_practice_mouse.h"
@@ -401,7 +402,11 @@ namespace rsx::overlays::pbd
 			for (u32 i = 0; i < prompt_count; i++)
 				prompts[i] = {practice.menu_prompts.items[i].keys, practice.menu_prompts.items[i].label};
 			const int hovered_prompt = ::pbd::practice::mouse::hovered_prompt(pointer_layout.owner);
-			prompt_bar(chrome, atlas, type.caption, 56.f, prompt_centre, 1224.f, std::span<const prompt_item>(prompts.data(), prompt_count), [&](usz i, f32 at, f32 width)
+			// The clip keys end the bar; the menu's own prompts stop short of them.
+			const auto clips = clip_hud::legend_for(clip_hud::load(), ::pbd::controllers::read_display());
+			const f32 clips_left = clip_legend(&chrome, atlas, type, clips, 1224.f, prompt_centre);
+			const f32 limit = clips.shown ? clips_left - 26.f : 1224.f;
+			prompt_bar(chrome, atlas, type.caption, 56.f, prompt_centre, limit, std::span<const prompt_item>(prompts.data(), prompt_count), [&](usz i, f32 at, f32 width)
 				{
 					prompt_target(i, at, width, hovered_prompt);
 				});

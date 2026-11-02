@@ -3,18 +3,6 @@
 
 namespace pbd::boot_request::detail
 {
-	std::string environment(const char* name)
-	{
-#ifdef _WIN32
-		const auto value = pbd::env::find_wide(name);
-		if (value)
-			return std::string(value, value + std::wcslen(value));
-#else
-		if (const auto value = pbd::env::find(name))
-			return value;
-#endif
-		return {};
-	}
 	u32 word(u32 address)
 	{
 		be_t<u32> value{};

@@ -10,6 +10,7 @@
 #include "Emu/PBD/pbd_replay_carry_codec.h"
 #include "Emu/PBD/pbd_rank_screens.h"
 #include "Emu/PBD/pbd_replay_notices.h"
+#include "Emu/PBD/pbd_replay_capsule_start.h"
 #include "pbd_set_channel.h"
 #include "pbd_lobby_set_driver.h"
 #include "PPUThread.h"
@@ -104,6 +105,7 @@ struct pbd_live_replay::state
 	u32 seed = 0, game = 0, anchor = 0, next = 0;
 	std::filesystem::path directory;
 	std::array<player, 2> players;
+	records_source records;
 	pbd::replay::journal journal;
 	std::atomic<bool> failed{false};
 	std::atomic<bool> closed{false};
@@ -171,6 +173,10 @@ struct pbd_live_replay::state
 			!word(input_counter_pointer, input_counter))
 			return false;
 		std::vector<json> selected;
+		// The numbers the bars show in this game: what the set's last scene barrier wrote, which they keep from the end of the
+		// VS screen to the end of the fight (pbd::game_profile::records_may_change), so the replay and the watchers' capsule
+		// name what the players saw.
+		const auto shown = records ? records() : std::array<std::optional<pbd::game_profile::record>, 2>{};
 		for (u32 side = 0; side < 2; ++side)
 		{
 			const u32 row = side ? right : left;
@@ -180,9 +186,8 @@ struct pbd_live_replay::state
 				return false;
 			if (!vm::try_access(pbd::game_profile::rank_address(side), &rank, sizeof(rank), false))
 				return false;
-			selected.push_back(json::object({{"id", json::string(players[side].id)}, {"name", json::string(players[side].name)},
-				{"fighter", json::number(u16{definition[0]})}, {"costume", json::number(u16{definition[1]})}, {"row", json::number(row)},
-				{"rank", json::number(pbd::game_profile::rank_byte(rank))}}));
+			selected.push_back(pbd::replay_start::capsule_player(players[side].id, players[side].name, u16{definition[0]}, u16{definition[1]},
+				row, pbd::game_profile::rank_byte(rank), shown[side]));
 		}
 		const auto epoch = pbd::fn_hook::takeover_counters();
 		auto rng = generators(owner, read);
@@ -320,6 +325,19 @@ std::shared_ptr<const std::string> pbd_live_replay::pbd_game_start_record(u64 ge
 	catch (...)
 	{
 		return {};
+	}
+}
+void pbd_live_replay::pbd_records(records_source source) noexcept
+{
+	try
+	{
+		if (!data)
+			return;
+		std::lock_guard lock(data->mutex);
+		data->records = std::move(source);
+	}
+	catch (...)
+	{
 	}
 }
 pbd_live_replay::~pbd_live_replay()

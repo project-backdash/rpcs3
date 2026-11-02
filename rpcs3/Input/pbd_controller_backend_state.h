@@ -50,10 +50,14 @@ struct pbd::controllers::backend::impl
 		SDL_Gamepad* gamepad = nullptr;
 		std::string id, key, name, family, button_type;
 		layout defaults;
+		std::optional<binding> misc1;
 		std::array<std::optional<binding>, 4> stick_bindings;
 		pbd::practice::controls::touchpad_click click;
 		pbd::clips::gesture clip;
 		bool home_down = false;
+		// The buttons SDL reports for clips, and the clip button's name in the in-game prompts (pbd::clips::prompt_name).
+		bool misc1_button = false;
+		std::string clip_name;
 	};
 	std::map<SDL_JoystickID, device> devices;
 	static constexpr std::array<SDL_GamepadButton, 16> sdl_buttons{
@@ -98,6 +102,7 @@ struct pbd::controllers::backend::impl
 				d.family = "switch";
 			if (SDL_GetJoystickVendor(d.joystick) == 0x28de)
 				d.family = "steamdeck";
+			d.misc1_button = SDL_GamepadHasButton(d.gamepad, SDL_GAMEPAD_BUTTON_MISC1);
 			read_gamepad_bindings(d);
 		}
 		else if (SDL_GetJoystickVendor(d.joystick) == 0x054c || SDL_GetJoystickVendor(d.joystick) == 0x1532 || SDL_GetJoystickVendor(d.joystick) == 0x0f0d)
@@ -174,37 +179,24 @@ struct pbd::controllers::backend::impl
 		}
 		else
 			value = map(value, raw, d.defaults);
-		apply_device_layout(d, raw, value);
+		const auto taught = apply_device_layout(d, raw, value);
 		const bool click = (value.buttons & bit(touchpad)) != 0;
-		const auto clip_button = settings.value("clips").toObject().value("padButton").toString("create");
+		const auto clip_button = pbd::clips::parse_pad_button(settings.value("clips").toObject().value("padButton").toString().toStdString());
 		const bool versus = seated && pbd::versus::input::active.load(std::memory_order_acquire);
-		bool clip_pressed = false;
-		// Create/Share (the game's Select) held alone; any other button with it is a game combo, such as Select + O.
-		const bool create = clip_button == "create";
-		if (create)
-			clip_pressed = value.buttons == bit(select) && !seated;
-		if (clip_button == "touchpad")
-			clip_pressed = click;
-		if ((create || clip_button == "share") && d.gamepad)
-			clip_pressed |= SDL_GetGamepadButton(d.gamepad, SDL_GAMEPAD_BUTTON_MISC1);
-		if (clip_button == "home" && !versus)
-			clip_pressed = (value.buttons & bit(home)) != 0;
-		if (clip_button.startsWith("button-"))
-		{
-			bool ok = false;
-			const auto index = clip_button.mid(7).toUInt(&ok);
-			clip_pressed = ok && index < raw.buttons.size() && raw.buttons[index];
-		}
+		const bool misc1 = d.gamepad && SDL_GetGamepadButton(d.gamepad, SDL_GAMEPAD_BUTTON_MISC1);
+		const bool clip_pressed = pbd::clips::pressed(clip_button, {raw, d.defaults, taught, value.buttons, misc1, versus, d.misc1});
+		d.clip_name = pbd::clips::prompt_name(clip_button, {d.family, d.misc1_button && pbd::clips::misc1_free(taught, d.misc1)},
+			d.defaults, taught, versus);
 		// The pad's PS / Home / Guide button opens the game's menu on its press, unless Clips was given that button.
 		const bool home_pressed = (value.buttons & bit(home)) != 0;
-		if (!standalone && !versus && clip_button != "home" && home_pressed && !d.home_down)
+		if (!standalone && !versus && clip_button.source != pbd::clips::pad_source::home && home_pressed && !d.home_down)
 			pbd::settings_menu::request_top_open();
 		d.home_down = home_pressed;
 		if (versus)
 			value = pbd::versus::input::home_as_start(value);
 		if (!standalone)
 		{
-			const auto action = d.clip.update(clip_pressed, SDL_GetTicks(), create);
+			const auto action = d.clip.update(clip_pressed, SDL_GetTicks());
 			if (action == pbd::clips::action::save)
 				pbd::clips::request_save();
 			if (action == pbd::clips::action::record)
@@ -216,8 +208,7 @@ struct pbd::controllers::backend::impl
 		float x = 0.f, y = 0.f, pressure = 0.f;
 		if (d.gamepad)
 			SDL_GetGamepadTouchpadFinger(d.gamepad, 0, 0, &finger, &x, &y, &pressure);
-		const bool clip_touchpad = !standalone && clip_button == "touchpad";
-		const auto touch = d.click.update(click && !clip_touchpad, finger ? std::optional<float>(x) : std::nullopt, true);
+		const auto touch = d.click.update(click, finger ? std::optional<float>(x) : std::nullopt, true);
 		if (touch & 0x0100)
 			value.buttons |= bit(select);
 		if (touch & 0x0800)
@@ -297,6 +288,16 @@ struct pbd::controllers::backend::impl
 				}
 				if (b.output_type != SDL_GAMEPAD_BINDTYPE_BUTTON)
 					continue;
+				std::optional<binding> input;
+				if (b.input_type == SDL_GAMEPAD_BINDTYPE_BUTTON)
+					input = binding{binding::button, static_cast<unsigned>(b.input.button)};
+				if (b.input_type == SDL_GAMEPAD_BINDTYPE_HAT)
+					input = binding{binding::hat, static_cast<unsigned>(b.input.hat.hat), b.input.hat.hat_mask};
+				if (b.input_type == SDL_GAMEPAD_BINDTYPE_AXIS)
+					input = binding{binding::axis, static_cast<unsigned>(b.input.axis.axis), b.input.axis.axis_max > b.input.axis.axis_min ? 1 : -1};
+				// The clip button reads MISC1 from SDL, so it needs the input behind it to see a game button taught there.
+				if (b.output.button == SDL_GAMEPAD_BUTTON_MISC1)
+					d.misc1 = input;
 				unsigned a = count;
 				for (unsigned n = 0; n < sdl_buttons.size(); ++n)
 					if (sdl_buttons[n] == b.output.button)
@@ -305,20 +306,15 @@ struct pbd::controllers::backend::impl
 					a = left;
 				if (b.output.button == SDL_GAMEPAD_BUTTON_DPAD_RIGHT)
 					a = right;
-				if (a == count)
-					continue;
-				if (b.input_type == SDL_GAMEPAD_BINDTYPE_BUTTON)
-					d.defaults[a] = binding{binding::button, static_cast<unsigned>(b.input.button)};
-				if (b.input_type == SDL_GAMEPAD_BINDTYPE_HAT)
-					d.defaults[a] = binding{binding::hat, static_cast<unsigned>(b.input.hat.hat), b.input.hat.hat_mask};
-				if (b.input_type == SDL_GAMEPAD_BINDTYPE_AXIS)
-					d.defaults[a] = binding{binding::axis, static_cast<unsigned>(b.input.axis.axis), b.input.axis.axis_max > b.input.axis.axis_min ? 1 : -1};
+				if (a != count && input)
+					d.defaults[a] = *input;
 			}
 			SDL_free(bindings);
 		}
 	}
 
-	void apply_device_layout(const device& d, const raw_state& raw, state& value)
+	// Applies the buttons the player taught this controller type and returns them.
+	layout apply_device_layout(const device& d, const raw_state& raw, state& value)
 	{
 		const auto taught = settings.value("padLayouts").toObject().value(QString::fromStdString(d.key)).toObject();
 		layout overrides;
@@ -342,6 +338,7 @@ struct pbd::controllers::backend::impl
 				const float sign = a == up || a == left ? -1.f : 1.f;
 				value.sticks[a == up || a == down ? 1 : 0] = std::clamp((raw.axes[binding.index] - binding.rest) * binding.direction * sign, -1.f, 1.f);
 			}
+		return overrides;
 	}
 	void publish_device_sample(const device& d, SDL_JoystickID instance, const raw_state& raw, const state& value)
 	{
@@ -356,6 +353,8 @@ struct pbd::controllers::backend::impl
 			{"index", static_cast<int>(instance)}, {"family", QString::fromStdString(family)}, {"logical", logical}, {"axes", sticks}, {"raw", json_raw(raw)}};
 		if (!d.button_type.empty())
 			pad.insert("buttonType", QString::fromStdString(d.button_type));
+		if (!d.clip_name.empty())
+			pad.insert("clipButton", QString::fromStdString(d.clip_name));
 		pads.append(pad);
 		sources.push_back({d.id, value});
 	}

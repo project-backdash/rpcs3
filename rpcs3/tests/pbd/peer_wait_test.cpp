@@ -284,6 +284,78 @@ namespace pbd::test
 			check(data.reason.load() == reason && data.lobby.leave_decided.load());
 			check(data.lobby.channel->last_event() == (control == quit_control::waiting ? 1 : 0));
 		}
+#ifdef _WIN32
+		// A failstop session parks its owner at the end until the host ends the process, so finalize() never runs there.
+		// The owner sends the end notice before it parks; a later finalize() finds it sent.
+		void parked_owner_sends_the_end()
+		{
+			auto& data = *runtime.m_storage;
+			WSADATA wsa{};
+			check(::WSAStartup(MAKEWORD(2, 2), &wsa) == 0);
+			struct loopback
+			{
+				SOCKET sender = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP), receiver = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+				~loopback()
+				{
+					if (sender != INVALID_SOCKET)
+						::closesocket(sender);
+					if (receiver != INVALID_SOCKET)
+						::closesocket(receiver);
+					::WSACleanup();
+				}
+			} sockets;
+			check(sockets.sender != INVALID_SOCKET && sockets.receiver != INVALID_SOCKET);
+			sockaddr_in bound{};
+			bound.sin_family = AF_INET;
+			bound.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+			int bound_len = static_cast<int>(sizeof(bound));
+			check(::bind(sockets.receiver, reinterpret_cast<const sockaddr*>(&bound), bound_len) == 0);
+			check(::getsockname(sockets.receiver, reinterpret_cast<sockaddr*>(&bound), &bound_len) == 0);
+			data.peer.link.target.store(peer_endpoint::make_v4(bound.sin_addr.s_addr, bound.sin_port));
+			data.peer.link.socket_handle = static_cast<u64>(sockets.sender);
+			// The fixture's teardown must not reach a socket this test closes.
+			struct detach
+			{
+				u64& handle;
+				~detach()
+				{
+					handle = ~u64{0};
+				}
+			} detached{data.peer.link.socket_handle};
+			const auto receive = [&](DWORD wait_ms) -> std::optional<peer_message::end_message>
+			{
+				check(::setsockopt(sockets.receiver, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&wait_ms), static_cast<int>(sizeof(wait_ms))) == 0);
+				std::array<u8, 256> datagram{};
+				const int size = ::recv(sockets.receiver, reinterpret_cast<char*>(datagram.data()), static_cast<int>(datagram.size()), 0);
+				if (size <= 0)
+					return std::nullopt;
+				return peer_message::read_end(std::span<const u8>(datagram.data(), static_cast<usz>(size)), 1, 42);
+			};
+
+			data.peer.role = 0;
+			data.peer.session = 42;
+			data.session.failstop = true;
+			data.in_callback.store(false);
+			runtime.finish(session_runtime::user_stopped);
+			// The host's stop request lets the parked owner return, as the process would otherwise end around it.
+			owner->state += cpu_flag::exit;
+			runtime.observe(*owner, pc);
+			check(data.session.end_sent.load() && !data.in_callback.load());
+			// finalize()'s own send, with the reason it would read later, adds nothing.
+			runtime.send_session_end(session_runtime::emulation_stopped);
+			u32 copies = 0;
+			for (DWORD wait_ms = 1000;; wait_ms = 100)
+			{
+				const auto end = receive(wait_ms);
+				if (!end)
+					break;
+				check(end->role == 0 && end->reason == session_runtime::user_stopped, "every copy names the player's own stop");
+				copies++;
+			}
+			check(copies != 0, "the other PC hears the end before the host ends the process");
+		}
+#endif
+
 		// Exercise the publication and audio consumers around the actual VS screen.
 		void loading_cover_and_mute()
 		{
@@ -391,6 +463,14 @@ PBD_TEST(PbdPeerWait, ProtectedWaitsHonorTheLobbyEnding)
 		pbd::test::check(pbd::set_channel::detail::is(test.read(1).find("type"), "command_applied"));
 	}
 }
+
+#ifdef _WIN32
+PBD_TEST(PbdPeerWait, AParkedOwnerSendsTheSessionEnd)
+{
+	lobby_test_state::sample_document test(449);
+	pbd::test::peer_wait_fixture(test.directory).parked_owner_sends_the_end();
+}
+#endif
 
 PBD_TEST(PbdPeerWait, LoadingCoverAndMuteEndAtTheVsFrame)
 {

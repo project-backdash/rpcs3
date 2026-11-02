@@ -101,6 +101,8 @@ namespace pbd::lobby_set
 		pbd::match_recording::winner outcome = pbd::match_recording::winner::none;
 		std::uint64_t generation = 0, published_event = 0;
 		bool terminal = false, spectator_stream_enabled = false;
+		// The rows the fighters played (left, right), as the game's result reported them.
+		std::array<u32, 2> rows{};
 	};
 	// Confirmed input buffered before a game's game_started, in frames. An in-game selection puts the character select (30 s),
 	// the handicap, the stage select (15 s) and the VS load before the first round intro of every game; the countdowns bound

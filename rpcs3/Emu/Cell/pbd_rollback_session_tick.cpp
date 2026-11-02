@@ -180,11 +180,6 @@ bool pbd::rollback_session::tick_dispatch::lobby_set_observation(bool scene_read
 		{
 			observed.score_left = static_cast<u32>(s16{left_result[0]});
 			observed.score_right = static_cast<u32>(s16{right_result[0]});
-			u32 health_left = 0, health_right = 0, timer = 0;
-			observed.draw_verified = s16{left_result[1]} == -1 && s16{right_result[1]} == -1 &&
-			                         read_word(player_left + 0x6ac, health_left) && read_word(player_right + 0x6ac, health_right) &&
-			                         read_word(0x1008f054, timer) && health_left == health_right &&
-			                         (static_cast<s32>(health_left) <= 0 || static_cast<s32>(timer) <= 0);
 		}
 		if (battle)
 		{
@@ -198,9 +193,10 @@ bool pbd::rollback_session::tick_dispatch::lobby_set_observation(bool scene_read
 				observed.outcome = winner::left;
 			else if (winner_read && winner_bytes == std::array<u8, 3>{2, 1, 0})
 				observed.outcome = winner::right;
-			// A drawn match, classified exactly as the replay path below does: both fighters at the rounds to win, and the
-			// draw branch's markers with its terminal health and timer. The lobby replays that game under its own number.
-			else if (winner_read && observed.draw_verified && observed.score_left == data.lobby.channel->identity().rounds_per_game &&
+			// A drawn match, classified exactly as the replay path below does: winner bytes that name neither side, with both
+			// fighters at the rounds to win. The lifecycle accepts it only when both confirmed round counts are at that number.
+			// The lobby replays that game under its own number.
+			else if (winner_read && observed.score_left == data.lobby.channel->identity().rounds_per_game &&
 					 observed.score_right == observed.score_left)
 				observed.outcome = winner::draw;
 			else
@@ -267,7 +263,7 @@ void pbd::rollback_session::tick_dispatch::match_replay_observation(bool scene_r
 					observed.outcome = winner::left;
 				else if (winner_read && winner_bytes == std::array<u8, 3>{2, 1, 0})
 					observed.outcome = winner::right;
-				else if (winner_read && observed.draw_verified && observed.score_left == data.match_replay.lifecycle.rounds_to_win() &&
+				else if (winner_read && observed.score_left == data.match_replay.lifecycle.rounds_to_win() &&
 						 observed.score_right == observed.score_left)
 					observed.outcome = winner::draw;
 				else

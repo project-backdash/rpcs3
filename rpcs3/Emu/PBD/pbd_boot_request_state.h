@@ -2,6 +2,7 @@
 
 #include "../Cell/pbd_boot_request.h"
 #include "pbd_env.h"
+#include "pbd_boot_environment.h"
 #include "pbd_guest_call.h"
 #include "pbd_owner_flags.h"
 #include "pbd_t5dr_memory.h"
@@ -30,7 +31,6 @@ namespace pbd::boot_request::detail
 	// Private linkage/payload above the injected callee's SP; retained guard bytes at the low end.
 	constexpr u32 scratch_bytes = 0x8000, linkage_bytes = 0x100;
 	constexpr u64 basis = 0xcbf29ce484222325ull, prime = 0x100000001b3ull;
-	std::string environment(const char* name);
 	u32 word(u32 address);
 	u32 byte(u32 address);
 	u32 halfword(u32 address);

@@ -29,8 +29,9 @@ namespace pbd::setup_digest
 
 	// Exclude the host-derived creation stamp (also used in the CN<stamp> save folder) and its 176-byte derived block.
 	inline constexpr std::array<span, 2> creation{{{0x2d14, 0x2d30}, {0x1d8c0, 0x1d970}}};
-	// Speaker, BGM, SE, stage effects and subtitles: each player's own Sound Options, set in the save image after the checkpoint
-	// loads (pbd_sound_options.h). The records keep the checkpoint's values.
+	// Speaker, BGM, SE, stage effects and subtitles: each player's own Sound Options, set in the save image at the first owner
+	// boundary (pbd_sound_options.h). A record copies them when VS starts, which can follow that boundary, so both records
+	// leave the same span out: two PCs with different sound settings always pair.
 	inline constexpr span sound{0x0a, 0x0f};
 
 	struct parts
@@ -71,11 +72,11 @@ namespace pbd::setup_digest
 	template <class Read>
 	parts digest(Read&& read)
 	{
-		constexpr std::array<span, 3> image_skip{creation[0], creation[1], sound};
+		constexpr std::array<span, 3> skip{creation[0], creation[1], sound};
 		parts out;
-		out.save = hash_range(read, save_image, save_size, image_skip, 0, out.complete);
-		out.record0 = hash_range(read, records, record_stride, creation, record_save, out.complete);
-		out.record1 = hash_range(read, records + record_stride, record_stride, creation, record_save, out.complete);
+		out.save = hash_range(read, save_image, save_size, skip, 0, out.complete);
+		out.record0 = hash_range(read, records, record_stride, skip, record_save, out.complete);
+		out.record1 = hash_range(read, records + record_stride, record_stride, skip, record_save, out.complete);
 		return out;
 	}
 

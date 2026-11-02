@@ -282,6 +282,21 @@ namespace vk
 		return gpus;
 	}
 
+	VkSurfaceKHR instance::recreate_surface(display_handle_t window_handle)
+	{
+		if (m_surface)
+		{
+			vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
+			m_surface = VK_NULL_HANDLE;
+		}
+		WSI_config surface_config
+		{
+			.supports_automatic_wm_reports = true
+		};
+		m_surface = make_WSI_surface(m_instance, window_handle, &surface_config);
+		return m_surface;
+	}
+
 	swapchain_base* instance::create_swapchain(display_handle_t window_handle, vk::physical_device& dev)
 	{
 		WSI_config surface_config
@@ -395,6 +410,8 @@ namespace vk
 
 		color_space = surfFormats[0].colorSpace;
 
-		return new swapchain_WSI(dev, present_queue_idx, graphics_queue_idx, transfer_queue_idx, format, m_surface, color_space, !surface_config.supports_automatic_wm_reports);
+		auto swapchain = new swapchain_WSI(dev, present_queue_idx, graphics_queue_idx, transfer_queue_idx, format, m_surface, color_space, !surface_config.supports_automatic_wm_reports);
+		swapchain->create(window_handle);
+		return swapchain;
 	}
 }

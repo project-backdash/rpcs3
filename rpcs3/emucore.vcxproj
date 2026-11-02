@@ -537,6 +537,7 @@
     <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_status_overlay.cpp" />
     <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_menu_overlay.cpp" />
     <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_practice_overlay.cpp" />
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_clip_overlay.cpp" />
     <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_spectator_overlay.cpp" />
     <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_lobby_set_overlay.cpp" />
     <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_settings_overlay.cpp" />
@@ -1560,6 +1561,12 @@
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
     <ClInclude Include="Emu\PBD\pbd_anchor_dump.h" />
+    <ClCompile Include="Emu\PBD\pbd_host.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClInclude Include="Emu\PBD\pbd_host.h" />
+    <ClInclude Include="Emu\PBD\pbd_host_timing.h" />
     <ClInclude Include="Emu\PBD\pbd_memory_dump.h" />
     <ClCompile Include="Emu\PBD\pbd_memory_dump_native.cpp" />
     <ClInclude Include="Emu\PBD\pbd_memory_dump_native.h" />

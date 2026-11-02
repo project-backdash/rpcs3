@@ -986,6 +986,380 @@ PBD_TEST(PbdSetChannel, NextSetChannel)
 
 namespace
 {
+	// A fresh, uniquely named temporary directory for one channel, removed when the test ends.
+	struct record_directory
+	{
+		std::filesystem::path parent = std::filesystem::canonical(std::filesystem::temp_directory_path());
+		std::filesystem::path path;
+		explicit record_directory(std::string_view name)
+			: path(parent / ("pbd-set-channel-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" + std::string(name)))
+		{
+			check(std::filesystem::create_directory(path));
+		}
+		~record_directory()
+		{
+			const auto resolved = std::filesystem::canonical(path);
+			check(std::filesystem::equivalent(resolved.parent_path(), parent) && resolved.filename().string().starts_with("pbd-set-channel-test-"));
+			std::filesystem::remove_all(resolved);
+		}
+	};
+
+	// A table of `count` entries, rows 0 onwards, one game won each.
+	std::string record_table(std::uint32_t count)
+	{
+		std::string out = R"("records":[)";
+		for (std::uint32_t row = 0; row < count; ++row)
+			out += (row ? "," : "") + std::string(R"({"rows":[)") + std::to_string(row) + R"(],"wins":1,"losses":0})";
+		return out + "],";
+	}
+
+	// A rank_stakes command for `set` as the launcher writes it, each side with its extra fields (a record or nothing).
+	pbd::set_channel::command rank_stakes_with(const pbd::set_channel::manifest& set, std::string_view left_extra, std::string_view right_extra)
+	{
+		const std::string side = R"("win":"none","winRank":0,"loss":"none","lossRank":0)";
+		const auto fields = R"("type":"rank_stakes","left":{)" + side + std::string(left_extra) + R"(},"right":{)" + side + std::string(right_extra) + "}";
+		const auto parsed = pbd::set_channel::parse_command(pbd::set_channel::in_game(set) ? envelope_in_game(fields) : envelope(fields), set, 1, set.game_number);
+		check(parsed.value, fields);
+		return *parsed.value;
+	}
+} // namespace
+
+// A fighter's PLAYER DATA record from before the set (display only): "record" for fixed picks, a "records" table by character
+// rows for a set that picks in the game's select. Left out or null is none; an invalid one is none too and named, never a
+// refusal, since a refused manifest would end the set.
+PBD_TEST(PbdSetChannel, AFighterMayCarryItsGameRecord)
+{
+	using namespace pbd::set_channel;
+	const auto plain = parse_manifest(sample_document, supported);
+	check(plain.value && !plain.value->left.record && !plain.value->right.record && plain.value->ignored.empty());
+	const auto recorded = parse_manifest(changed(changed(sample_document, R"("name":"Left",)", R"("name":"Left","record":{"wins":41,"losses":30},)"),
+											 R"("name":"Right",)", R"("name":"Right","record":null,)"),
+		supported);
+	check(recorded.value && recorded.value->left.record == game_record{41, 30} && !recorded.value->right.record && recorded.value->ignored.empty());
+	const auto most = parse_manifest(changed(sample_document, R"("name":"Left",)", R"("name":"Left","record":{"wins":99999,"losses":0},)"), supported);
+	check(most.value && most.value->left.record == game_record{99999, 0});
+	for (const auto bad : {R"("record":{"wins":100000,"losses":0},)", R"("record":{"wins":-1,"losses":0},)", R"("record":{"wins":1.5,"losses":0},)",
+			 R"("record":{"wins":"41","losses":30},)", R"("record":{"wins":41},)", R"("record":[41,30],)", R"("record":7,)"})
+	{
+		const auto read = parse_manifest(changed(sample_document, R"("name":"Left",)", std::string(R"("name":"Left",)") + bad), supported);
+		check(read.value && !read.value->left.record && read.value->ignored == std::vector<std::string>{"left.record"}, bad);
+	}
+	// A fixed fighter's table is not read, nor an in-game fighter's single record.
+	const auto fixed_table = parse_manifest(changed(sample_document, R"("name":"Left",)", R"("name":"Left","records":7,)"), supported);
+	check(fixed_table.value && !fixed_table.value->left.records && fixed_table.value->ignored.empty());
+	const auto single = parse_manifest(changed(in_game_manifest_text, R"("name":"Right",)", R"("name":"Right","record":{"wins":1,"losses":1},)"), supported);
+	check(single.value && !single.value->right.record && !single.value->right.records && single.value->ignored.empty());
+	// The in-game table: each entry a character's rows (0..84, each in one entry only) and its record, at most 64 entries. An
+	// empty table is known: no character has games yet.
+	const auto table = parse_manifest(changed(in_game_manifest_text, R"("name":"Left",)",
+										  R"("name":"Left","records":[{"rows":[25,26,27],"wins":4,"losses":1},{"rows":[84],"wins":0,"losses":2}],)"),
+		supported);
+	check(table.value && table.value->left.records && table.value->left.records->size() == 2 && !table.value->left.record);
+	const auto& entries = *table.value->left.records;
+	check(entries[0].rows == std::vector<std::uint32_t>{25, 26, 27} && entries[0].record == game_record{4, 1});
+	check(entries[1].rows == std::vector<std::uint32_t>{84} && entries[1].record == game_record{0, 2});
+	check(!table.value->right.records && table.value->ignored.empty());
+	const auto empty = parse_manifest(changed(in_game_manifest_text, R"("name":"Right",)", R"("name":"Right","records":[],)"), supported);
+	check(empty.value && empty.value->right.records && empty.value->right.records->empty());
+	const auto full = parse_manifest(changed(in_game_manifest_text, R"("name":"Left",)", R"("name":"Left",)" + record_table(64)), supported);
+	check(full.value && full.value->left.records && full.value->left.records->size() == 64);
+	for (const std::string bad : {std::string(R"("records":[{"rows":[85],"wins":1,"losses":0}],)"),
+			 std::string(R"("records":[{"rows":[3],"wins":1,"losses":0},{"rows":[4,3],"wins":0,"losses":1}],)"),
+			 std::string(R"("records":[{"rows":[],"wins":1,"losses":0}],)"), std::string(R"("records":[{"rows":[3],"wins":1}],)"),
+			 std::string(R"("records":[{"wins":1,"losses":0}],)"), std::string(R"("records":[{"rows":[3],"wins":100000,"losses":0}],)"),
+			 std::string(R"("records":{"rows":[3],"wins":1,"losses":0},)"), record_table(65)})
+	{
+		const auto read = parse_manifest(changed(in_game_manifest_text, R"("name":"Left",)", R"("name":"Left",)" + bad), supported);
+		check(read.value && !read.value->left.records && read.value->ignored == std::vector<std::string>{"left.records"}, bad);
+	}
+}
+
+// rank_stakes may name each player's PLAYER DATA record for its set. Display only: it is not part of the stakes word the two
+// PCs compare, and an invalid one is read as left out.
+PBD_TEST(PbdSetChannel, RankStakesMayNameTheGameRecords)
+{
+	using namespace pbd::set_channel;
+	const auto session = *parse_manifest(sample_document, supported).value;
+	const auto read = [&](const std::string& left_extra, const std::string& right_extra)
+	{
+		return parse_command(envelope(R"("type":"rank_stakes","left":{"win":"promote","winRank":11,"loss":"none","lossRank":10)" + left_extra +
+									  R"(},"right":{"win":"none","winRank":10,"loss":"demote","lossRank":9)" + right_extra + "}"),
+			session, 1, 1);
+	};
+	const auto plain = read("", "");
+	check(plain.value && !plain.value->records[0] && !plain.value->records[1] && plain.value->ignored.empty());
+	const auto named = read(R"(,"record":{"wins":41,"losses":30})", R"(,"record":{"wins":0,"losses":0})");
+	check(named.value && named.value->records[0] == game_record{41, 30} && named.value->records[1] == game_record{0, 0});
+	check(named.value->ignored.empty() && pbd::rank_stakes::stakes_word(named.value->stakes) == pbd::rank_stakes::stakes_word(plain.value->stakes));
+	check(read(R"(,"record":null)", "").value->ignored.empty());
+	for (const auto bad : {R"(,"record":{"wins":100000,"losses":0})", R"(,"record":{"wins":1})", R"(,"record":"41-30")"})
+	{
+		const auto odd = read("", bad);
+		check(odd.value && !odd.value->records[1] && odd.value->ignored == std::vector<std::string>{"rank_stakes.right.record"}, bad);
+	}
+}
+
+// next_set may name each player's PLAYER DATA record for the new set: "record" in a fixed set, a "records" table in one that
+// picks in the game's select. Display only: an invalid one is read as left out.
+PBD_TEST(PbdSetChannel, NextSetMayNameTheGameRecords)
+{
+	using namespace pbd::set_channel;
+	const auto session = *parse_manifest(sample_document, supported).value;
+	const auto chosen = *parse_manifest(in_game_manifest_text, supported).value;
+	const auto fixed = parse_command(envelope(next_set_fields + R"(,"left":{"rank":11,"record":{"wins":42,"losses":30}},"right":{"record":{"wins":1,"losses":100000}})"),
+		session, 1, 1);
+	check(fixed.value && fixed.value->records[0] == game_record{42, 30} && !fixed.value->records[1] && fixed.value->ranks[0] == 11u);
+	check(fixed.value->ignored == std::vector<std::string>{"next_set.right.record"} && !fixed.value->record_tables[0]);
+	const auto table = parse_command(envelope_in_game(next_set_fields + R"(,"left":{"records":[{"rows":[25,26],"wins":4,"losses":1}]},"right":{"records":[{"rows":[85],"wins":0,"losses":0}]})"),
+		chosen, 1, 1);
+	check(table.value && table.value->record_tables[0] && table.value->record_tables[0]->size() == 1 && !table.value->record_tables[1]);
+	check((*table.value->record_tables[0])[0].record == game_record{4, 1} && table.value->ignored == std::vector<std::string>{"next_set.right.records"});
+	check(!parse_command(envelope(next_set_fields), session, 1, 1).value->records[0]);
+}
+
+// The PLAYER DATA bar in a fixed set: the record from before the set plus the set's score, the side's own games as wins and the
+// other side's as losses, capped at 99999. A rank_stakes record replaces the record from before the set; next_set carries each
+// record into the next set with the finished set's games, the deciding one included, unless it names a new one.
+PBD_TEST(PbdSetChannel, FixedRecordsAddTheSetScore)
+{
+	using namespace pbd::set_channel;
+	// Game 2 of a first-to-two set, the left player 1-0 up.
+	auto text = changed(changed(sample_document, "\"gameNumber\":1", "\"gameNumber\":2"), "\"score\":{\"left\":0,\"right\":0}", "\"score\":{\"left\":1,\"right\":0}");
+	text = changed(text, R"("name":"Left",)", R"("name":"Left","record":{"wins":41,"losses":30},)");
+	const auto session = *parse_manifest(text, supported).value;
+	const std::array<std::uint32_t, 2> rows{12, 32};
+	const set_tally none{};
+	auto shown = shown_records(session, none, rows);
+	check(shown[0] == game_record{42, 30} && !shown[1]);
+	auto capped = session;
+	capped.left.record = game_record{99999, 99999};
+	capped.right.record = game_record{0, 0};
+	shown = shown_records(capped, none, rows);
+	check(shown[0] == game_record{99999, 99999} && shown[1] == game_record{0, 1});
+	// The rows do not matter to fixed picks.
+	check(shown_records(session, none, {~0u, ~0u})[0] == game_record{42, 30});
+	{
+		const record_directory directory("records-named");
+		channel output(directory.path, session);
+		output.hold_records(rank_stakes_with(output.identity(), "", R"(,"record":{"wins":7,"losses":3})"));
+		check(output.shown_records(rows)[1] == game_record{7, 4});
+		// The left player wins game 2, which ends the set 2-0. The next set names a new record for the right player only.
+		const auto next = parse_command(envelope(next_set_fields + R"(,"right":{"record":{"wins":8,"losses":8}})"), output.identity(), 1, 2);
+		check(next.value && output.next_set(*next.value, decided_game{{12, 32}, side::left}));
+		check(output.identity().left.record == game_record{43, 30} && output.identity().right.record == game_record{8, 8});
+		shown = output.shown_records(rows);
+		check(shown[0] == game_record{43, 30} && shown[1] == game_record{8, 8});
+	}
+	{
+		const record_directory directory("records-carried");
+		channel output(directory.path, session);
+		output.hold_records(rank_stakes_with(output.identity(), "", R"(,"record":{"wins":7,"losses":3})"));
+		const auto next = parse_command(envelope(next_set_fields), output.identity(), 1, 2);
+		check(next.value && output.next_set(*next.value, decided_game{{12, 32}, side::left}));
+		check(output.identity().left.record == game_record{43, 30} && output.identity().right.record == game_record{7, 5});
+	}
+	{
+		// A player without a record keeps none.
+		const record_directory directory("records-none");
+		channel output(directory.path, session);
+		const auto next = parse_command(envelope(next_set_fields), output.identity(), 1, 2);
+		check(next.value && output.next_set(*next.value, decided_game{{12, 32}, side::right}));
+		check(output.identity().left.record == game_record{42, 31} && !output.identity().right.record);
+	}
+}
+
+// The one way a Ranked record reaches a set after its manifest: rank_stakes, parsed, held and shown as the launcher sends it.
+// Each record it names replaces that side's record from before the set, with the set's score still added; a side it names none
+// for, or names an invalid one for, keeps its record. A set that picks in the game's select keeps its tables.
+PBD_TEST(PbdSetChannel, ALateRankStakesRecordReplacesTheRecordUnderTheScore)
+{
+	using namespace pbd::set_channel;
+	// Game 2 of a first-to-two set, the left player 1-0 up, and only the left record in the manifest.
+	auto text = changed(changed(sample_document, "\"gameNumber\":1", "\"gameNumber\":2"), "\"score\":{\"left\":0,\"right\":0}", "\"score\":{\"left\":1,\"right\":0}");
+	text = changed(text, R"("name":"Left",)", R"("name":"Left","record":{"wins":41,"losses":30},)");
+	const auto session = *parse_manifest(text, supported).value;
+	const record_directory directory("records-late");
+	channel output(directory.path, session);
+	const std::array<std::uint32_t, 2> rows{12, 32};
+	auto shown = output.shown_records(rows);
+	check(shown[0] == game_record{42, 30} && !shown[1]);
+	// The right player's record arrives late; the left side names none and keeps its own.
+	output.hold_records(rank_stakes_with(output.identity(), "", R"(,"record":{"wins":0,"losses":0})"));
+	shown = output.shown_records(rows);
+	check(shown[0] == game_record{42, 30} && shown[1] == game_record{0, 1});
+	// A newer one replaces both.
+	output.hold_records(rank_stakes_with(output.identity(), R"(,"record":{"wins":50,"losses":30})", R"(,"record":{"wins":2,"losses":2})"));
+	shown = output.shown_records(rows);
+	check(shown[0] == game_record{51, 30} && shown[1] == game_record{2, 3});
+	// An invalid record reads as left out and changes nothing, nor does a command that names none.
+	const auto invalid = rank_stakes_with(output.identity(), R"(,"record":{"wins":100000,"losses":0})", "");
+	check(!invalid.records[0] && invalid.ignored == std::vector<std::string>{"rank_stakes.left.record"});
+	output.hold_records(invalid);
+	output.hold_records(rank_stakes_with(output.identity(), "", ""));
+	check(output.shown_records(rows) == shown);
+
+	// One record cannot say which character of a set that picks in the game's select it belongs to.
+	const auto chosen_text = changed(in_game_manifest_text, R"("name":"Left",)", R"("name":"Left","records":[{"rows":[25,26],"wins":4,"losses":1}],)");
+	const auto chosen = *parse_manifest(chosen_text, supported).value;
+	const record_directory in_game_directory("records-late-in-game");
+	channel chosen_output(in_game_directory.path, chosen);
+	const auto before = chosen_output.shown_records({25, 40});
+	check(before[0] == game_record{4, 1} && !before[1]);
+	const auto stakes = rank_stakes_with(chosen_output.identity(), R"(,"record":{"wins":9,"losses":9})", R"(,"record":{"wins":1,"losses":1})");
+	check(stakes.records[0] == game_record{9, 9} && stakes.records[1] == game_record{1, 1});
+	chosen_output.hold_records(stakes);
+	check(chosen_output.shown_records({25, 40}) == before && !chosen_output.identity().left.record && !chosen_output.identity().right.record);
+}
+
+// A drawn game is played again with its number and score kept, so a fixed set's bar shows the same numbers in the replay; the
+// next decided game moves it.
+PBD_TEST(PbdSetChannel, AFixedSetsDrawReplayKeepsTheBar)
+{
+	using namespace pbd::set_channel;
+	auto text = changed(changed(sample_document, "\"gameNumber\":1", "\"gameNumber\":2"), "\"score\":{\"left\":0,\"right\":0}", "\"score\":{\"left\":1,\"right\":0}");
+	text = changed(changed(text, R"("name":"Left",)", R"("name":"Left","record":{"wins":41,"losses":30},)"), R"("name":"Right",)",
+		R"("name":"Right","record":{"wins":7,"losses":3},)");
+	const auto session = *parse_manifest(text, supported).value;
+	const record_directory directory("records-draw");
+	channel output(directory.path, session);
+	const std::array<std::uint32_t, 2> rows{12, 32};
+	const auto before = output.shown_records(rows);
+	check(before[0] == game_record{42, 30} && before[1] == game_record{7, 4});
+	const auto replay = parse_command(envelope(R"("type":"continue_game","gameNumber":2,"score":{"left":1,"right":0},"replay":"draw")"), output.identity(), 1, 2);
+	check(replay.value && replay.value->replay && output.continue_naturally(*replay.value));
+	check(output.identity().game_number == 2 && output.shown_records(rows) == before);
+	// The right player wins the replayed game 2.
+	const auto next = parse_command(envelope(R"("type":"continue_game","gameNumber":3,"score":{"left":1,"right":1})", 2), output.identity(), 2, 2);
+	check(next.value && output.continue_naturally(*next.value, decided_game{{12, 32}, side::right}));
+	const auto after = output.shown_records(rows);
+	check(after[0] == game_record{42, 31} && after[1] == game_record{8, 4});
+}
+
+// With the game's row table every costume of a character shares one record: the table entry naming any of its rows, all its
+// rows' games in this set, and one entry after next_set. Without the table each row counts as its own character.
+PBD_TEST(PbdSetChannel, InGameRecordsShareOneRecordAcrossCostumes)
+{
+	using namespace pbd::set_channel;
+	// Rows 25 to 27 are one character's costumes and rows 40 and 41 another's; every other row is a character of its own.
+	row_characters characters{};
+	for (std::uint32_t row = 0; row < characters.size(); ++row)
+		characters[row] = static_cast<std::uint16_t>(row == 26 || row == 27 ? 25 : row == 41 ? 40 :
+																							   row);
+	auto text = changed(in_game_manifest_text, R"("name":"Left",)", R"("name":"Left","records":[{"rows":[25],"wins":4,"losses":1}],)");
+	text = changed(text, R"("name":"Right",)", R"("name":"Right","records":[],)");
+	const auto chosen = *parse_manifest(text, supported).value;
+	set_tally tally{};
+	// The table names one costume only; the others still take its record.
+	check(shown_records(chosen, tally, {26, 40}, &characters)[0] == game_record{4, 1});
+	check(shown_records(chosen, tally, {26, 40})[0] == game_record{0, 0});
+	tally[0][27].wins = 1;
+	tally[1][40].wins = 1;
+	auto shown = shown_records(chosen, tally, {26, 41}, &characters);
+	check(shown[0] == game_record{5, 1} && shown[1] == game_record{1, 0});
+	// Folding gives each character one entry, which takes the rows it did not name.
+	auto left = *chosen.left.records;
+	fold_games(left, tally[0], &characters);
+	check(left.size() == 1 && left[0].rows == std::vector<std::uint32_t>{25, 27} && left[0].record == game_record{5, 1});
+	tally[1][41].losses = 2;
+	auto right = *chosen.right.records;
+	fold_games(right, tally[1], &characters);
+	check(right.size() == 1 && right[0].rows == std::vector<std::uint32_t>{40, 41} && right[0].record == game_record{1, 2});
+
+	const record_directory directory("records-costumes");
+	channel output(directory.path, chosen);
+	check(!output.knows_characters());
+	output.hold_characters(characters);
+	check(output.knows_characters());
+	const auto command_at = [&](const std::string& fields, std::uint64_t serial, std::uint32_t game)
+	{
+		const auto parsed = parse_command(envelope_in_game(fields, serial), output.identity(), serial, game);
+		check(parsed.value, fields);
+		return *parsed.value;
+	};
+	// Game 1: the right player, whose character the table names nowhere, wins on row 40.
+	check(output.continue_naturally(command_at(R"("type":"continue_game","gameNumber":2,"score":{"left":0,"right":1})", 1, 1), decided_game{{25, 40}, side::right}));
+	// Game 2 on that character's other costume shows the game it won.
+	shown = output.shown_records({25, 41});
+	check(shown[0] == game_record{4, 2} && shown[1] == game_record{1, 0});
+	// The right player wins game 2, and the set, on row 41: the next set holds one entry for the character.
+	check(output.next_set(command_at(next_set_fields, 2, 2), decided_game{{25, 41}, side::right}));
+	const auto& table = *output.identity().right.records;
+	check(table.size() == 1 && table[0].rows == std::vector<std::uint32_t>{40, 41} && table[0].record == game_record{2, 0});
+	check(output.identity().left.records->size() == 1 && (*output.identity().left.records)[0].record == game_record{4, 3});
+	check(output.shown_records({26, 41}) == std::array<std::optional<game_record>, 2>{game_record{4, 3}, game_record{2, 0}});
+}
+
+// The PLAYER DATA bar in a set that picks in the game's select: the record of the character each side plays this game, from the
+// table entry holding its row, plus this set's confirmed games with that character. next_set folds the set's games into the
+// table, the deciding one included.
+PBD_TEST(PbdSetChannel, InGameRecordsFollowTheCharacterPlayed)
+{
+	using namespace pbd::set_channel;
+	auto text = changed(in_game_manifest_text, R"("name":"Left",)", R"("name":"Left","records":[{"rows":[25,26],"wins":4,"losses":1}],)");
+	text = changed(text, R"("name":"Right",)", R"("name":"Right","records":[],)");
+	const auto chosen = *parse_manifest(text, supported).value;
+	set_tally tally{};
+	// Before any game: the table's own numbers. A character the table does not name has no games before this set; another row
+	// of a named character shares its entry; a row that is no character shows nothing, and neither does a fighter without a
+	// table.
+	auto shown = shown_records(chosen, tally, {25, 40});
+	check(shown[0] == game_record{4, 1} && shown[1] == game_record{0, 0});
+	check(shown_records(chosen, tally, {26, 40})[0] == game_record{4, 1});
+	check(!shown_records(chosen, tally, {85, 40})[0] && !shown_records(chosen, tally, {25, ~0u})[1]);
+	auto bare = chosen;
+	bare.left.records.reset();
+	check(!shown_records(bare, tally, {25, 40})[0]);
+	// Confirmed games with a character add to that character only, over all its rows.
+	tally[0][25].wins = 1;
+	tally[0][26].losses = 1;
+	tally[0][30].wins = 2;
+	tally[1][40].losses = 1;
+	tally[1][41].wins = 3;
+	shown = shown_records(chosen, tally, {26, 40});
+	check(shown[0] == game_record{5, 2} && shown[1] == game_record{0, 1});
+	shown = shown_records(chosen, tally, {30, 41});
+	check(shown[0] == game_record{2, 0} && shown[1] == game_record{3, 0});
+	// After the set the table takes its games: each entry adds its character's, and another row played gets its own entry.
+	auto folded = *chosen.left.records;
+	fold_games(folded, tally[0]);
+	check(folded.size() == 2 && folded[0].rows == std::vector<std::uint32_t>{25, 26} && folded[0].record == game_record{5, 2});
+	check(folded[1].rows == std::vector<std::uint32_t>{30} && folded[1].record == game_record{2, 0});
+
+	const record_directory directory("records-in-game");
+	channel output(directory.path, chosen);
+	const auto command_at = [&](const std::string& fields, std::uint64_t serial, std::uint32_t game)
+	{
+		const auto parsed = parse_command(envelope_in_game(fields, serial), output.identity(), serial, game);
+		check(parsed.value, fields);
+		return *parsed.value;
+	};
+	// Game 1: the left player wins on row 25 against row 40.
+	check(output.continue_naturally(command_at(R"("type":"continue_game","gameNumber":2,"score":{"left":1,"right":0})", 1, 1), decided_game{{25, 40}, side::left}));
+	shown = output.shown_records({25, 40});
+	check(shown[0] == game_record{5, 1} && shown[1] == game_record{0, 1});
+	// Game 2 is drawn: its replay counts nothing.
+	check(output.continue_naturally(command_at(R"("type":"continue_game","gameNumber":2,"score":{"left":1,"right":0},"replay":"draw")", 2, 2),
+		decided_game{{25, 40}, side::right}));
+	check(output.shown_records({25, 40}) == shown);
+	// The right player changes character and wins game 2 on row 41: that character starts from no games.
+	check(output.shown_records({25, 41})[1] == game_record{0, 0});
+	check(output.continue_naturally(command_at(R"("type":"continue_game","gameNumber":3,"score":{"left":1,"right":1})", 3, 2), decided_game{{25, 41}, side::right}));
+	shown = output.shown_records({26, 41});
+	check(shown[0] == game_record{5, 2} && shown[1] == game_record{1, 0});
+	// The right player wins game 3, and the set, against row 26. The next set names no records, so both tables fold this set in.
+	check(output.next_set(command_at(next_set_fields, 4, 3), decided_game{{26, 41}, side::right}));
+	const auto& left = *output.identity().left.records;
+	const auto& right = *output.identity().right.records;
+	check(left.size() == 1 && left[0].record == game_record{5, 3});
+	check(right.size() == 2 && right[0].rows == std::vector<std::uint32_t>{40} && right[0].record == game_record{0, 1});
+	check(right[1].rows == std::vector<std::uint32_t>{41} && right[1].record == game_record{2, 0});
+	// The new set starts with no games of its own.
+	shown = output.shown_records({25, 41});
+	check(shown[0] == game_record{5, 3} && shown[1] == game_record{2, 0});
+}
+
+namespace
+{
 	// Sets a variable for this process, or removes it when value is null.
 	void put(const char* name, const char* value)
 	{

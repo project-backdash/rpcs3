@@ -94,6 +94,10 @@ std::array<u32, 2> pbd_direct_match::pbd_player_ranks() const noexcept
 {
 	return data ? data->player_ranks : std::array<u32, 2>{};
 }
+std::array<pbd::game_profile::record, 2> pbd_direct_match::pbd_player_records() const noexcept
+{
+	return data ? data->player_records : std::array<pbd::game_profile::record, 2>{};
+}
 std::optional<pbd::rank_stakes::game_values> pbd_direct_match::pbd_rank_screens() const noexcept
 {
 	return data ? data->rank_screens : std::nullopt;

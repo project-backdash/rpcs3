@@ -957,6 +957,9 @@
     <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_practice_overlay.cpp">
       <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
     </ClCompile>
+    <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_clip_overlay.cpp">
+      <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
+    </ClCompile>
     <ClCompile Include="Emu\RSX\Overlays\pbd\pbd_spectator_overlay.cpp">
       <Filter>Emu\GPU\RSX\Overlays\PBD</Filter>
     </ClCompile>
@@ -3285,6 +3288,15 @@
       <Filter>Emu\Cell</Filter>
     </ClCompile>
     <ClInclude Include="Emu\PBD\pbd_anchor_dump.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClCompile Include="Emu\PBD\pbd_host.cpp">
+      <Filter>Emu\Cell</Filter>
+    </ClCompile>
+    <ClInclude Include="Emu\PBD\pbd_host.h">
+      <Filter>Emu\Cell</Filter>
+    </ClInclude>
+    <ClInclude Include="Emu\PBD\pbd_host_timing.h">
       <Filter>Emu\Cell</Filter>
     </ClInclude>
     <ClInclude Include="Emu\PBD\pbd_memory_dump.h">

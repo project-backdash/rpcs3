@@ -104,6 +104,7 @@ namespace vk
 			bool texture_compression_bc = false;
 			bool portability = false;
 			bool provoking_vertex_last = false;
+			bool full_screen_exclusive = false;
 		} optional_features_support;
 
 		friend class render_device;
@@ -154,6 +155,8 @@ namespace vk
 		u32 m_present_queue_family = 0;
 		u32 m_transfer_queue_family = 0;
 
+		bool m_full_screen_exclusive = false;
+
 		void dump_debug_info(
 			const std::vector<const char*>& requested_extensions,
 			const VkPhysicalDeviceFeatures& requested_features) const;
@@ -193,6 +196,8 @@ namespace vk
 		bool get_extended_device_fault_support() const { return pgpu->optional_features_support.extended_device_fault; }
 		bool get_texture_compression_bc_support() const { return pgpu->optional_features_support.texture_compression_bc; }
 		bool get_provoking_vertex_last_support() const { return pgpu->optional_features_support.provoking_vertex_last; }
+		// VK_EXT_full_screen_exclusive is enabled on this device (Windows, supported, and the setting is not Automatic).
+		bool get_full_screen_exclusive_support() const { return m_full_screen_exclusive; }
 
 		u64 get_descriptor_update_after_bind_support() const { return pgpu->descriptor_indexing_support.update_after_bind_mask; }
 		u32 get_descriptor_max_draw_calls() const { return pgpu->descriptor_max_draw_calls; }

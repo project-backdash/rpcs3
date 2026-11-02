@@ -14,8 +14,6 @@
 #include <stdexcept>
 #include <utility>
 
-extern bool g_pbd_restored_timebase_valid;
-
 namespace pbd::sound_options
 {
 	namespace
@@ -29,24 +27,19 @@ namespace pbd::sound_options
 			if (const auto text = pbd::env::find_wide(key))
 				for (auto cursor = text; *cursor; ++cursor)
 				{
-					if (*cursor > 0x7f || out.size() >= max_file_bytes)
+					if (*cursor > 0x7f || out.size() >= max_text_bytes)
 						throw std::invalid_argument("sound environment");
 					out.push_back(static_cast<char>(*cursor));
 				}
 #else
 			if (const auto text = pbd::env::find(key))
 			{
-				if (std::strlen(text) > max_file_bytes)
+				if (std::strlen(text) > max_text_bytes)
 					throw std::invalid_argument("sound environment");
 				out = text;
 			}
 #endif
 			return out;
-		}
-
-		bool digest_text(std::string_view text) noexcept
-		{
-			return text.size() == 64 && text.find_first_not_of("0123456789abcdef") == text.npos;
 		}
 
 		std::optional<u32> read_word(u32 address) noexcept
@@ -118,31 +111,21 @@ namespace pbd::sound_options
 
 	} // namespace
 
+	// Absent or empty: the checkpoint keeps its own values and nothing is applied.
 	void runtime_application::configure_environment(std::uint64_t emulation_generation) noexcept
 	{
+		*this = runtime_application{};
 		generation = emulation_generation;
 		try
 		{
-			const auto flag = ascii_environment("PBD_SOUND_OPTIONS_APPLY");
-			requested = !flag.empty();
+			const auto text = ascii_environment("PBD_SOUND_OPTIONS");
+			requested = !text.empty();
 			if (!requested)
 				return;
-			if (flag != "1")
-			{
-				setup_error = "apply_flag_invalid";
-				return;
-			}
-			const auto text = ascii_environment("PBD_SOUND_OPTIONS");
 			const auto parsed = parse(text);
 			if (!parsed.value)
 			{
 				setup_error = parsed.error;
-				return;
-			}
-			checkpoint_sha256 = ascii_environment("PBD_SOUND_CHECKPOINT_SHA256");
-			if (!digest_text(checkpoint_sha256))
-			{
-				setup_error = "checkpoint_digest_required";
 				return;
 			}
 			desired = *parsed.value;
@@ -154,9 +137,10 @@ namespace pbd::sound_options
 		}
 	}
 
-	application_result refuse(std::string_view reason, u32 completed = 0, bool restored = false)
+	// A refusal before any setter ran leaves the owner thread untouched.
+	static application_result refuse(std::string_view reason, u32 completed = 0, bool preserved = true)
 	{
-		return application_result{application_status::refused, reason, restored, completed};
+		return application_result{application_status::refused, reason, preserved, completed};
 	}
 
 	application_result runtime_application::apply_at_owner_boundary(ppu_thread& ppu, std::uint32_t pc, bool first_boundary) noexcept
@@ -171,20 +155,19 @@ namespace pbd::sound_options
 			return refuse(setup_error);
 		if (!desired || !first_boundary || executing || ppu.cia != pbd::t5dr::boundary_pc || ppu.current_function || ppu.state.load())
 			return refuse("unsafe_owner_boundary");
-		const auto boot = Emu.PBDGetCheckpointBootIdentity();
-		if (!boot || boot->emulation_generation != generation || generation != static_cast<u64>(Emu.GetEmulationIdentifier()) ||
-			boot->sha256 != checkpoint_sha256 || !g_pbd_restored_timebase_valid)
-			return refuse("checkpoint_provenance_mismatch");
+		if (!generation || generation != static_cast<u64>(Emu.GetEmulationIdentifier()))
+			return refuse("emulation_changed");
 		if (Emu.GetExecutableHash() != pbd::t5dr::executable_hash)
 			return refuse("unsupported_executable");
 		const auto scene = read_word(pbd::t5dr::scene_address), selector = read_word(pbd::t5dr::subscene_address);
 		if (!scene || !selector)
 			return refuse("scene_unreadable");
 		u32 completed = 0;
+		bool called = false;
 		try
 		{
-			const runtime_context context{Emu.GetTitleID(), executable_sha256, generation, boot->emulation_generation,
-				ppu.id, pbd::t5dr::main_ppu_id, true, *scene, *selector};
+			const runtime_context context{Emu.GetTitleID(), executable_sha256, generation, ppu.id, pbd::t5dr::main_ppu_id, true,
+				*scene, *selector};
 			const auto plan = make_plan(*desired, context, read_word);
 			if (!plan.value)
 				return refuse(plan.error);
@@ -199,6 +182,7 @@ namespace pbd::sound_options
 			if (!restore.save_stack())
 				return refuse("owner_stack_unreadable");
 			call_scope call(executing);
+			called = true;
 			try
 			{
 				for (const auto& setter : plan.value->setters)
@@ -224,7 +208,7 @@ namespace pbd::sound_options
 			restore.restore();
 			const bool preserved = context_preserved(ppu, restore);
 			if (!preserved)
-				return refuse("owner_context_restore_failed", completed);
+				return refuse("owner_context_restore_failed", completed, false);
 			// Concurrent stop/debug/scheduler flags belong to their producers; never overwrite them with an earlier snapshot.
 			if (completed != plan.value->setters.size() || ppu.state.load() || ppu.prio.load().all != old_priority ||
 				ppu.debugger_mode.load() != old_debugger || generation != static_cast<u64>(Emu.GetEmulationIdentifier()))
@@ -235,7 +219,7 @@ namespace pbd::sound_options
 		}
 		catch (...)
 		{
-			return refuse("sound_application_failed", completed);
+			return refuse("sound_application_failed", completed, !called);
 		}
 	}
 } // namespace pbd::sound_options

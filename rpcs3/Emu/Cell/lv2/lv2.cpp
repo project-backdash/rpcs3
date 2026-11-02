@@ -1360,6 +1360,12 @@ std::string ppu_get_syscall_name(u64 code)
 	return fmt::format("syscall_%u", code);
 }
 
+// The name in the syscall table, without a copy; empty when the code has none.
+std::string_view ppu_syscall_name_view(u64 code) noexcept
+{
+	return code < g_ppu_syscall_table.size() ? g_ppu_syscall_table[code].second : std::string_view{};
+}
+
 DECLARE(lv2_obj::g_mutex);
 DECLARE(lv2_obj::g_ppu){};
 DECLARE(lv2_obj::g_pending){};

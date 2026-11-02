@@ -216,6 +216,60 @@ PBD_TEST(PbdReplayFileParserAudit, RecordedRanksComeFromTheGameStartAndOlderReco
 		check(!pbd::replay_start::pbd_read_capsule_start(std::string_view(replace(text, "\"rank\":22", std::string("\"rank\":") + bad)), 123).value);
 }
 
+// The PLAYER DATA numbers each bar showed come from the game start, for a saved replay and a watcher's capsule start alike.
+// Display only: a start without them, or with an invalid pair, reads as zeros and is never refused.
+PBD_TEST(PbdReplayFileParserAudit, RecordedPlayerDataComesFromTheGameStartAndIsDisplayOnly)
+{
+	using pbd::game_profile::record;
+	auto cap = pbd_open_game_capsule();
+	const auto older = pbd::replay_start::pbd_read_capsule_start(cap, 123);
+	check(older.value && older.value->records == std::array<record, 2>{}, "an older start invents PLAYER DATA numbers");
+	cap.fields.emplace_back("players", replay::json::array({replay::json::object({{"rank", replay::json::number(22)}, {"wins", replay::json::number(41)},
+																{"losses", replay::json::number(30)}}),
+										   replay::json::object({{"rank", replay::json::number(15)}})}));
+	const auto text = pbd::set_channel::detail::serialize(cap);
+	const auto recorded = pbd::replay_start::pbd_read_capsule_start(std::string_view(text), 123);
+	check(recorded.value && recorded.value->records[0] == record{41, 30} && recorded.value->records[1] == record{});
+	check(recorded.value->ranks == std::array<std::uint32_t, 2>{22, 15});
+	// A watcher's capsule start hands over the parsed payload.
+	const auto watched = pbd::replay_start::pbd_read_capsule_start(cap, 123);
+	check(watched.value && watched.value->records[0] == record{41, 30});
+	const auto most = pbd::replay_start::pbd_read_capsule_start(std::string_view(replace(text, "\"wins\":41", "\"wins\":99999")), 123);
+	check(most.value && most.value->records[0] == record{99999, 30});
+	for (const auto* bad : {"-1", "100000", "1.5", "null", "\"41\""})
+	{
+		const auto read = pbd::replay_start::pbd_read_capsule_start(std::string_view(replace(text, "\"wins\":41", std::string("\"wins\":") + bad)), 123);
+		check(read.value && read.value->records[0] == record{} && read.value->ranks == std::array<std::uint32_t, 2>{22, 15}, bad);
+	}
+	// Only one of the pair reads as none.
+	const auto half = pbd::replay_start::pbd_read_capsule_start(std::string_view(replace(text, ",\"losses\":30", "")), 123);
+	check(half.value && half.value->records[0] == record{});
+}
+
+// The recorder's players read back as written: the rank, and the PLAYER DATA numbers only for a side whose bar showed a record.
+PBD_TEST(PbdReplayFileParserAudit, RecordedPlayersRoundTripThroughTheGameStart)
+{
+	using pbd::game_profile::record;
+	using pbd::replay_start::capsule_player;
+	const auto left = capsule_player("p_left", "Left", 8, 1, 0, 22, record{41, 30});
+	const auto right = capsule_player("p_right", "Right", 3, 0, 1, 15, std::nullopt);
+	check(pbd::set_channel::detail::serialize(left) ==
+		  R"({"id":"p_left","name":"Left","fighter":8,"costume":1,"row":0,"rank":22,"wins":41,"losses":30})");
+	check(!right.find("wins") && !right.find("losses"));
+	auto cap = pbd_open_game_capsule();
+	cap.fields.emplace_back("players", replay::json::array({left, right}));
+	const auto text = pbd::set_channel::detail::serialize(cap);
+	const auto read = pbd::replay_start::pbd_read_capsule_start(std::string_view(text), 123);
+	check(read.value && read.value->ranks == std::array<std::uint32_t, 2>{22, 15});
+	check(read.value->records == std::array<record, 2>{record{41, 30}, record{}});
+	// The most the bar shows, and an explicit zero record, read back as written.
+	cap = pbd_open_game_capsule();
+	cap.fields.emplace_back("players", replay::json::array({capsule_player("p_left", "Left", 8, 1, 0, 0, record{99999, 99999}),
+										   capsule_player("p_right", "Right", 3, 0, 1, 0, record{})}));
+	const auto most = pbd::replay_start::pbd_read_capsule_start(cap, 123);
+	check(most.value && most.value->records == std::array<record, 2>{record{99999, 99999}, record{}});
+}
+
 PBD_TEST(PbdReplayFileParserAudit, RankedRoundNumbersFollowRecordedInputsAfterAJump)
 {
 	const std::array<std::uint32_t, 5> starts{140, 2947, 5561, 8143, 10905};

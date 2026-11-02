@@ -23,6 +23,7 @@
 #include <vector>
 #include "pbd_json_reader.h"
 #include "pbd_rematch_json.h"
+#include "../Cell/pbd_game_profile.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -72,8 +73,20 @@ namespace pbd::set_channel
 		left,
 		right
 	};
+	// The PLAYER DATA bar's games won and lost (pbd::game_profile), each 0..99999.
+	using game_record = pbd::game_profile::record;
+	// One entry of an in-game fighter's record table: a character's rows in the game's table and that character's record.
+	struct record_group
+	{
+		std::vector<std::uint32_t> rows;
+		game_record record;
+	};
+	inline constexpr std::size_t max_record_groups = 64;
+
 	// No character means the player chooses one in the game's own select (contract 2, in-game selection). The rank is the
-	// game's rank index the fight shows beside the name (a Ranked set's rank; 0, Beginner, when the manifest names none).
+	// game's rank index the fight shows beside the name (a Ranked set's rank; 0, Beginner, when the manifest names none). The
+	// records are the player's games in this mode from before this set, display only: one for a fixed fighter, a table by
+	// character rows for one who picks in the game's select. None means unknown, and the bar shows zeros.
 	struct fighter
 	{
 		std::string member_id;
@@ -82,6 +95,8 @@ namespace pbd::set_channel
 		std::uint32_t row = 0;
 		std::uint32_t rank = 0;
 		bool has_character = true;
+		std::optional<game_record> record;
+		std::optional<std::vector<record_group>> records;
 	};
 	struct score
 	{
@@ -113,6 +128,9 @@ namespace pbd::set_channel
 		bool allow_jinpachi = false;
 		std::uint32_t contract = 1;
 		selection_rules selection;
+		// Display-only optional fields that were present but invalid, by name ("left.record"): read as left out, never a
+		// refusal, since a refused manifest would end the set. The set's start logs them.
+		std::vector<std::string> ignored;
 	};
 	struct capabilities
 	{
@@ -127,6 +145,167 @@ namespace pbd::set_channel
 	inline std::string_view schema_of(const manifest& m)
 	{
 		return m.contract == 2 ? schema_in_game : schema;
+	}
+
+	// A "record": {"wins":<n>,"losses":<n>}, each 0..99999; anything else is none.
+	inline std::optional<game_record> read_record(const json_value* value)
+	{
+		game_record out;
+		if (!value || value->kind != json_kind::object || !detail::number32(value->find("wins"), 0, pbd::game_profile::record_max, out.wins) ||
+			!detail::number32(value->find("losses"), 0, pbd::game_profile::record_max, out.losses))
+			return {};
+		return out;
+	}
+
+	// A "records" table: [{"rows":[<row>,...],"wins":<n>,"losses":<n>},...], at most 64 entries, each row 0..84 and in one entry
+	// only. Anything else is none.
+	inline std::optional<std::vector<record_group>> read_record_table(const json_value* value)
+	{
+		if (!value || value->kind != json_kind::array || value->items.size() > max_record_groups)
+			return {};
+		std::vector<record_group> out;
+		std::array<bool, max_character_row + 1> taken{};
+		for (const auto& item : value->items)
+		{
+			const auto record = read_record(&item);
+			const auto* rows = record ? item.find("rows") : nullptr;
+			if (!rows || rows->kind != json_kind::array || rows->items.empty())
+				return {};
+			record_group group{{}, *record};
+			for (const auto& row : rows->items)
+			{
+				std::uint32_t at = 0;
+				if (!detail::number32(&row, 0, max_character_row, at) || taken[at])
+					return {};
+				taken[at] = true;
+				group.rows.push_back(at);
+			}
+			out.push_back(std::move(group));
+		}
+		return out;
+	}
+
+	// One side's record fields: "record" for a fixed fighter, "records" for one who picks in the game's select (the other key is
+	// not read). Left out or null is none; an invalid one is none as well and is named in `ignored` as `name` plus the key.
+	inline void read_records(const json_value& side_value, std::string_view name, bool in_game_selection, std::optional<game_record>& record,
+		std::optional<std::vector<record_group>>& table, std::vector<std::string>& ignored)
+	{
+		const std::string_view key = in_game_selection ? "records" : "record";
+		const auto* given = side_value.find(key);
+		if (!given || given->kind == json_kind::null)
+			return;
+		if (in_game_selection)
+			table = read_record_table(given);
+		else
+			record = read_record(given);
+		if (in_game_selection ? !table : !record)
+			ignored.push_back(std::string(name) + "." + std::string(key));
+	}
+
+	// An in-game set's decided games by the row each side played (left, right), counted once a command confirms each.
+	using set_tally = std::array<std::array<game_record, max_character_row + 1>, 2>;
+
+	// Each character row's base character as the game's own row table names it (the u16 at 0x4403c0 + row * 0x24, which the
+	// select and a game start's "fighter" read), so all costumes of a character share one record.
+	using row_characters = std::array<std::uint16_t, max_character_row + 1>;
+
+	// The entry of `table` that holds `row`, or none.
+	inline const record_group* record_group_of(const std::vector<record_group>& table, std::uint32_t row)
+	{
+		for (const auto& group : table)
+			if (std::find(group.rows.begin(), group.rows.end(), row) != group.rows.end())
+				return &group;
+		return nullptr;
+	}
+
+	// The rows whose games count as `row`'s character: those of its table entry, and with `characters` every row of the same
+	// base character. The entry is the one holding `row`, or else the first holding another costume of that character; none when
+	// the table names the character nowhere.
+	struct counted_rows
+	{
+		std::array<bool, max_character_row + 1> rows{};
+		const record_group* entry = nullptr;
+	};
+	inline counted_rows counted_rows_of(const std::vector<record_group>& table, std::uint32_t row, const row_characters* characters)
+	{
+		const auto same = [&](std::uint32_t other)
+		{
+			return other == row || (characters && (*characters)[other] == (*characters)[row]);
+		};
+		counted_rows out;
+		out.entry = record_group_of(table, row);
+		for (const auto& group : table)
+			if (!out.entry && std::any_of(group.rows.begin(), group.rows.end(), same))
+				out.entry = &group;
+		for (std::uint32_t other = 0; other <= max_character_row; ++other)
+			out.rows[other] = same(other);
+		if (out.entry)
+			for (const auto other : out.entry->rows)
+				out.rows[other] = true;
+		return out;
+	}
+
+	// What the PLAYER DATA bar shows for each side in the current game (left, right): the record from before this set plus this
+	// set's games. A fixed fighter adds the set's score: its own games as wins, the other side's as losses. An in-game fighter
+	// takes the table entry of the character whose row it plays (`rows`, as the game holds them; counted_rows_of) and adds
+	// this set's games with that character; a character the table does not name has no games before this set. None without a
+	// record, or for an in-game side whose row is not a character: the bar then shows zeros.
+	inline std::array<std::optional<game_record>, 2> shown_records(const manifest& set, const set_tally& tally, const std::array<std::uint32_t, 2>& rows,
+		const row_characters* characters = nullptr)
+	{
+		using pbd::game_profile::shown;
+		std::array<std::optional<game_record>, 2> out;
+		const std::array<const fighter*, 2> players{&set.left, &set.right};
+		const std::array<std::uint32_t, 2> games{set.games.left, set.games.right};
+		for (std::size_t player = 0; player < 2; ++player)
+		{
+			game_record base, added;
+			if (!in_game(set))
+			{
+				if (!players[player]->record)
+					continue;
+				base = *players[player]->record;
+				added = {games[player], games[player ^ 1]};
+			}
+			else
+			{
+				if (!players[player]->records || rows[player] > max_character_row)
+					continue;
+				const auto counted = counted_rows_of(*players[player]->records, rows[player], characters);
+				if (counted.entry)
+					base = counted.entry->record;
+				for (std::uint32_t row = 0; row <= max_character_row; ++row)
+					if (counted.rows[row])
+					{
+						added.wins += tally[player][row].wins;
+						added.losses += tally[player][row].losses;
+					}
+			}
+			out[player] = game_record{shown(base.wins, added.wins), shown(base.losses, added.losses)};
+		}
+		return out;
+	}
+
+	// An in-game record table after its set: each row's games go to its character's entry (counted_rows_of), which takes the
+	// row when it did not name it yet, and a character the table names nowhere gets its own entry when the set has games with it.
+	// No row ends up in two entries.
+	inline void fold_games(std::vector<record_group>& table, const std::array<game_record, max_character_row + 1>& games,
+		const row_characters* characters = nullptr)
+	{
+		using pbd::game_profile::shown;
+		for (std::uint32_t row = 0; row <= max_character_row; ++row)
+		{
+			if (!games[row].wins && !games[row].losses)
+				continue;
+			const auto* entry = counted_rows_of(table, row, characters).entry;
+			const std::size_t at = entry ? static_cast<std::size_t>(entry - table.data()) : table.size();
+			if (!entry)
+				table.push_back({{row}, {}});
+			else if (std::find(entry->rows.begin(), entry->rows.end(), row) == entry->rows.end())
+				table[at].rows.push_back(row);
+			auto& group = table[at];
+			group.record = {shown(group.record.wins, games[row].wins), shown(group.record.losses, games[row].losses)};
+		}
 	}
 
 	// An in-game fighter carries no character: "character" is null or left out, and anything else is refused, because a fixed
@@ -233,6 +412,8 @@ namespace pbd::set_channel
 		if (!parse_fighter(value.find("left"), out.left, supported, chosen_in_game) || !parse_fighter(value.find("right"), out.right, supported, chosen_in_game) ||
 			out.left.member_id == out.right.member_id || out.local_member_id != (out.local_side == side::left ? out.left.member_id : out.right.member_id))
 			return {{}, "bad_fighters"};
+		read_records(*value.find("left"), "left", chosen_in_game, out.left.record, out.left.records, out.ignored);
+		read_records(*value.find("right"), "right", chosen_in_game, out.right.record, out.right.records, out.ignored);
 		const auto* stage = value.find("stage");
 		const auto* rules = value.find("rules");
 		const auto* spectator = value.find("spectator");

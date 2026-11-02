@@ -132,7 +132,14 @@ namespace pbd::session_runtime
 			// The receiver thread's view of the other PC: its last valid datagram (session_clock microseconds) and whether it ended or
 			// fell silent (peer_notice). Only the failstop receiver keeps them.
 			std::atomic<u64> last_valid_us{0};
+			// The receiver's silence-watch view of last_valid_us: zero while it watches no key (between keys, retired key,
+			// finished set). The stall watch reads this one; a quit's leave rule keeps the last datagram time above.
+			std::atomic<u64> watched_valid_us{0};
 			std::atomic<bool> stop_noticed{false};
+			// session-peer-stop.json is written once, by the receiver's watches or the record writer's stall watch, so the
+			// host reads a single stop reason; the first record stands (write_peer_stop).
+			std::mutex stop_mutex;
+			std::atomic<bool> stop_recorded{false};
 			std::atomic<bool> terminal_idle{false};
 			pbd::peer_recovery::state recovery;
 			std::unique_ptr<pbd::set_channel::command_reader> path_reader;
@@ -289,6 +296,10 @@ namespace pbd::session_runtime
 			// matching words at the same barrier, since the launchers can deliver their stakes at different times.
 			u32 rank_stakes = 0, prev_rank_stakes = 0;
 			std::array<u32, 8> peer_rank_stakes{};
+			// The same for the PLAYER DATA numbers each PC would write at the barrier (pbd::game_profile::records_word): the bars
+			// change only to numbers both announced.
+			u32 records = 0, prev_records = 0;
+			std::array<u32, 8> peer_records{};
 		} segments;
 		// The exit gate and the settle hold of the pre-battle screens.
 		struct gate_state

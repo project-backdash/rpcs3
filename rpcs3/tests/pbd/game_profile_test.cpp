@@ -48,3 +48,49 @@ PBD_TEST(PbdGameProfile, ThePlatesShowForHumanPlayersOutsideTheArcadeModes)
 	// Without the players word, or for a side that is not human, no plate.
 	check(!plate_drawn(4, 0, 3, 0) && !plate_drawn(4, 1, 1, 1) && plate_drawn(4, 1, 1, 0) && !plate_drawn(4, 1, 3, 2));
 }
+
+PBD_TEST(PbdGameProfile, ThePlayerDataNumbersAreWhereTheBarReadsThem)
+{
+	using namespace pbd::game_profile;
+	check(wins_address(0) == 0x106c9a3c && losses_address(0) == 0x106c9a40);
+	check(wins_address(1) == 0x106c9c30 && losses_address(1) == 0x106c9c34);
+	// Their 8 bytes end where the streak at +0x110 begins, before the rank, the bar's hide field at +0x11e and the name, so
+	// writing them never touches any of those.
+	check(losses_offset == wins_offset + 4 && losses_offset + 4 <= 0x110 && 0x110 < rank_offset && rank_offset < 0x11e && 0x11e < name_offset);
+}
+
+PBD_TEST(PbdGameProfile, ThePlayerDataNumbersAreBigEndianWordsCappedLikeTheGames)
+{
+	using namespace pbd::game_profile;
+	check(encode_record({41, 30}) == std::array<u8, 8>{0, 0, 0, 41, 0, 0, 0, 30});
+	check(encode_record({0x12345, 0x100}) == std::array<u8, 8>{0, 1, 0x23, 0x45, 0, 0, 1, 0});
+	check(encode_record({}) == std::array<u8, 8>{});
+	// 99999 (0x1869f) is the most the game shows; anything larger is written as 99999.
+	check(encode_record({99999, 100000}) == std::array<u8, 8>{0, 1, 0x86, 0x9f, 0, 1, 0x86, 0x9f});
+	check(shown(41, 1) == 42 && shown(0, 0) == 0 && shown(99998, 1) == 99999);
+	check(shown(99999, 1) == 99999 && shown(5, 0xffffffffu) == 99999 && shown(0xffffffffu, 0) == 99999);
+}
+
+// Each PC announces the numbers it would write as one word; the bars change only to numbers both announced. The word tells a
+// side without a record from one with zeros, so both replays record the same, and caps like the bars.
+PBD_TEST(PbdGameProfile, BothPCsCompareThePlayerDataNumbersByOneWord)
+{
+	using namespace pbd::game_profile;
+	using shown_pair = std::array<std::optional<record>, 2>;
+	check(records_word(shown_pair{}) == 0x4211a50du && records_word(shown_pair{record{41, 30}, std::nullopt}) == 0x2ea4f67bu);
+	check(records_word(shown_pair{record{41, 30}, std::nullopt}) == records_word(shown_pair{record{41, 30}, std::nullopt}));
+	check(records_word(shown_pair{}) != records_word(shown_pair{record{}, record{}}));
+	check(records_word(shown_pair{record{41, 30}, std::nullopt}) != records_word(shown_pair{std::nullopt, record{41, 30}}));
+	check(records_word(shown_pair{record{41, 30}, record{}}) != records_word(shown_pair{record{41, 31}, record{}}));
+	check(records_word(shown_pair{record{99999, 0}, std::nullopt}) == records_word(shown_pair{record{100000, 0}, std::nullopt}));
+}
+
+// The numbers stay as they are from the end of the VS screen (10) through the loads (11, 12) and the fight (16, 17).
+PBD_TEST(PbdGameProfile, ThePlayerDataNumbersHoldFromTheVsScreenToTheFightsEnd)
+{
+	using namespace pbd::game_profile;
+	for (const u32 scene : {11u, 12u, 16u, 17u})
+		check(!records_may_change(scene));
+	for (const u32 scene : {0u, 1u, 2u, 3u, 8u, 9u, 10u, 13u, 14u, 15u})
+		check(records_may_change(scene));
+}

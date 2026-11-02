@@ -142,7 +142,8 @@ namespace rsx
 
 			void toast()
 			{
-				if (!snap.toast.empty())
+				// A clip toast takes this slot while it shows (pbd_clip_overlay).
+				if (!snap.toast.empty() && !::pbd::clips::hud::toast_showing(::pbd::clips::hud::steady_ms()))
 				{
 					// Toast: a short top-centre band; title, then an optional detail after a thin separator.
 					std::string title = snap.toast, detail;

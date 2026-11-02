@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 #include "../PBD/pbd_character_rule.h"
+#include "pbd_select_timer.h"
 
 // Selection is a local digital input producer. It never writes a cursor, character row, stage or unlock bit;
 // the stock handlers resolve those values and the battle readback must match before physical input is released.
@@ -253,9 +254,10 @@ namespace pbd::hidden_selection
 				return reject("selection_state_unsupported");
 			const bool press = (source - origin) % 24 < 6;
 			// A repick chooser's own word reaches its select in every state but the stage state, which is steered to the frozen
-			// stage below like any other. The in-game countdown shapes that word after this (pbd::select_timer).
+			// stage below like any other. Its L1 never does: it would load this PC's own save into that side
+			// (pbd::select_timer::save_load). The in-game countdown shapes that word after this (pbd::select_timer).
 			if (wanted.repick == wanted.local_role && now.state != 13)
-				return physical;
+				return static_cast<u16>(physical & ~pbd::select_timer::save_load);
 			if (now.state == 3)
 				return choose_character(now, press, live);
 			if (now.state == 9)

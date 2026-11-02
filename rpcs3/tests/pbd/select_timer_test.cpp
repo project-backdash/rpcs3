@@ -8,7 +8,7 @@ using pbd::test::check;
 namespace
 {
 	using namespace pbd::select_timer;
-	constexpr u16 left = 0x8000, right = 0x2000, up = 0x1000, square = 0x0080, circle = 0x0020;
+	constexpr u16 left = 0x8000, right = 0x2000, up = 0x1000, square = 0x0080, circle = 0x0020, l1 = 0x0004;
 	view in_select(u32 left_state, u32 right_state)
 	{
 		view out;
@@ -365,6 +365,25 @@ PBD_TEST(PbdSelectTimer, Checks)
 		check((p.sample(2000, in_scene(17), {left, cross}) == std::array<u16, 2>{left, cross}) && !p.pcs[1].selecting());
 		// Another selection clears the repick.
 		check(p.pcs[1].begin(30, 15, 1) && !p.pcs[1].chooser());
+	}
+	{
+		// L1 in a character state would load each PC's own save into that side: no select word carries it, in an open select or a
+		// repick's. The battle still takes it.
+		two_pcs p;
+		check(p.sample(0, in_select(3, 3))[0] == 0);
+		check((p.sample(1, in_select(3, 3), {l1, square | l1}) == std::array<u16, 2>{0, square}));
+		check((p.sample(2, in_select(2, 3), {left | l1, l1}) == std::array<u16, 2>{left, 0}));
+		check((p.sample(3, in_scene(17), {l1, l1}) == std::array<u16, 2>{l1, l1}));
+		two_pcs r;
+		check(r.pcs[0].begin_repick(30, 0, 1) && r.pcs[1].begin_repick(30, 1, 1));
+		check(r.sample(0, in_select(3, 3))[1] == 0);
+		check(r.sample(1, in_select(3, 3), {0, up | l1})[1] == up);
+		// A select scene whose records could not be verified passes the word through, without L1.
+		two_pcs u;
+		view unread = in_select(3, 3);
+		unread.verified = false;
+		unread.vs_mode = false;
+		check((u.sample(0, unread, {left | l1, l1}) == std::array<u16, 2>{left, 0}));
 	}
 	{
 		// A costume press still in flight: the chooser's next press stays out, as it could land in a later state of the select;

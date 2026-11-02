@@ -72,7 +72,7 @@ namespace rsx
 #include "PPUThread.h"
 #include "Crypto/sha256.h"
 #include "Emu/PBD/pbd_emulator_identity.h"
-extern std::string ppu_get_syscall_name(u64 code);
+extern std::string_view ppu_syscall_name_view(u64 code) noexcept;
 extern std::atomic<u32> g_pbd_flip_double_done, g_pbd_flip_redelivered, g_pbd_flip_dropped, g_pbd_flip_resets; // sys_rsx.cpp
 extern std::atomic<u64> g_pbd_audio_callbacks, g_pbd_audio_underruns, g_pbd_audio_underrun_bytes;              // cellAudio.cpp
 extern std::atomic<u64> g_pbd_audio_time_advances, g_pbd_audio_silence_blocks;

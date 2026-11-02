@@ -6,6 +6,7 @@
 #include "Emu/PBD/pbd_stall_metrics.h"
 #include "Emu/PBD/pbd_session_trace.h"
 #include "Emu/PBD/pbd_session_health.h"
+#include "Emu/PBD/pbd_freeze_probe.h"
 #include "Emu/PBD/pbd_json_reader.h"
 #include <sstream>
 #include <future>
@@ -85,6 +86,146 @@ PBD_TEST(PbdSessionHealth, LoadingAndIntentionalPausesStayDistinct)
 	check(health.observe(1, 120'000'000'000, true, true, false) == "paused", "an intentional menu hold became a peer wait");
 	check(health.observe(1, 120'010'000'000, true, false, false) == "running", "resuming a menu hold falsely reported an outage");
 	check(health.observe(1, 121'000'000'000, true, false, false) == "waiting", "a frozen game after a pause renewed forever");
+}
+
+PBD_TEST(PbdSessionHealth, QuietTimeRestartsWhenAPauseOrMenuHoldEnds)
+{
+	pbd::session_health::quiet_clock quiet;
+	check(!quiet.held() && quiet.since(5) == 5, "a fresh clock invented a hold");
+	quiet.observe(true, false, false, 10);
+	check(quiet.held() && quiet.since(5) == 5, "a paused emulator was not held");
+	quiet.observe(false, false, false, 20);
+	check(!quiet.held() && quiet.since(5) == 20 && quiet.since(30) == 30, "resuming did not restart the quiet time");
+	quiet.observe(false, false, true, 40);
+	check(quiet.held(), "an open in-game menu was not held");
+	quiet.observe(false, false, false, 50);
+	check(!quiet.held() && quiet.since(30) == 50, "closing the menu did not restart the quiet time");
+	quiet.observe(false, false, false, 60);
+	check(quiet.since(30) == 50, "a free-running game restarted the quiet time");
+}
+
+PBD_TEST(PbdSessionHealth, ParkedStandbyStaysHeldUntilActivation)
+{
+	constexpr std::uint64_t second = 1'000'000'000;
+	pbd::session_health::quiet_clock quiet;
+	pbd::session_health::activity health;
+	// Parked at boundary 0: the standby pauses the emulator and waits for its set.
+	quiet.observe(true, true, false, 9 * second);
+	check(health.observe(0, 9 * second, false, quiet.held(), false) == "paused", "a parked standby was not held");
+	// Something resumed the emulator while the standby still waits, parked, inside its boundary call.
+	quiet.observe(false, true, false, 127 * second);
+	quiet.observe(false, true, false, 274 * second);
+	check(health.observe(0, 274 * second, false, quiet.held(), false) == "paused", "resuming the emulator released a parked standby");
+	// Activation unparks it; the quiet time starts there, not at the earlier resume.
+	const auto activated = 274 * second + 1'000'000;
+	quiet.observe(false, false, false, activated);
+	check(!quiet.held() && quiet.since(0) == activated, "activation did not restart the quiet time");
+	check(health.observe(0, activated, false, quiet.held(), false) == "loading", "an activated standby did not report loading");
+}
+
+PBD_TEST(PbdSessionHealth, AStalledGameWithALivePeerStopsAfterTenSeconds)
+{
+	using namespace pbd::session_health;
+	constexpr std::uint64_t second = 1'000'000'000, second_us = 1'000'000;
+	// The last boundary call ended at 100 s; the other PC's input keeps arriving every 16 ms.
+	const auto at = [&](std::uint64_t now_ns, std::uint64_t peer_heard_us)
+	{
+		return stall_facts{.idle = true, .battle = true, .held = false, .boundary_seen = true, .quiet_from_ns = 100 * second, .now_ns = now_ns, .peer_heard_us = peer_heard_us, .now_us = now_ns / 1000};
+	};
+	check(!stalled(at(110 * second - 1, 110 * second_us - 16'000)), "a game stopped for less than 10 s was ended");
+	check(stalled(at(110 * second, 110 * second_us - 16'000)), "a game stopped for 10 s with a live peer kept waiting");
+	check(stalled(at(110 * second, 110 * second_us + 5)), "input stamped just after the clock read did not count as heard");
+	auto facts = at(137 * second, 137 * second_us - 16'000);
+	facts.idle = false;
+	check(!stalled(facts), "a wait inside the boundary call was ended by the stall watch instead of its own timeouts");
+	facts = at(137 * second, 137 * second_us - 16'000);
+	facts.battle = false;
+	check(!stalled(facts), "a load outside battle was ended as a stall");
+	facts = at(137 * second, 137 * second_us - 16'000);
+	facts.boundary_seen = false;
+	check(!stalled(facts), "a game that never reached its first boundary was ended as a stall");
+}
+
+PBD_TEST(PbdSessionHealth, ASilentPeerIsLeftToTheSilenceWatch)
+{
+	using namespace pbd::session_health;
+	constexpr std::uint64_t second = 1'000'000'000, second_us = 1'000'000;
+	const auto at = [&](std::uint64_t peer_heard_us)
+	{
+		return stall_facts{.idle = true, .battle = true, .held = false, .boundary_seen = true, .quiet_from_ns = 100 * second, .now_ns = 120 * second, .peer_heard_us = peer_heard_us, .now_us = 120 * second_us};
+	};
+	check(stalled(at(120 * second_us - peer_silence_us + 1)), "a peer heard inside the silence limit was treated as silent");
+	check(!stalled(at(120 * second_us - peer_silence_us)), "a peer silent for the receiver's limit was blamed on this game");
+	check(!stalled(at(105 * second_us)), "a long-silent peer was blamed on this game");
+	check(!stalled(at(0)), "a session without a fail-stop receiver, or a peer never heard, was ended as a stall");
+}
+
+PBD_TEST(PbdSessionHealth, APausedOrParkedHoldIsNeverAStall)
+{
+	using namespace pbd::session_health;
+	constexpr std::uint64_t second = 1'000'000'000;
+	const auto facts = [&](const quiet_clock& quiet, std::uint64_t last_callback_ns, std::uint64_t now_ns)
+	{
+		return stall_facts{.idle = true, .battle = true, .held = quiet.held(), .boundary_seen = true, .quiet_from_ns = quiet.since(last_callback_ns), .now_ns = now_ns, .peer_heard_us = now_ns / 1000 - 16'000, .now_us = now_ns / 1000};
+	};
+	for (const bool parked : {false, true})
+	{
+		quiet_clock quiet;
+		// Last boundary at 100 s; paused (or parked) at 101 s for a minute while the peer keeps sending.
+		quiet.observe(!parked, parked, false, 101 * second);
+		check(!stalled(facts(quiet, 100 * second, 161 * second)), "a held game was ended as a stall");
+		// The hold ends at 161 s: the quiet time restarts there.
+		quiet.observe(false, false, false, 161 * second);
+		check(!stalled(facts(quiet, 100 * second, 170 * second)), "the quiet time before the hold counted toward a stall");
+		check(stalled(facts(quiet, 100 * second, 171 * second)), "a game stopped 10 s after its hold ended kept waiting");
+	}
+}
+
+PBD_TEST(PbdFreezeProbe, GeometryLinesShowTheBusyCountListsAndWorkerSemaphore)
+{
+	using namespace pbd::freeze_probe;
+	const auto put = [](auto& image, std::size_t offset, std::uint32_t value)
+	{
+		for (unsigned byte = 0; byte < 4; ++byte)
+			image[offset + byte] = static_cast<std::uint8_t>(value >> (24 - byte * 8));
+	};
+	// The stalled spin: busy 1 with nothing pending and the worker asleep on its semaphore.
+	manager_image manager{};
+	put(manager, 8, 1);
+	put(manager, 0x14, 11423);
+	put(manager, 0x50, semaphore_id);
+	list_image pending{}, requests{};
+	put(pending, 0xc, 512);
+	put(pending, 0x24, 0);
+	put(requests, 0xc, 1);
+	put(requests, 0x24, 511);
+	const auto text = geometry_text(manager, pending, requests, semaphore_facts{.value = -1, .waiters = 1, .first_waiter = 0x01000005});
+	const auto has = [&](std::string_view part)
+	{
+		return text.find(part) != std::string::npos;
+	};
+	check(has("geometry manager 10742880: busy 1 stopping 0 completed_frame 11423 semaphore 96007500 bytes 000000000000000000000001"),
+		"the manager line lost its busy count, frame or semaphore id");
+	check(has("geometry pending 107468e0: free_links 512 pending 0 bytes "), "the pending list counts are missing");
+	check(has("geometry requests 10748114: free_links 1 free_requests 511 bytes "), "the request list counts are missing");
+	check(has("geometry semaphore 96007500: value -1 waiters 1 first_waiter 01000005\n"), "the worker's semaphore facts are missing");
+	const auto manager_line = text.substr(0, text.find('\n'));
+	check(manager_line.size() - manager_line.rfind(' ') - 1 == manager_bytes * 2, "the manager image is not 0xa0 bytes");
+	put(manager, 8, 0xffffffffu);
+	check(geometry_text(manager, pending, requests, {}).find("busy -1 ") != std::string::npos, "a negative busy count read as unsigned");
+	const auto missing = geometry_text({}, {}, {}, {});
+	check(missing ==
+			  "geometry manager 10742880: unreadable\ngeometry pending 107468e0: unreadable\ngeometry requests 10748114: unreadable\n"
+			  "geometry semaphore 96007500: unreadable\n",
+		"an unreadable source was invented or dropped");
+	// The draw manager's drain waits for its 64-bit event at +0xa8 to be zero.
+	draw_image draw{};
+	put(draw, draw_event_offset, 0);
+	put(draw, draw_event_offset + 4, 1);
+	const auto draw_line = draw_text(draw);
+	check(draw_line.starts_with("draw manager 1074be80: event 1 bytes "), "the draw manager line lost its event");
+	check(draw_line.size() - draw_line.rfind(' ') - 2 == draw_bytes * 2, "the draw manager image is not 0xb0 bytes");
+	check(draw_text({}) == "draw manager 1074be80: unreadable\n", "an unreadable draw manager was invented");
 }
 
 PBD_TEST(PbdSessionHealth, FixedExtentAndChecksumSurviveSequenceGrowth)

@@ -175,7 +175,7 @@ set_source_files_properties("PBD/pbd_practice_sets.cpp" PROPERTIES
     COMPILE_FLAGS "$<IF:$<CXX_COMPILER_ID:MSVC>,/EHsc,-fexceptions>"
     SKIP_PRECOMPILE_HEADERS ON
 )
-set_source_files_properties("PBD/pbd_anchor_dump.cpp" "PBD/pbd_replay_restore.cpp" PROPERTIES
+set_source_files_properties("PBD/pbd_anchor_dump.cpp" "PBD/pbd_host.cpp" "PBD/pbd_replay_restore.cpp" PROPERTIES
     COMPILE_FLAGS "$<IF:$<CXX_COMPILER_ID:MSVC>,/EHsc,-fexceptions>"
     SKIP_PRECOMPILE_HEADERS ON
 )
@@ -340,6 +340,7 @@ target_sources(rpcs3_emu PRIVATE
     Cell/pbd_live_replay.cpp
     Cell/pbd_direct_match.cpp
     PBD/pbd_anchor_dump.cpp
+    PBD/pbd_host.cpp
     PBD/pbd_memory_dump_native.cpp
     PBD/pbd_replay_bone_segments.cpp
     PBD/pbd_replay_boot.cpp
@@ -723,6 +724,7 @@ target_sources(rpcs3_emu PRIVATE
     RSX/Overlays/pbd/pbd_status_overlay.cpp
     RSX/Overlays/pbd/pbd_menu_overlay.cpp
     RSX/Overlays/pbd/pbd_practice_overlay.cpp
+    RSX/Overlays/pbd/pbd_clip_overlay.cpp
     RSX/Overlays/pbd/pbd_spectator_overlay.cpp
     RSX/Overlays/pbd/pbd_lobby_set_overlay.cpp
     RSX/Overlays/pbd/pbd_settings_overlay.cpp

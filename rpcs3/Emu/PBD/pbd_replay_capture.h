@@ -7,8 +7,8 @@
 #include <vector>
 
 // NPUB30009 replay rewind memory: static game pages plus the write-fault journal. The capture keeps the
-// sound, input sampling, SPURS, live locks and RSX handshake spans live; their native owners cannot rewind.
-// IO admission covers game-owned allocations inside the aperture; device/context pages remain denied.
+// sound, input sampling, SPURS, live locks, RSX handshake and geometry request manager spans live; their native
+// owners cannot rewind. IO admission covers game-owned allocations inside the aperture; device/context pages remain denied.
 namespace pbd::replay_capture
 {
 	using pbd_span = std::pair<std::uint32_t, std::uint32_t>;
@@ -149,7 +149,14 @@ namespace pbd::replay_capture
 		{0x445f8000, 0x44602000},
 		{0xd001d000, 0xd0021000},
 	}};
-	inline constexpr std::array<pbd_span, 34> pbd_exclusions{{
+	// The last span is the whole geometry request manager object (manager+0 .. +0x70c8): header, lwmutex, busy count,
+	// request pool, pending list and request free list with their link nodes. Its worker PPU 0x01000005 and semaphore
+	// 0x96007500 never rewind. The worker raises the busy count at +8 on each wake and lowers it when the pending list is
+	// empty, and the present spins until it is zero, so a copy taken while the worker runs would leave that spin waiting
+	// forever. Only the draw module's init, present request, worker and job methods read the object. The completed frame
+	// at +0x10 therefore stays at the live, newer frame through a correction, so a replayed present's draw job finds its
+	// wait at 0x35bb94 already met; geometry requests carry no data, so nothing drawn or simulated changes.
+	inline constexpr std::array<pbd_span, 35> pbd_exclusions{{
 		{0x4000d010, 0x4000d1f0},
 		{0x40011a00, 0x40011cc0},
 		{0x4001ad50, 0x4001b390},
@@ -184,6 +191,7 @@ namespace pbd::replay_capture
 		{0x10752000, 0x10752034},
 		{0x4000a7d4, 0x4000b000},
 		{0x106d4608, 0x106d4610},
+		{0x10742880, 0x10749948},
 	}};
 	inline constexpr std::array<pbd_span, 4> pbd_undo_deny{{
 		{0x006e0000, 0x006f0000},

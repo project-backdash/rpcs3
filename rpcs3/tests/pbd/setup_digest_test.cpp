@@ -88,10 +88,15 @@ PBD_TEST(PbdSetupDigest, Checks)
 	enter_vs(other);
 	check(same(other.now(), base));
 
-	// Each player's Sound Options land in the save image after the checkpoint loads; they never refuse a session.
+	// Each player's Sound Options land in the save image at the first owner boundary; they never refuse a session.
 	other.image[0x0a] = 0;
 	other.image[0x0b] = 3;
 	other.image[0x0e] = 1;
+	check(same(other.now(), base));
+	// Nor when VS starts after that boundary and both records copy them, in any game of a set.
+	other.image[0x0c] = 14;
+	other.image[0x0d] = 0;
+	enter_vs(other);
 	check(same(other.now(), base));
 
 	// A PC that had finished matches: its save holds other last characters, play counts and flags.
@@ -105,8 +110,8 @@ PBD_TEST(PbdSetupDigest, Checks)
 	}
 
 	// The records are compared on their own: the save copy, the record head and the record tail.
-	for (const u32 offset : {0u, 0xfu, record_save + 0x33, record_save + 0x2d13, record_save + 0x2d30, record_save + 0x1d8bf,
-			 record_save + 0x1d970, record_save + 0x0a, record_stride - 1})
+	for (const u32 offset : {0u, 0xfu, record_save + 0x09, record_save + 0x0f, record_save + 0x33, record_save + 0x2d13,
+			 record_save + 0x2d30, record_save + 0x1d8bf, record_save + 0x1d970, record_stride - 1})
 	{
 		memory changed = fresh;
 		changed.table[offset] ^= 0x80;
@@ -129,6 +134,10 @@ PBD_TEST(PbdSetupDigest, Checks)
 	{
 		memory changed = fresh;
 		changed.image[offset] ^= 0x80;
+		check(same(changed.now(), base));
+		changed = fresh;
+		changed.table[record_save + offset] ^= 0x80;
+		changed.table[record_stride + record_save + offset] ^= 0x80;
 		check(same(changed.now(), base));
 	}
 

@@ -9,6 +9,9 @@
 #include "Emu/system_config.h"
 #include "Emu/RSX/Overlays/overlay_message.h"
 #include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/pbd_clip_buffer.h"
+#include "Emu/PBD/pbd_clip_hud.h"
+#include "Emu/PBD/pbd_held_presentation.h"
 #include <QFile>
 #include <QCoreApplication>
 #include <QFileInfo>
@@ -31,8 +34,14 @@ namespace pbd::clips
 	{
 		QString environment(const char* key)
 		{
+#ifdef _WIN32
+			// The file paths are read wide: the narrow environment is in the system code page, not UTF-8.
+			const auto* value = pbd::env::find_wide(key);
+			return value ? QString::fromWCharArray(value) : QString{};
+#else
 			const auto* value = pbd::env::find(key);
 			return value ? QString::fromUtf8(value) : QString{};
+#endif
 		}
 		struct updates
 		{
@@ -83,6 +92,9 @@ namespace pbd::clips
 		QString saved;
 		std::string shown_error;
 		options config;
+		// The keys the pause menus name and what the clip toast reports (pbd_clip_hud.h).
+		QString save_key = hud::default_save_key, record_key = hud::default_record_key;
+		hud::events toast_events;
 		unsigned sequence = 0;
 #ifdef _WIN32
 		static constexpr int save_id = 0x5042, record_id = 0x5043;
@@ -94,8 +106,7 @@ namespace pbd::clips
 		bool window_shown() const
 		{
 			const auto handle = static_cast<GSFrameBase*>(window)->handle();
-			const auto root = GetAncestor(handle, GA_ROOT);
-			return handle && IsWindowVisible(handle) && !IsIconic(root) && GetForegroundWindow() == root;
+			return window_visible() && GetForegroundWindow() == GetAncestor(handle, GA_ROOT);
 		}
 		void release_keys()
 		{
@@ -117,8 +128,8 @@ namespace pbd::clips
 			const auto handle = reinterpret_cast<HWND>(window->winId());
 			registered_window = handle;
 			keys_ready = true;
-			for (const auto& [id, key] : {std::pair{save_id, settings.value("saveKey").toString("Ctrl+F10")},
-					 std::pair{record_id, settings.value("recordKey").toString("Ctrl+Shift+F11")}})
+			for (const auto& [id, key] : {std::pair{save_id, settings.value("saveKey").toString(hud::default_save_key)},
+					 std::pair{record_id, settings.value("recordKey").toString(hud::default_record_key)}})
 			{
 				const auto [modifiers, code] = shortcut(key);
 				if (!code || !RegisterHotKey(handle, id, modifiers, code))
@@ -129,6 +140,16 @@ namespace pbd::clips
 			keys_warned = !keys_ready;
 		}
 #endif
+		// Shown to the player, whatever has the focus: controllers work while another program is in front.
+		bool window_visible() const
+		{
+#ifdef _WIN32
+			const auto handle = static_cast<GSFrameBase*>(window)->handle();
+			return handle && IsWindowVisible(handle) && !IsIconic(GetAncestor(handle, GA_ROOT));
+#else
+			return window->isVisible() && !(window->windowStates() & Qt::WindowMinimized);
+#endif
+		}
 		QJsonObject settings()
 		{
 			QFile file(configuration);
@@ -151,6 +172,12 @@ namespace pbd::clips
 			// What the player is doing, as the launcher last wrote it ("Ranked Jin Kazama vs Kazuya Mishima"): it follows the date
 			// in the next file's name (file_label keeps it to safe characters).
 			config.label = settings.value("label").toString().toUtf8().toStdString();
+			save_key = settings.value("saveKey").toString(hud::default_save_key);
+			record_key = settings.value("recordKey").toString(hud::default_record_key);
+			{
+				std::lock_guard lock(update->mutex);
+				publish_hud(update->latest.available);
+			}
 #ifdef _WIN32
 			// The launcher rewrites this file whenever the label changes. Registering the same keys again would drop them for a
 			// moment, so they are registered again only when they change (or are not registered yet).
@@ -159,6 +186,10 @@ namespace pbd::clips
 #endif
 			if (capture)
 				capture->configure(config);
+		}
+		void publish_hud(bool available) const
+		{
+			hud::publish({available, config.background, config.seconds, save_key.toStdString(), record_key.toStdString()});
 		}
 		explicit impl(gs_frame* parent) : window(parent)
 		{
@@ -203,6 +234,7 @@ namespace pbd::clips
 			if (red_dot)
 				*red_dot = 0;
 			capture->stop();
+			hud::publish({});
 		}
 		bool ready()
 		{
@@ -240,11 +272,16 @@ namespace pbd::clips
 					hotkeys(key_settings);
 #endif
 			}
+			// Controller presses are taken either way, so a held or hidden game drops them instead of acting on them later.
 			const auto command = take_requests();
-			if (command & 1)
-				save();
-			if (command & 2)
-				record();
+			const auto& presentation = pbd::held_presentation::output();
+			if (pad_press_counts(presentation.can_show(), presentation.parked(), window_visible()))
+			{
+				if (command & 1)
+					save();
+				if (command & 2)
+					record();
+			}
 			status state;
 			{
 				std::lock_guard lock(update->mutex);
@@ -253,13 +290,18 @@ namespace pbd::clips
 				state = update->latest;
 				update->changed = false;
 			}
+			publish_hud(state.available);
+			const auto now_ms = hud::steady_ms();
+			const auto happened = toast_events.update(state.recording, state.saved, now_ms);
+			hud::show(happened.kind, now_ms, happened.length_ms);
 			if (state.recording && !red_dot)
 			{
 				red_dot = std::make_shared<atomic_t<u32>>(1);
 				auto icon = std::make_shared<rsx::overlays::rounded_rect>();
 				icon->set_size(10, 10);
 				icon->back_color = {1.f, 0.f, 0.f, 1.f};
-				rsx::overlays::queue_message(std::string("Recording"), umax, red_dot, rsx::overlays::message_pin_location::top_right, icon);
+				// Screen only: the indicator reports on the recording, so the recorded frames leave it out.
+				rsx::overlays::queue_message(std::string("Recording"), umax, red_dot, rsx::overlays::message_pin_location::top_right, icon, false, false, true);
 			}
 			if (!state.recording && red_dot)
 			{
@@ -269,11 +311,8 @@ namespace pbd::clips
 			if (state.available && !state.error.empty() && shown_error != state.error)
 				rsx::overlays::queue_message(state.error, 2'000'000, {}, rsx::overlays::message_pin_location::top_right);
 			shown_error = state.error;
-			if (!state.saved.empty() && saved != QString::fromUtf8(state.saved.c_str()))
-			{
+			if (!state.saved.empty())
 				saved = QString::fromUtf8(state.saved.c_str());
-				rsx::overlays::queue_message(std::string("Clip saved"), 2'000'000, {}, rsx::overlays::message_pin_location::top_right);
-			}
 			QJsonObject value{{"schema", "pbd-clips-1"}, {"pid", static_cast<qint64>(QCoreApplication::applicationPid())},
 				{"available", state.available}, {"background", state.background}, {"recording", state.recording},
 				{"encoder", QString::fromUtf8(state.encoder.c_str())}, {"saved", saved}, {"error", QString::fromUtf8(state.error.c_str())},

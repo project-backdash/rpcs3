@@ -3,6 +3,7 @@
 #include "overlay_pbd_draw.h"
 #include "overlay_pbd_button_layout.h"
 #include "overlay_pbd_versus.h"
+#include "pbd_clip_drawing.h"
 #include "Emu/Cell/pbd_controller_takeover.h"
 #include "Emu/PBD/pbd_player_seats.h"
 #include "Emu/System.h"
@@ -65,10 +66,13 @@ namespace rsx
 			visible = view.open;
 			if (!view.open)
 				return {};
-			if (view.revision != m_revision || m_compiled_scale != m_output_scale)
+			// The clip keys follow the device in use and the player's Clips settings.
+			const auto legend = ::pbd::clips::hud::legend_for(::pbd::clips::hud::load(), ::pbd::controllers::read_display());
+			if (view.revision != m_revision || m_compiled_scale != m_output_scale || legend != m_legend)
 			{
 				m_revision = view.revision;
 				m_compiled_scale = m_output_scale;
+				m_legend = legend;
 				refresh(view);
 			}
 			return m_compiled;
@@ -113,21 +117,26 @@ namespace rsx
 			// (pbd_versus.h), rebuilt only when one of them changes.
 			const u64 now = ::pbd::controller_takeover::steady_ms();
 			const auto notice = ::pbd::controller_takeover::current();
-			const bool toast = !notice.text.empty() && now < notice.until_ms;
+			// A clip toast takes the same slot while it shows (pbd_clip_overlay), and the Versus banner's with it.
+			const bool clip_toast = ::pbd::clips::hud::toast_showing(::pbd::clips::hud::steady_ms());
+			const bool toast = !notice.text.empty() && now < notice.until_ms && !clip_toast;
 			const auto seats = ::pbd::controllers::seats::read();
 			const bool asking = seats.question.open;
-			const auto [versus, versus_revision] = ::pbd::versus::read();
+			auto [versus, versus_revision] = ::pbd::versus::read();
+			if (clip_toast)
+				versus.banner.clear();
 			const bool playing_versus = versus.select || versus.menu || versus.setup[0].open || versus.setup[1].open || !versus.banner.empty();
 			if (!toast && !asking && !playing_versus)
 				return {};
 			const u64 key = toast ? notice.serial : 0;
 			const u64 seats_revision = asking ? seats.revision : 0;
 			const u64 shown_versus = playing_versus ? versus_revision : 0;
-			if (key != m_notice_key || seats_revision != m_seats_revision || shown_versus != m_versus_revision)
+			if (key != m_notice_key || seats_revision != m_seats_revision || shown_versus != m_versus_revision || clip_toast != m_clip_toast)
 			{
 				m_notice_key = key;
 				m_seats_revision = seats_revision;
 				m_versus_revision = shown_versus;
+				m_clip_toast = clip_toast;
 				static const fonts type = preload_fonts();
 				// The Versus layer is flushed first, so the player question draws whole over its panels.
 				layer under, out;
@@ -154,6 +163,7 @@ namespace rsx
 			const fonts& type;
 			atlas_ref atlas;
 			f32 output_scale;
+			const ::pbd::clips::hud::legend& clips;
 			layer out, dropdown_layer, chrome;
 
 			void background()
@@ -315,12 +325,13 @@ namespace rsx
 			{
 				// Help line for the focused row, with a faint underline as wide as the text.
 				help_line(chrome, atlas, type, view.help, view.controls);
-				// Control bar: only the buttons the menu acts on in its current state.
+				// Control bar: only the buttons the menu acts on in its current state, then the clip keys at its right end.
 				std::vector<prompt_item> prompts;
 				prompts.reserve(view.prompts.size());
 				for (const auto& item : view.prompts)
 					prompts.push_back({item.keys, item.label});
-				prompt_bar(chrome, atlas, type.caption, 56.f, 693.f, 1224.f, prompts);
+				const f32 clips_left = clip_legend(&chrome, atlas, type, clips, 1224.f, 693.f);
+				prompt_bar(chrome, atlas, type.caption, 56.f, 693.f, clips.shown ? clips_left - 26.f : 1224.f, prompts);
 			}
 
 			void draw(compiled_resource& compiled)
@@ -346,7 +357,7 @@ namespace rsx
 		{
 			assets::get();
 			static const fonts type = preload_fonts();
-			settings_drawing draw{view, type, atlas_ref::pick(m_output_scale, pbd_xbox_glyphs()), m_output_scale};
+			settings_drawing draw{view, type, atlas_ref::pick(m_output_scale, pbd_xbox_glyphs()), m_output_scale, m_legend};
 			draw.draw(m_compiled);
 		}
 	} // namespace overlays

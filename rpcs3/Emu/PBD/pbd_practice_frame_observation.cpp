@@ -282,9 +282,9 @@ void pbd::rollback_session::practice_steps::judge_punishment(const practice_paus
 	if (judged)
 	{
 		const bool shown = data.practice.view.frame_data;
-		practice_dummy_log(fmt::format("{\"type\":\"practice_punish\",\"boundary\":%u,\"counter\":%u,\"punished\":%s,\"advantage\":%d,\"startup\":%s,\"frames\":%u,\"blocked\":%s,\"shown\":%s}\n",
-			index, pause.counter, json_bool(judged->outcome == pbd::practice::punish::verdict::punished), judged->advantage, number(judged->startup),
-			judged->frames, json_bool(judged->blocked), json_bool(shown)));
+		practice_dummy_log(fmt::format("{\"type\":\"practice_punish\",\"boundary\":%u,\"counter\":%u,\"punished\":%s,\"advantage\":%d,\"crouching\":%s,\"startup\":%s,\"frames\":%u,\"blocked\":%s,\"shown\":%s}\n",
+			index, pause.counter, json_bool(judged->outcome == pbd::practice::punish::verdict::punished), judged->advantage, json_bool(judged->crouching),
+			number(judged->startup), judged->frames, json_bool(judged->blocked), json_bool(shown)));
 		if (shown)
 		{
 			data.practice.view.toast = pbd::practice::punish::text(*judged);

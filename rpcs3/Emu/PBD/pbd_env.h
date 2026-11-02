@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
+#include <string>
 #include <string_view>
 
 // The emulator's switches: environment variables named PBD_*.
@@ -77,7 +78,8 @@ namespace pbd::env
 	}
 #endif
 
-	// Paths retain the platform's complete native representation.
+	// Paths retain the platform's complete native representation. On Windows the narrow lookup gives a player's folder in
+	// the system code page: its letters become '?' or bytes that are not UTF-8, so path switches are read here instead.
 	inline std::filesystem::path path(std::string_view name)
 	{
 #ifdef _WIN32
@@ -86,5 +88,21 @@ namespace pbd::env
 		const auto value = find(name);
 #endif
 		return value ? std::filesystem::path(value) : std::filesystem::path{};
+	}
+
+	// A path switch naming a place on this PC: absolute and not a network share (\\server or //server); empty otherwise.
+	inline std::filesystem::path local_path(std::string_view name)
+	{
+		auto value = path(name);
+		const auto& text = value.native();
+		const bool share = text.size() >= 2 && text[0] == text[1] && (text[0] == '\\' || text[0] == '/');
+		return value.is_absolute() && !share ? value : std::filesystem::path{};
+	}
+
+	// A path switch as UTF-8 text, for code that keeps paths as UTF-8 strings; empty when it is not set.
+	inline std::string utf8_path(std::string_view name)
+	{
+		const auto text = path(name).u8string();
+		return std::string(text.begin(), text.end());
 	}
 } // namespace pbd::env

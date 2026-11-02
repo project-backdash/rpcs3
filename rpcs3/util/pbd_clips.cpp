@@ -1,12 +1,14 @@
 #include "stdafx.h"
 #include "pbd_clips.h"
 #include "Emu/PBD/pbd_clip_buffer.h"
+#include "Utilities/StrUtil.h"
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <ctime>
 #include <filesystem>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -35,19 +37,18 @@ extern "C"
 #include <codecapi.h>
 #include <shlobj.h>
 #include <wrl/client.h>
+#include "pbd_clip_frames.h"
 #pragma comment(lib, "mfplat.lib")
 #pragma comment(lib, "mfuuid.lib")
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "oleaut32.lib")
 #pragma comment(lib, "shell32.lib")
-#ifdef _MSC_VER
-#pragma comment(lib, "delayimp.lib")
-#pragma comment(linker, "/DELAYLOAD:MFPlat.DLL")
-#endif
 #endif
 
 #include "Emu/PBD/pbd_clip_destination.h"
+
+LOG_CHANNEL(clips_log, "PBD Clips");
 
 namespace pbd::clips
 {
@@ -98,6 +99,10 @@ namespace pbd::clips
 		Microsoft::WRL::ComPtr<ID3D11Device> device;
 		Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
 		Microsoft::WRL::ComPtr<IMFDXGIDeviceManager> manager;
+		input_frames surfaces;
+		// Kept for encoders that leave output samples to the caller.
+		Microsoft::WRL::ComPtr<IMFSample> output_sample;
+		DWORD output_size = 0;
 		unsigned input_credit = 0;
 		std::optional<usz> keyframe_ms;
 		bool gpu_input = false;
@@ -106,6 +111,16 @@ namespace pbd::clips
 		void check(HRESULT result)
 		{
 			require(SUCCEEDED(result));
+		}
+		static std::string text(IMFAttributes* from, const GUID& key)
+		{
+			WCHAR* value = nullptr;
+			UINT32 length = 0;
+			if (FAILED(from->GetAllocatedString(key, &value, &length)))
+				return "unknown";
+			std::string result = wchar_to_utf8({value, length});
+			CoTaskMemFree(value);
+			return result;
 		}
 		void property(const GUID& key, unsigned value)
 		{
@@ -129,32 +144,64 @@ namespace pbd::clips
 			UINT token = 0;
 			check(MFCreateDXGIDeviceManager(&token, &manager));
 			check(manager->ResetDevice(device.Get(), token));
-			MFT_REGISTER_TYPE_INFO output{MFMediaType_Video, MFVideoFormat_H264};
 			IMFActivate** choices = nullptr;
-			UINT count = 0;
-			check(MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER,
-				nullptr, &output, &choices, &count));
+			UINT32 count = 0;
+			bool on_card = false;
+			check(h264_encoders(device.Get(), &choices, &count, on_card));
+			std::string name = "none", maker = "none";
 			for (UINT i = 0; i < count; ++i)
 			{
 				if (!encoder)
 				{
 					ptr<IMFTransform> candidate;
 					if (SUCCEEDED(choices[i]->ActivateObject(IID_PPV_ARGS(&candidate))))
+					{
 						encoder = candidate;
+						name = text(choices[i], MFT_FRIENDLY_NAME_Attribute);
+						maker = text(choices[i], MFT_ENUM_HARDWARE_VENDOR_ID_Attribute);
+					}
 				}
 				choices[i]->Release();
 			}
 			CoTaskMemFree(choices);
-			require(encoder);
 			ptr<IMFAttributes> attributes;
-			check(encoder->GetAttributes(&attributes));
-			UINT32 asynchronous = 0;
-			attributes->GetUINT32(MF_TRANSFORM_ASYNC, &asynchronous);
-			require(asynchronous != 0);
+			UINT32 asynchronous = 0, aware = 0;
+			if (encoder && SUCCEEDED(encoder->GetAttributes(&attributes)))
+			{
+				attributes->GetUINT32(MF_TRANSFORM_ASYNC, &asynchronous);
+				attributes->GetUINT32(MF_SA_D3D11_AWARE, &aware);
+			}
+			// A report needs both the card and the encoder to tell a driver problem from a mismatch.
+			std::string card = "unknown";
+			DXGI_ADAPTER_DESC adapter{};
+			ptr<IDXGIDevice> graphics;
+			ptr<IDXGIAdapter> display;
+			if (SUCCEEDED(device.As(&graphics)) && SUCCEEDED(graphics->GetAdapter(&display)) && SUCCEEDED(display->GetDesc(&adapter)))
+				card = wchar_to_utf8(adapter.Description);
+			clips_log.notice("Clip recorder: graphics card \"%s\" (vendor 0x%04x, device 0x%04x), H.264 encoder \"%s\" (%s, %s, %s, reads %s)",
+				card, adapter.VendorId, adapter.DeviceId, name, maker, on_card ? "on this card" : "card not matched",
+				asynchronous ? "asynchronous" : "synchronous", aware ? "textures" : "memory");
+			require(encoder && attributes && asynchronous != 0);
 			check(attributes->SetUINT32(MF_TRANSFORM_ASYNC_UNLOCK, TRUE));
-			UINT32 aware = 0;
-			attributes->GetUINT32(MF_SA_D3D11_AWARE, &aware);
-			gpu_input = aware != 0;
+			ptr<IMFMediaType> raw;
+			check(MFCreateMediaType(&raw));
+			check(raw->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
+			check(raw->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12));
+			check(raw->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
+			check(MFSetAttributeSize(raw.Get(), MF_MT_FRAME_SIZE, width, height));
+			check(MFSetAttributeRatio(raw.Get(), MF_MT_FRAME_RATE, 60, 1));
+			check(MFSetAttributeRatio(raw.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
+			// Textures go only to an encoder on the device's card, and only from the frame pool; otherwise frames go in system
+			// memory, as they do for an encoder that reads no textures.
+			gpu_input = aware != 0 && on_card;
+			if (gpu_input)
+			{
+				if (const HRESULT pool = surfaces.open(manager.Get(), device.Get(), raw.Get()); FAILED(pool))
+				{
+					clips_log.warning("Clip recorder: no texture frames for the encoder (0x%08x); frames go through system memory", static_cast<u32>(pool));
+					gpu_input = false;
+				}
+			}
 			if (gpu_input)
 				check(encoder->ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, reinterpret_cast<ULONG_PTR>(manager.Get())));
 			check(encoder.As(&events));
@@ -181,14 +228,6 @@ namespace pbd::clips
 			check(MFSetAttributeRatio(encoded.Get(), MF_MT_FRAME_RATE, 60, 1));
 			check(MFSetAttributeRatio(encoded.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
 			check(encoder->SetOutputType(0, encoded.Get(), 0));
-			ptr<IMFMediaType> raw;
-			check(MFCreateMediaType(&raw));
-			check(raw->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
-			check(raw->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12));
-			check(raw->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
-			check(MFSetAttributeSize(raw.Get(), MF_MT_FRAME_SIZE, width, height));
-			check(MFSetAttributeRatio(raw.Get(), MF_MT_FRAME_RATE, 60, 1));
-			check(MFSetAttributeRatio(raw.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
 			check(encoder->SetInputType(0, raw.Get(), 0));
 			property(CODECAPI_AVEncMPVGOPSize, 60);
 			property(CODECAPI_AVEncMPVDefaultBPictureCount, 0);
@@ -196,84 +235,102 @@ namespace pbd::clips
 			check(encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0));
 			state.encoder = "Media Foundation hardware H.264";
 		}
-		void submit_video(const utils::video_sink::encoder_frame& value)
+		// False leaves the frame to the caller for later: the encoder still holds every pooled frame, and a released one comes
+		// back to the pool a moment after the release.
+		bool submit_video(const utils::video_sink::encoder_frame& value)
 		{
 			if (!input_credit)
 			{
 				++dropped;
-				return;
+				return true;
+			}
+			scaler = sws_getCachedContext(scaler, value.width, value.height, static_cast<AVPixelFormat>(value.av_pixel_format),
+				width, height, AV_PIX_FMT_NV12, SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
+			require(scaler);
+			const u8* source[]{value.data.data(), nullptr, nullptr, nullptr};
+			const int stride[]{static_cast<int>(value.pitch), 0, 0, 0};
+			// Scales straight into the encoder's frame.
+			const auto scale = [&](u8* luma, u8* chroma, std::size_t pitch)
+			{
+				u8* target[]{luma, chroma, nullptr, nullptr};
+				const int pitches[]{static_cast<int>(pitch), static_cast<int>(pitch), 0, 0};
+				return sws_scale(scaler, source, stride, 0, value.height, target, pitches) == static_cast<int>(height);
+			};
+			ptr<IMFSample> sample;
+			if (gpu_input)
+			{
+				const HRESULT result = surfaces.next(sample, scale);
+				if (result == MF_E_SAMPLEALLOCATOR_EMPTY)
+					return false;
+				check(result);
+			}
+			else
+			{
+				constexpr DWORD size = width * height * 3 / 2;
+				ptr<IMFMediaBuffer> bytes;
+				check(MFCreateMemoryBuffer(size, &bytes));
+				BYTE* data = nullptr;
+				check(bytes->Lock(&data, nullptr, nullptr));
+				const bool scaled = scale(data, data + width * height, width);
+				bytes->Unlock();
+				require(scaled);
+				check(bytes->SetCurrentLength(size));
+				check(MFCreateSample(&sample));
+				check(sample->AddBuffer(bytes.Get()));
 			}
 			if (!keyframe_ms || value.timestamp_ms - *keyframe_ms >= 1000)
 			{
 				property(CODECAPI_AVEncVideoForceKeyFrame, 1);
 				keyframe_ms = value.timestamp_ms;
 			}
-			std::vector<u8> nv12(width * height * 3 / 2);
-			scaler = sws_getCachedContext(scaler, value.width, value.height, static_cast<AVPixelFormat>(value.av_pixel_format),
-				width, height, AV_PIX_FMT_NV12, SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
-			require(scaler);
-			const u8* source[]{value.data.data(), nullptr, nullptr, nullptr};
-			const int stride[]{static_cast<int>(value.pitch), 0, 0, 0};
-			u8* target[]{nv12.data(), nv12.data() + width * height, nullptr, nullptr};
-			const int pitches[]{width, width, 0, 0};
-			require(sws_scale(scaler, source, stride, 0, value.height, target, pitches) == height);
-			ptr<IMFMediaBuffer> bytes;
-			if (gpu_input)
-			{
-				D3D11_TEXTURE2D_DESC desc{};
-				desc.Width = width;
-				desc.Height = height;
-				desc.MipLevels = 1;
-				desc.ArraySize = 1;
-				desc.Format = DXGI_FORMAT_NV12;
-				desc.SampleDesc.Count = 1;
-				desc.Usage = D3D11_USAGE_DEFAULT;
-				desc.BindFlags = D3D11_BIND_RENDER_TARGET;
-				D3D11_SUBRESOURCE_DATA initial{nv12.data(), width, static_cast<UINT>(nv12.size())};
-				ptr<ID3D11Texture2D> texture;
-				check(device->CreateTexture2D(&desc, &initial, &texture));
-				check(MFCreateDXGISurfaceBuffer(__uuidof(ID3D11Texture2D), texture.Get(), 0, FALSE, &bytes));
-				ptr<IMF2DBuffer> surface;
-				check(bytes.As(&surface));
-				DWORD length = 0;
-				check(surface->GetContiguousLength(&length));
-				check(bytes->SetCurrentLength(length));
-			}
-			else
-			{
-				check(MFCreateMemoryBuffer(static_cast<DWORD>(nv12.size()), &bytes));
-				BYTE* data = nullptr;
-				check(bytes->Lock(&data, nullptr, nullptr));
-				std::copy(nv12.begin(), nv12.end(), data);
-				bytes->Unlock();
-				check(bytes->SetCurrentLength(static_cast<DWORD>(nv12.size())));
-			}
-			ptr<IMFSample> sample;
-			check(MFCreateSample(&sample));
-			check(sample->AddBuffer(bytes.Get()));
 			check(sample->SetSampleTime(static_cast<LONGLONG>(value.timestamp_ms) * 10'000));
 			check(sample->SetSampleDuration(10'000'000 / 60));
 			check(encoder->ProcessInput(0, sample.Get(), 0));
 			--input_credit;
+			return true;
 		}
 		void output_video()
 		{
 			MFT_OUTPUT_STREAM_INFO info{};
 			check(encoder->GetOutputStreamInfo(0, &info));
-			ptr<IMFSample> allocated;
-			if (!(info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES))
+			const bool own = !(info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES);
+			// No packet has this time, so a packet the encoder did not stamp is caught rather than taking the last one's.
+			constexpr LONGLONG unstamped = std::numeric_limits<LONGLONG>::min();
+			if (own)
 			{
+				// One sample with one buffer takes every packet, whose bytes are copied out before the next. What the last
+				// packet left on it, its keyframe mark and time above all, is cleared first.
+				const DWORD size = std::max<DWORD>(info.cbSize, 2 * 1024 * 1024);
+				DWORD buffers = 0;
+				if (!output_sample || output_size < size || FAILED(output_sample->GetBufferCount(&buffers)) || buffers != 1)
+				{
+					ptr<IMFMediaBuffer> data;
+					check(MFCreateMemoryBuffer(size, &data));
+					ptr<IMFSample> fresh;
+					check(MFCreateSample(&fresh));
+					check(fresh->AddBuffer(data.Get()));
+					output_sample = std::move(fresh);
+					output_size = size;
+				}
 				ptr<IMFMediaBuffer> data;
-				check(MFCreateMemoryBuffer(std::max<DWORD>(info.cbSize, 2 * 1024 * 1024), &data));
-				check(MFCreateSample(&allocated));
-				check(allocated->AddBuffer(data.Get()));
+				check(output_sample->GetBufferByIndex(0, &data));
+				check(data->SetCurrentLength(0));
+				check(output_sample->DeleteAllItems());
+				check(output_sample->SetSampleTime(unstamped));
+				check(output_sample->SetSampleDuration(10'000'000 / 60));
 			}
 			MFT_OUTPUT_DATA_BUFFER output{};
-			output.pSample = allocated.Get();
+			output.pSample = own ? output_sample.Get() : nullptr;
 			DWORD flags = 0;
 			const auto result = encoder->ProcessOutput(0, 1, &output, &flags);
-			if (output.pEvents)
-				output.pEvents->Release();
+			// Owned from here, so a failure below releases them.
+			ptr<IMFCollection> unused;
+			unused.Attach(output.pEvents);
+			ptr<IMFSample> sample;
+			if (own)
+				sample = output_sample;
+			else
+				sample.Attach(output.pSample);
 			if (result == MF_E_TRANSFORM_STREAM_CHANGE)
 			{
 				ptr<IMFMediaType> type;
@@ -283,12 +340,7 @@ namespace pbd::clips
 				return;
 			}
 			check(result);
-			require(output.pSample);
-			ptr<IMFSample> sample;
-			if (allocated)
-				sample = allocated;
-			else
-				sample.Attach(output.pSample);
+			require(sample);
 			if (h264.empty())
 			{
 				ptr<IMFMediaType> type;
@@ -303,6 +355,7 @@ namespace pbd::clips
 			LONGLONG time = 0, duration = 10'000'000 / 60;
 			UINT32 key = 0;
 			check(sample->GetSampleTime(&time));
+			require(time != unstamped);
 			sample->GetSampleDuration(&duration);
 			sample->GetUINT32(MFSampleExtension_CleanPoint, &key);
 			ptr<IMFMediaBuffer> data;
@@ -618,8 +671,8 @@ namespace pbd::clips
 					}
 					accepting = config.background || recording || awaiting_keyframe;
 					pump_video();
-					// The encoder asks for each input; a frame waits for that request rather than being dropped when a
-					// group of frames arrives faster than the requests.
+					// The encoder asks for each input; a frame waits for that request, or for a pooled frame to come back,
+					// rather than being dropped when a group of frames arrives faster.
 					if (!accepting)
 						waiting.clear();
 					while (waiting.size() > queued_frames)
@@ -627,9 +680,8 @@ namespace pbd::clips
 						waiting.pop_front();
 						++dropped;
 					}
-					while (!waiting.empty() && input_credit)
+					while (!waiting.empty() && input_credit && submit_video(waiting.front()))
 					{
-						submit_video(waiting.front());
 						waiting.pop_front();
 						pump_video();
 					}
@@ -666,6 +718,8 @@ namespace pbd::clips
 			}
 			events.Reset();
 			encoder.Reset();
+			surfaces.close();
+			output_sample.Reset();
 			manager.Reset();
 			context.Reset();
 			device.Reset();

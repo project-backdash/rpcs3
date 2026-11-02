@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "pbd_ordinary_metrics.h"
 #include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/pbd_host.h"
 #include "Emu/PBD/pbd_t5dr_memory.h"
 #include "Emu/RSX/pbd_frame_presentation.h"
 #include "Emu/RSX/RSXThread.h"
@@ -70,6 +71,11 @@ namespace pbd::stall_metrics
 			return out;
 		}
 	} // namespace
+	host_counter& host_counts() noexcept
+	{
+		static host_counter value(pbd::host::wine());
+		return value;
+	}
 	bool requested() noexcept
 	{
 		static generation_flag enabled;
@@ -87,7 +93,7 @@ namespace pbd::stall_metrics
 	}
 	void point(const char* site, std::uint32_t represented_boundary, std::uint64_t bytes, std::uint64_t detail) noexcept
 	{
-		if (!requested())
+		if (!requested() || host_counts().counted_point())
 			return;
 		record value;
 		value.site = site;
@@ -104,7 +110,7 @@ namespace pbd::stall_metrics
 	scope::scope(const char* site, std::uint64_t bytes, std::uint64_t detail, bool enabled, std::uint64_t minimum, sampling samples) noexcept
 		: minimum_ns(minimum), sample_cpu(samples == sampling::cpu)
 	{
-		if (!enabled || !requested())
+		if (!enabled || !requested() || host_counts().counted(samples))
 			return;
 		const auto cost_begin = now_ns();
 		value.site = site;
@@ -172,6 +178,8 @@ namespace pbd::stall_metrics
 #ifdef _WIN32
 			static std::uint64_t next_resources_ns = 0;
 			const auto at = now_ns();
+			// The process snapshot is several requests to Wine's server process; under Wine only the clock anchor is written.
+			const bool process_facts = !pbd::host::wine();
 			if (output && at >= next_resources_ns)
 			{
 				next_resources_ns = at + 5'000'000'000ull;
@@ -182,15 +190,15 @@ namespace pbd::stall_metrics
 				fmt::append(text, "%u,%u,0,0,clock_anchor,%u,0,0,0,0,0,0,0,0\n", utc_begin, utc_end, static_cast<u64>(utc_ns));
 				PROCESS_MEMORY_COUNTERS_EX memory{};
 				memory.cb = sizeof(memory);
-				if (K32GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory), sizeof(memory)))
+				if (process_facts && K32GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory), sizeof(memory)))
 				{
 					fmt::append(text, "%u,%u,0,0,process_memory,%u,%u,0,0,0,0,0,0,0\n", at, at, memory.PrivateUsage, memory.WorkingSetSize);
 					fmt::append(text, "%u,%u,0,0,process_page_faults,%u,%u,0,0,0,0,0,0,0\n", at, at, memory.PageFaultCount, memory.PeakWorkingSetSize);
 				}
 				DWORD handles = 0;
-				if (GetProcessHandleCount(GetCurrentProcess(), &handles))
+				if (process_facts && GetProcessHandleCount(GetCurrentProcess(), &handles))
 					fmt::append(text, "%u,%u,0,0,process_handles,%u,0,0,0,0,0,0,0,0\n", at, at, handles);
-				const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+				const HANDLE snapshot = process_facts ? CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) : INVALID_HANDLE_VALUE;
 				if (snapshot != INVALID_HANDLE_VALUE)
 				{
 					THREADENTRY32 thread{};

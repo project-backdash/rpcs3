@@ -60,6 +60,13 @@ namespace lobby_test_state
 		}
 		return m;
 	}
+	// The manifest with a test's own changes.
+	inline manifest edited(manifest m, const std::function<void(manifest&)>& edit)
+	{
+		if (edit)
+			edit(m);
+		return m;
+	}
 	struct sample_document
 	{
 		std::filesystem::path parent = std::filesystem::canonical(std::filesystem::temp_directory_path());
@@ -67,14 +74,14 @@ namespace lobby_test_state
 		channel events;
 		pbd::lobby_set::driver driver;
 		explicit sample_document(unsigned id, std::uint32_t first_to = 1, bool chosen = false, bool ban_jinpachi = false,
-			std::function<std::shared_ptr<const std::string>()> start_record = {})
+			std::function<std::shared_ptr<const std::string>()> start_record = {}, const std::function<void(manifest&)>& edit = {})
 			: directory(parent / ("pbd-lobby-driver-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
 									 "-" + std::to_string(id))),
-			  events(directory, identity(first_to, chosen, !ban_jinpachi)), driver(events, [](const std::vector<std::uint8_t>&)
-																				{
-																					return std::string(64, 'a');
-																				},
-																				std::move(start_record), std::string(64, 'e'))
+			  events(directory, edited(identity(first_to, chosen, !ban_jinpachi), edit)), driver(events, [](const std::vector<std::uint8_t>&)
+																							  {
+																								  return std::string(64, 'a');
+																							  },
+																							  std::move(start_record), std::string(64, 'e'))
 		{
 			check(std::filesystem::create_directory(directory));
 		}
@@ -131,7 +138,7 @@ namespace lobby_test_state
 					return pbd::lobby_set::sync_facts{boundary, 0, 0x8000007b + boundary, 17, 7, 0, {11, 22, 33}, true};
 				});
 		}
-		// Rounds trade to 2-2, then a double K.O. (both markers -1) gives both fighters their third round: the game is drawn at 3-3.
+		// Rounds trade to 2-2, then a double K.O. gives both fighters their third round in one update: the game is drawn at 3-3.
 		// Boundaries 0..17; the match end is 17. Two input packets preserve every boundary before its result.
 		void drawn_game()
 		{
@@ -147,15 +154,7 @@ namespace lobby_test_state
 			}
 			check(record(boundary++, phase::round_intro));
 			check(record(boundary++, phase::fight));
-			observation draw;
-			draw.boundary = boundary++;
-			draw.native_phase = phase::round_result;
-			draw.phase_verified = true;
-			draw.result_verified = true;
-			draw.draw_verified = true;
-			draw.score_left = 3;
-			draw.score_right = 3;
-			check(driver.record(draw, applied(17, 12, 32)));
+			check(record(boundary++, phase::round_result, 3, 3));
 			check(boundary == 17 && record(17, phase::match_end, 3, 3, winner::draw));
 			check(publish(17));
 			check(driver.complete());

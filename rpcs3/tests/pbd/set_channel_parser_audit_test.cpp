@@ -62,3 +62,19 @@ PBD_TEST(PbdSetParserAudit, NegativeFractionalAndUnsafeCommandSerialsAreRefused)
 		check(!channel::parse_command(bad, expected, 1, 1).value);
 	}
 }
+
+PBD_TEST(PbdSetParserAudit, InvalidGameRecordsReadAsLeftOutAndNeverRefuseTheCommand)
+{
+	const auto expected = session();
+	const std::string side = "{\"win\":\"none\",\"winRank\":0,\"loss\":\"none\",\"lossRank\":0";
+	for (const auto value : {"-1", "1.5", "100000", "9007199254740992", "\"1\"", "true", "[]", "{}"})
+	{
+		const auto wire = command("\"type\":\"rank_stakes\",\"left\":" + side + ",\"record\":{\"wins\":" + value + ",\"losses\":0}},\"right\":" + side + "}");
+		const auto parsed = channel::parse_command(wire, expected, 1, 1);
+		check(parsed.value && !parsed.value->records[0] && parsed.value->ignored == std::vector<std::string>{"rank_stakes.left.record"}, value);
+	}
+	// A duplicate key still refuses the whole command, as in any other command.
+	check(!channel::parse_command(command("\"type\":\"rank_stakes\",\"left\":" + side + ",\"record\":{\"wins\":1,\"wins\":2,\"losses\":0}},\"right\":" + side + "}"),
+		expected, 1, 1)
+			.value);
+}

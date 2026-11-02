@@ -22,6 +22,10 @@ namespace pbd::select_timer
 	inline constexpr u16 directions = 0xf000; // Up 0x1000, Right 0x2000, Down 0x4000, Left 0x8000
 	// The character state's costume buttons: Square, Triangle, Cross, Circle and the fifth costume's Start.
 	inline constexpr u16 costume_buttons = 0x0080 | 0x0010 | 0x0040 | 0x0020 | 0x0800;
+	// L1 in a VS character state starts an asynchronous load of the PC's own save into that side's slot: the 0xb1218 handler
+	// tests it in the side's word at 0xb19dc and calls 0x1fc694, which requests 0x1fc24c(3, side). Each PC would load its own
+	// save, so no select word carries it.
+	inline constexpr u16 save_load = 0x0004;
 	// Six samples held, eighteen released give each confirmation a fresh edge.
 	inline constexpr u32 press_samples = 6, cadence_samples = 24;
 	// Cover the lockstep input delay (up to six boundaries, plus a missing entry sample) before admitting directions or
@@ -313,7 +317,13 @@ namespace pbd::select_timer
 		// The caller freezes each source once; newer sources advance origins and held-button tracking.
 		u16 sample(u32 source, const view& now, u16 word)
 		{
-			if (!selecting() || !now.verified)
+			if (!selecting())
+				return word;
+			// The scene is read before the records, so a view whose records could not be verified still drops it. Before any other
+			// filtering, so a withheld or previous word never holds it either.
+			if (now.scene == scene_select)
+				word = static_cast<u16>(word & ~save_load);
+			if (!now.verified)
 				return word;
 			// Stop filtering at battle entry, but ignore the previous game's battle while a continuation is armed.
 			if (battle_scene(now.scene))

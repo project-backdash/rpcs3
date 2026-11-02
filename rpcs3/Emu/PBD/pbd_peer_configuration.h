@@ -350,8 +350,7 @@ struct pbd::rollback_session::peer_configuration
 		}
 		const auto peer_path = (s.checkpoint.capture_directory / "peer-transport.jsonl").u8string();
 		require(s.peer.file.open(std::string(peer_path.begin(), peer_path.end())), "cannot_create_peer_transport_exclusively");
-		const auto correction_path = (s.checkpoint.capture_directory / "tick-correction.jsonl").u8string();
-		require(s.correction.file.open(std::string(correction_path.begin(), correction_path.end()), fs::write_new + fs::isfile), "cannot_create_tick_correction_exclusively");
+		require(s.correction.open_journal(s.checkpoint.capture_directory), "cannot_create_tick_correction_exclusively");
 		const auto header = fmt::format("{\"type\":\"header\",\"schema\":1,\"role\":%u,\"delay\":%u,\"local_port\":%u,\"remote_port\":%u,\"window\":[%u,%u],\"ring\":%u,\"address\":\"%s\",\"live\":%s,"
 										"\"input_delay\":%u,\"learn_endpoint\":%s,\"use_arrived\":%s,\"wait_ms\":%u,\"message_version\":%u,"
 										"\"sim_delay_us\":0,\"sim_jitter_us\":0,\"sim_loss_pct\":0,\"input_delay_auto\":%s,\"balance\":%s,\"sync\":%s,\"rx_thread\":%s,\"entry_sample\":%s,\"wait_due\":%s,\"phase_delay\":%s,\"bootstrap_sample\":%s,\"fight_start\":%u,\"fight_mode\":%u}\n",

@@ -480,6 +480,9 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 	{
 		swapchain_unavailable = true;
 	}
+	// PBD: logged here, on the thread that made the first swapchain and read the window's size for it.
+	m_pbd_monitor = pbd_window_monitor();
+	pbd_log_window(swapchain_unavailable ? "first, not made" : "first");
 
 	// create command buffer...
 	m_command_buffer_pool.create((*m_device), m_device->get_graphics_queue_family());
@@ -582,7 +585,9 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 		rsx_log.warning("Current driver may crash due to memory limitations (%uk)", m_texbuffer_view_size / 1024);
 	}
 
-	m_max_async_frames = m_swapchain->get_swap_image_count();
+	// PBD: a swapchain that could not be made yet has no images; one frame context still serves the draws until flip()
+	// makes the swapchain.
+	m_max_async_frames = std::max(m_swapchain->get_swap_image_count(), 1u);
 	m_frame_context_storage.resize(m_max_async_frames);
 	m_current_frame = &m_frame_context_storage[0];
 
@@ -612,7 +617,9 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 	else
 		m_vertex_cache = std::make_unique<vk::weak_vertex_cache>();
 
-	m_shaders_cache = std::make_unique<vk::shader_cache>(*m_prog_buffer, "vulkan", "v1.95");
+	// PBD: a cached pipeline holds its render pass, depth format included, and is built from it as it stands. A GPU without
+	// D24S8 renders depth as D32S8, so it keeps its own folder and never builds a pass recorded on a GPU that has D24S8.
+	m_shaders_cache = std::make_unique<vk::shader_cache>(*m_prog_buffer, m_device->get_formats_support().d24_unorm_s8 ? "vulkan" : "vulkan-d32s8", "v1.95");
 
 	for (u32 i = 0; i < m_swapchain->get_swap_image_count(); ++i)
 	{
@@ -809,6 +816,9 @@ VKGSRender::~VKGSRender()
 	//Wait for device to finish up with resources
 	vkDeviceWaitIdle(*m_device);
 	m_clip_readbacks.clear();
+	// Readback buffers free their memory through the device's allocator, which the swapchain destroys below with the device.
+	m_pbd_screen_slots.clear();
+	m_pbd_bp_slots.clear();
 
 	// Globals. TODO: Refactor lifetime management
 	if (auto async_scheduler = g_fxo->try_get<vk::AsyncTaskScheduler>())

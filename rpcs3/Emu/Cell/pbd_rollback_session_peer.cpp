@@ -148,11 +148,11 @@ void pbd::rollback_session::boundary_call::peer_send(u32 boundary)
 	m.sync = {data.peer.session, now_us, data.peer.link.last_recv_send_us, echo_held_us, boundary, data.peer.role == 0 ? data.peer.delay_announce : 0u,
 		static_cast<s32>(std::clamp(data.peer.sync.adv_ewma, -1000.0, 1000.0) * 1000.0), data.peer.sync.adv_valid ? 1u : 0u};
 	// The session segment this peer has entered (0 = none / not a session) and the one before it, each with its first
-	// (local, unaligned) index, scene, counter and rank plan: a peer can pass a one-boundary segment before the other has seen its
-	// announcement.
+	// (local, unaligned) index, scene, counter, rank stakes and PLAYER DATA numbers: a peer can pass a one-boundary segment before
+	// the other has seen its announcement.
 	m.segment = {data.session.segments.number, data.session.segments.index, data.session.segments.scene, data.session.segments.prev_index,
 		data.session.segments.prev_scene, data.session.segments.counter, data.session.segments.prev_counter, data.session.segments.rank_stakes,
-		data.session.segments.prev_rank_stakes};
+		data.session.segments.prev_rank_stakes, data.session.segments.records, data.session.segments.prev_records};
 	// The exit gate (session_state::gate_state::enabled): the gated segment, its first ready index + 1, and the index below which this
 	// peer's readiness tests are all recorded.
 	m.gate = {data.session.gate.seg, data.session.gate.ready, data.session.gate.through};

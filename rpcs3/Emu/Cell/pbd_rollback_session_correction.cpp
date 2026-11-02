@@ -79,16 +79,6 @@ void pbd::rollback_session::tick_dispatch::close_replayed_interval()
 		{
 			// Boundary T after the corrected window: report replay per tick, then record live again.
 			data.correction.clock.replaying = false;
-			std::string replayed, sizes;
-			for (u32 i = 0; i < data.correction.depth; i++)
-			{
-				replayed += fmt::format("%s%u", i ? "," : "", data.correction.clock.replay_counts[i]);
-				sizes += fmt::format("%s%u", i ? "," : "", data.correction.clock.journal_sizes[i]);
-			}
-			std::string hook_by_pc;
-			for (const auto& e : data.correction.window.hook_by_pc)
-				if (e[0])
-					fmt::append(hook_by_pc, "%s[%u,%u,%u]", hook_by_pc.empty() ? "" : ",", e[0], e[1], e[2]);
 			// With live_stats the correction_wall_ns below is this one value (off: the expression is evaluated there).
 			const std::chrono::nanoseconds::rep pbd_live_wall_ns = data.live_stats ? std::chrono::duration_cast<std::chrono::nanoseconds>(session_clock::now() - data.correction.begin).count() : 0;
 			if (data.live_stats)
@@ -96,23 +86,38 @@ void pbd::rollback_session::tick_dispatch::close_replayed_interval()
 			// The RSX published this window's marker hit (lag in frames at the restore, replay progress, time).
 			const bool pbd_marker_hit = data.correction.render.marker_published &&
 			                            pbd::replay_pacing::marker_hit_slot[data.correction.render.marker_slot % 8].load(std::memory_order_acquire) == data.correction.render.marker_slot + 1;
-			const auto text = fmt::format(
-				"{\"type\":\"correction_clock\",\"first_index\":%u,\"journal\":[%s],\"replayed\":[%s],\"mismatches\":%u,\"clock_error\":%s}\n"
+			// The rows are appended piece by piece into the reused row text, so the lists cost no temporary strings.
+			auto& text = data.correction.row_text;
+			text.clear();
+			fmt::append(text, "{\"type\":\"correction_clock\",\"first_index\":%u,\"journal\":[", data.correction.at - data.correction.depth);
+			for (u32 i = 0; i < data.correction.depth; i++)
+				fmt::append(text, "%s%u", i ? "," : "", data.correction.clock.journal_sizes[i]);
+			text += "],\"replayed\":[";
+			for (u32 i = 0; i < data.correction.depth; i++)
+				fmt::append(text, "%s%u", i ? "," : "", data.correction.clock.replay_counts[i]);
+			fmt::append(text,
+				"],\"mismatches\":%u,\"clock_error\":%s}\n"
 				"{\"type\":\"correction_end\",\"boundary\":%u,\"clock_mismatches\":%u,\"clock_error\":%s,\"correction_wall_ns\":%u,"
 				"\"replay_vblank\":%s,\"virtual_vblanks_granted\":%u,\"virtual_vblanks_posted\":%u,\"virtual_vblanks_pending\":%u,\"virtual_vblanks_notified\":%u,"
-				"\"replay_skip_draws\":%s,\"frames_skipped_total\":%u,\"withhold_exact\":%s,\"withhold_flagged_total\":%u,\"withhold_estimated\":%u,\"window_hook_ns\":%u,\"window_hook_by_pc\":[%s],\"flip_absorbed\":%u,\"flip_redelivered\":%u,\"flip_dropped\":%u,\"flip_resets\":%u,"
-				"\"audio_underruns_begin\":%u,\"audio_underruns\":%u,\"audio_advances_begin\":%u,\"audio_advances\":%u,\"audio_silence_begin\":%u,\"audio_silence\":%u,"
-				"\"cid\":%u,\"marker\":%d,\"marker_hit\":%s,\"marker_lag_frames\":%u,\"marker_hit_replayed\":%u,\"marker_hit_after_us\":%d,"
-				"\"rsx_ended_end\":%u,\"rsx_skipped_end\":%u,\"rsx_parked_end\":%u,\"handshake_waits\":%u,\"handshake_passed\":%u,\"withheld_at_risk_total\":%u,"
-				"\"safe_point_stale_total\":%u,\"expired_withheld_total\":%u,"
-				"\"peer_dropped_foreign\":%u,\"peer_endpoint_changes\":%u}\n",
-				data.correction.at - data.correction.depth, sizes, replayed, data.correction.clock.mismatches, json_bool(data.correction.clock.error),
+				"\"replay_skip_draws\":%s,\"frames_skipped_total\":%u,\"withhold_exact\":%s,\"withhold_flagged_total\":%u,\"withhold_estimated\":%u,\"window_hook_ns\":%u,\"window_hook_by_pc\":[",
+				data.correction.clock.mismatches, json_bool(data.correction.clock.error),
 				index, data.correction.clock.mismatches, json_bool(data.correction.clock.error),
 				data.live_stats ? pbd_live_wall_ns : std::chrono::duration_cast<std::chrono::nanoseconds>(session_clock::now() - data.correction.begin).count(),
 				json_bool(data.replay.vblank), pbd::replay_pacing::granted.load(), pbd::replay_pacing::posted.load(), pbd::replay_pacing::credits.load(), pbd::replay_pacing::notified.load(),
 				json_bool(data.correction.replay_skip_draws), pbd::replay_pacing::frames_skipped.load(),
 				json_bool(data.correction.withhold_exact), data.correction.withhold_flagged, pbd::replay_pacing::markers_missed.load(),
-				data.correction.window.hook_ns + static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(session_clock::now() - data.correction.window.scope_start).count()), hook_by_pc,
+				data.correction.window.hook_ns + static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(session_clock::now() - data.correction.window.scope_start).count()));
+			u32 hooks = 0;
+			for (const auto& e : data.correction.window.hook_by_pc)
+				if (e[0])
+					fmt::append(text, "%s[%u,%u,%u]", hooks++ ? "," : "", e[0], e[1], e[2]);
+			fmt::append(text,
+				"],\"flip_absorbed\":%u,\"flip_redelivered\":%u,\"flip_dropped\":%u,\"flip_resets\":%u,"
+				"\"audio_underruns_begin\":%u,\"audio_underruns\":%u,\"audio_advances_begin\":%u,\"audio_advances\":%u,\"audio_silence_begin\":%u,\"audio_silence\":%u,"
+				"\"cid\":%u,\"marker\":%d,\"marker_hit\":%s,\"marker_lag_frames\":%u,\"marker_hit_replayed\":%u,\"marker_hit_after_us\":%d,"
+				"\"rsx_ended_end\":%u,\"rsx_skipped_end\":%u,\"rsx_parked_end\":%u,\"handshake_waits\":%u,\"handshake_passed\":%u,\"withheld_at_risk_total\":%u,"
+				"\"safe_point_stale_total\":%u,\"expired_withheld_total\":%u,"
+				"\"peer_dropped_foreign\":%u,\"peer_endpoint_changes\":%u}\n",
 				g_pbd_flip_double_done.load(), g_pbd_flip_redelivered.load(), g_pbd_flip_dropped.load(), g_pbd_flip_resets.load(),
 				data.correction.audio_begin[0], g_pbd_audio_underruns.load(std::memory_order_relaxed),
 				data.correction.audio_begin[1], g_pbd_audio_time_advances.load(std::memory_order_relaxed),
@@ -126,7 +131,7 @@ void pbd::rollback_session::tick_dispatch::close_replayed_interval()
 				pbd::replay_pacing::frames_withheld_at_risk.load(std::memory_order_relaxed),
 				data.correction.render.safe_point_stale_total, pbd::replay_pacing::markers_expired_withheld.load(std::memory_order_relaxed), data.peer.link.dropped_foreign, data.peer.link.endpoint_changes);
 			data.correction.window.open = false;
-			data.correction.file.write(text.data(), text.size());
+			data.correction.file.write(pbd::correction_journal::kind::correction_end, text.data(), text.size());
 		}
 	}
 }

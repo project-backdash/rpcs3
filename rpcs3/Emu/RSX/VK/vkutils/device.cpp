@@ -138,6 +138,11 @@ namespace vk
 
 		optional_features_support.debug_utils              = instance_extensions.is_supported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		optional_features_support.surface_capabilities_2   = instance_extensions.is_supported(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+#ifdef _WIN32
+		// The extension's surface query goes through VK_KHR_get_surface_capabilities2, which the instance enables when supported.
+		optional_features_support.full_screen_exclusive    = optional_features_support.surface_capabilities_2 &&
+			device_extensions.is_supported(VK_EXT_FULL_SCREEN_EXCLUSIVE_EXTENSION_NAME);
+#endif
 
 		// Post-initialization checks
 		if (!custom_border_color_support.swizzle_extension_supported)
@@ -575,6 +580,18 @@ namespace vk
 		{
 			requested_extensions.push_back(VK_EXT_PROVOKING_VERTEX_EXTENSION_NAME);
 		}
+
+		// PBD: Enable and Disable ask for full-screen exclusive mode through structures that are valid only with this
+		// extension enabled (swapchain.cpp); Automatic attaches nothing and leaves the choice to the driver.
+		m_full_screen_exclusive = false;
+#ifdef _WIN32
+		if (pgpu->optional_features_support.full_screen_exclusive &&
+			g_cfg.video.vk.exclusive_fullscreen_mode != vk_exclusive_fs_mode::unspecified)
+		{
+			requested_extensions.push_back(VK_EXT_FULL_SCREEN_EXCLUSIVE_EXTENSION_NAME);
+			m_full_screen_exclusive = true;
+		}
+#endif
 		
 #ifdef __APPLE__
 		if (pgpu->optional_features_support.portability)

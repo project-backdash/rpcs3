@@ -6,32 +6,34 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <string>
 #include <string_view>
 
 class ppu_thread;
 
 // Sound preferences need the game's callbacks: changing saved bytes alone leaves the active mixer unchanged.
-// Parsing/planning perform no writes. The opt-in runtime adapter applies the validated plan at a loaded owner boundary.
+// Parsing and planning perform no writes. The runtime adapter applies the launcher's values (PBD_SOUND_OPTIONS) once per
+// boot, at the first owner boundary of the VS select, before any rollback snapshot.
 namespace pbd::sound_options
 {
 	inline constexpr std::string_view executable_sha256 = "b56e25e9210ed3c4fc19f3dfae686b7246aef386cdd4f88c80e0b89141ff887d";
 	inline constexpr std::uint32_t setter_entry = 0x1e9e8;
 	inline constexpr std::uint32_t setter_opd = 0x447d18;
-	inline constexpr std::size_t max_file_bytes = 1024;
+	inline constexpr std::size_t max_text_bytes = 64;
+	// The game's own menu runs from 0 (off) to 14; its volume table (0x10006280) holds 0.9333 at 12, 0.96 at 13 and 0.98 at 14.
+	inline constexpr std::uint32_t max_volume = 14;
 
+	// The game's defaults. Subtitles are left as the checkpoint holds them: only movies and story text read them.
 	struct settings
 	{
-		std::uint32_t speaker = 1;
+		std::uint32_t speaker = 1; // 0 mono, 1 stereo
 		std::uint32_t bgm = 12;
 		std::uint32_t se = 12;
 		std::uint32_t stage = 12;
-		std::uint32_t subtitle = 0;
 	};
 
 	inline bool valid(const settings& value) noexcept
 	{
-		return value.speaker <= 1 && value.bgm <= 12 && value.se <= 12 && value.stage <= 12 && value.subtitle <= 1;
+		return value.speaker <= 1 && value.bgm <= max_volume && value.se <= max_volume && value.stage <= max_volume;
 	}
 
 	struct parse_result
@@ -40,31 +42,25 @@ namespace pbd::sound_options
 		std::string_view error;
 	};
 
+	// "speaker=1;bgm=12;se=12;stage=12": each of the four keys exactly once, in any order, decimal digits only.
 	inline parse_result parse(std::string_view text) noexcept
 	{
-		if (text.size() > max_file_bytes)
-			return {{}, "file_too_large"};
-		const auto line = [&]()
-		{
-			const auto end = text.find('\n');
-			auto result = text.substr(0, end);
-			if (!result.empty() && result.back() == '\r')
-				result.remove_suffix(1);
-			text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
-			return result;
-		};
-		if (line() != "PBD-SOUND-1")
-			return {{}, "bad_header"};
+		if (text.size() > max_text_bytes)
+			return {{}, "too_long"};
 		settings out;
-		std::array<bool, 5> seen{};
-		constexpr std::array<std::string_view, 5> keys{"speaker", "bgm", "se", "stage", "subtitle"};
-		std::array<std::uint32_t*, 5> values{&out.speaker, &out.bgm, &out.se, &out.stage, &out.subtitle};
-		while (!text.empty())
+		std::array<bool, 4> seen{};
+		constexpr std::array<std::string_view, 4> keys{"speaker", "bgm", "se", "stage"};
+		const std::array<std::uint32_t*, 4> values{&out.speaker, &out.bgm, &out.se, &out.stage};
+		for (bool more = true; more;)
 		{
-			const auto entry = line();
+			const auto end = text.find(';');
+			const auto entry = text.substr(0, end);
+			more = end != std::string_view::npos;
+			if (more)
+				text.remove_prefix(end + 1);
 			const auto separator = entry.find('=');
 			if (separator == std::string_view::npos)
-				return {{}, "bad_line"};
+				return {{}, "bad_entry"};
 			const auto key = entry.substr(0, separator), raw = entry.substr(separator + 1);
 			std::size_t index = 0;
 			for (; index < keys.size() && key != keys[index]; index++)
@@ -101,13 +97,12 @@ namespace pbd::sound_options
 		std::uint32_t callback_entry;
 	};
 
-	// Verified against NPUB30009's preference constructor, vtable initializer and callback OPDs.
-	inline constexpr std::array<preference_binding, 5> bindings{{
+	// Verified against NPUB30009's preference constructor, vtable initializer and callback OPDs: speaker, BGM, SE, stage effects.
+	inline constexpr std::array<preference_binding, 4> bindings{{
 		{0x1068496a, 0x106846e4, 0x10084448, 0x45d2f0, 0x26b44c},
 		{0x1068496b, 0x106846f0, 0x1008446c, 0x45d2f8, 0x26b4bc},
 		{0x1068496c, 0x106846fc, 0x10084490, 0x45d300, 0x26b534},
 		{0x1068496d, 0x10684708, 0x100844b4, 0x45d308, 0x26b5ac},
-		{0x1068496e, 0x10684714, 0x10084430, 0x45d368, 0x26b7f8},
 	}};
 
 	struct instruction_word
@@ -116,7 +111,7 @@ namespace pbd::sound_options
 		std::uint32_t value;
 	};
 
-	inline constexpr std::array<instruction_word, 15> instructions{{
+	inline constexpr std::array<instruction_word, 14> instructions{{
 		{0x1ea14, 0x81230008},
 		{0x1ea2c, 0x98890000},
 		{0x1ea34, 0x8169000c},
@@ -131,7 +126,6 @@ namespace pbd::sound_options
 		{0x26b5d8, 0x81230008},
 		{0x26b5dc, 0x38600005},
 		{0x26b5ec, 0x4be3e801},
-		{0x26b7f8, 0x4e800020},
 	}};
 
 	struct runtime_context
@@ -139,7 +133,6 @@ namespace pbd::sound_options
 		std::string_view title_id;
 		std::string_view loaded_executable_sha256;
 		std::uint64_t emulation_generation = 0;
-		std::uint64_t checkpoint_loaded_generation = 0;
 		std::uint32_t current_ppu_id = 0;
 		std::uint32_t owner_ppu_id = 0;
 		bool at_input_boundary = false;
@@ -159,7 +152,7 @@ namespace pbd::sound_options
 	{
 		std::uint64_t emulation_generation;
 		std::uint32_t owner_ppu_id;
-		std::array<setter_request, 5> setters;
+		std::array<setter_request, bindings.size()> setters;
 	};
 
 	struct plan_result
@@ -177,8 +170,8 @@ namespace pbd::sound_options
 			return {{}, "out_of_range"};
 		if (context.title_id != pbd::t5dr::title_id || context.loaded_executable_sha256 != executable_sha256)
 			return {{}, "unsupported_game"};
-		if (!context.emulation_generation || context.checkpoint_loaded_generation != context.emulation_generation)
-			return {{}, "checkpoint_not_loaded"};
+		if (!context.emulation_generation)
+			return {{}, "no_emulation"};
 		if (!context.at_input_boundary || !context.owner_ppu_id || context.current_ppu_id != context.owner_ppu_id)
 			return {{}, "not_owner_boundary"};
 		if (context.scene != 3 || context.selector != 44)
@@ -201,7 +194,7 @@ namespace pbd::sound_options
 				return {{}, "preference_layout_mismatch"};
 		}
 		application_plan plan{context.emulation_generation, context.owner_ppu_id, {}};
-		const std::array<std::uint32_t, 5> values{value.speaker, value.bgm, value.se, value.stage, value.subtitle};
+		const std::array<std::uint32_t, bindings.size()> values{value.speaker, value.bgm, value.se, value.stage};
 		for (std::size_t index = 0; index < bindings.size(); index++)
 			plan.setters[index] = {setter_entry, pbd::t5dr::toc, bindings[index].item, values[index], bindings[index].callback_entry};
 		return {plan, {}};
@@ -215,9 +208,8 @@ namespace pbd::sound_options
 
 	// The callback bodies have no syscalls, indirect branches, reservation instructions or recursive calls.
 	// The setter's one virtual dispatch is admitted separately through the five fixed preference vtables.
-	inline constexpr std::array<code_span, 25> callback_code{{
+	inline constexpr std::array<code_span, 24> callback_code{{
 		{0x1e9e8, 0x98, "8691e302b130ecfde8375e9f3d1679715c013a7f46cc414c23b8d1cc1afac108"},
-		{0x26b7f8, 0x4, "f332ea5b5437103cbb6f1508679da89eec9288ad775c96c439a17fccabe3de8e"},
 		{0x26b5ac, 0x78, "dbbfa957e718dae7a4a0e7a4d8b0b58434d7769a46b52de73211470f4525414a"},
 		{0xa9dec, 0x130, "83dcd47100c63fb790f9125bc7ca300eb848d3ffde836593563dcdb3d8e701e9"},
 		{0xa9d60, 0x8c, "e12cff1f4d7d3d12e5ebec228727d2adf4cf1c2f3bfb5090342010fc1bfe4465"},
@@ -254,16 +246,23 @@ namespace pbd::sound_options
 	{
 		application_status status = application_status::disabled;
 		std::string_view reason;
+		// The owner thread's registers and stack are as the game left them. Always true when no setter ran; when false the
+		// thread cannot continue safely.
 		bool context_preserved = false;
 		std::uint32_t setters_completed = 0;
 	};
+
+	// A refusal keeps the game's own values and play goes on; only an owner thread that could not be put back ends it.
+	inline bool play_continues(const application_result& result) noexcept
+	{
+		return result.status != application_status::refused || result.context_preserved;
+	}
 
 	// Generation-local and owner-thread only. Configure parses launch values without touching guest memory.
 	class runtime_application
 	{
 		bool requested = false, attempted = false, executing = false;
 		std::optional<settings> desired;
-		std::string checkpoint_sha256;
 		std::string_view setup_error;
 		std::uint64_t generation = 0;
 

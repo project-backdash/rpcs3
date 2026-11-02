@@ -60,5 +60,8 @@ namespace vk
 		std::vector<physical_device>& enumerate_devices();
 
 		swapchain_base* create_swapchain(display_handle_t window_handle, vk::physical_device& dev);
+		// PBD: a new surface for the same window in place of one the driver reports lost; the swapchain made for the old
+		// one must be gone first (swapchain_base::replace_surface).
+		VkSurfaceKHR recreate_surface(display_handle_t window_handle);
 	};
 }

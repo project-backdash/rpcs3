@@ -156,19 +156,15 @@ struct pbd::rollback_session::spectator_boundary_steps : boundary_call
 			                  vm::try_access(0x1008ebd5, winner.data(), winner.size(), false);
 			const bool left_named = winner == std::array<u8, 3>{1, 0, 1};
 			const bool right_named = winner == std::array<u8, 3>{2, 1, 0};
-			const bool decided = over && ((left_named && s16{left_result[0]} == 3 && s16{right_result[0]} < 3) ||
-											 (right_named && s16{right_result[0]} == 3 && s16{left_result[0]} < 3));
+			const s16 rounds = static_cast<s16>(spectator.identity().rounds);
+			const bool decided = over && ((left_named && s16{left_result[0]} == rounds && s16{right_result[0]} < rounds) ||
+											 (right_named && s16{right_result[0]} == rounds && s16{left_result[0]} < rounds));
 			// A drawn game, classified as the lobby and replay paths classify it: winner bytes that name neither side (the
 			// lobby records a named side as that side's win whatever the scores, so such an end is never a draw here either),
-			// both fighters at the rounds to win, the draw branch's markers, equal terminal health, and a K.O. or a time-out.
-			// The lobby replays it under its own number, which this watch does not follow (pbd::spectator::local_channel::end).
-			u32 health_left = 0, health_right = 0, round_clock = 0;
+			// with both fighters at the rounds to win. The lobby replays it under its own number, which this watch does not
+			// follow (pbd::spectator::local_channel::end).
 			const bool drawn = over && !left_named && !right_named &&
-			                   s16{left_result[0]} == static_cast<s16>(spectator.identity().rounds) &&
-			                   s16{right_result[0]} == s16{left_result[0]} && s16{left_result[1]} == -1 && s16{right_result[1]} == -1 &&
-			                   read_word(left + 0x6ac, health_left) && read_word(right + 0x6ac, health_right) &&
-			                   read_word(0x1008f054, round_clock) && health_left == health_right &&
-			                   (static_cast<s32>(health_left) <= 0 || static_cast<s32>(round_clock) <= 0);
+			                   s16{left_result[0]} == rounds && s16{right_result[0]} == rounds;
 			if (!spectator.end(data.next_index, decided || drawn, drawn))
 			{
 				terminal("natural_end_unverified");
@@ -245,8 +241,10 @@ struct pbd::rollback_session::spectator_boundary_steps : boundary_call
 		}
 		// The watched players' names under the life bars and on the VS screen, drawn by the game from its records
 		// (pbd::game_profile), as the launcher's presentation names them; a watcher is given no ranks, so the plates show
-		// Beginner. Display only: the records feed no watched input and no hashed state.
+		// Beginner, and no PLAYER DATA numbers, so the bars show zeros. Display only: the records feed no watched input and no
+		// hashed state.
 		store_game_profiles({spectator.display().left_name, spectator.display().right_name}, with_kept_promotions({0u, 0u}));
+		store_game_records({});
 		// The game's own Ranked screens write what the players' games wrote in this game (pbd::rank_screens); a promotion the
 		// game showed stays in the records until the next game's setup.
 		if (pbd::rank_screens::configured().screens && pbd::rank_stakes::values_may_change(scene))

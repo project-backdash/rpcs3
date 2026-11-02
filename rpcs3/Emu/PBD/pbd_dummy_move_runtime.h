@@ -276,44 +276,38 @@ namespace pbd::practice::dummy_move
 
 	inline void publish_picker(practice_store::writer& files, u32 port)
 	{
-		const char* configured = pbd::env::find("PBD_MENU_CHANNEL");
-		if (configured && *configured)
+		const auto root = pbd::env::local_path("PBD_MENU_CHANNEL");
+		if (root.empty())
+			return;
+		current.link.root = root.parent_path() / "moves";
+		const auto now = std::chrono::steady_clock::now();
+		if (now >= current.next_poll)
 		{
-			const std::string_view encoded_path(configured);
-			const std::filesystem::path root{std::u8string(encoded_path.begin(), encoded_path.end())};
-			if (root.is_absolute() && !std::string_view(configured).starts_with("\\\\") && !std::string_view(configured).starts_with("//"))
-			{
-				current.link.root = root.parent_path() / "moves";
-				const auto now = std::chrono::steady_clock::now();
-				if (now >= current.next_poll)
+			current.next_poll = now + std::chrono::milliseconds(100);
+			if (current.link.poll(current.picker))
+				current.next_publish = {};
+		}
+		if (now >= current.next_publish)
+		{
+			current.next_publish = now + std::chrono::milliseconds(500);
+			const auto player_row = native_half(0x10090040 + (1 - port) * 0x8d0 + 0x42);
+			const auto text = current.link.status(current.picker, player_row);
+			files.submit(current.link.root / "status.json", [text]
 				{
-					current.next_poll = now + std::chrono::milliseconds(100);
-					if (current.link.poll(current.picker))
-						current.next_publish = {};
-				}
-				if (now >= current.next_publish)
+					return text;
+				});
+		}
+		if (current.open_requested)
+		{
+			using json::json_value;
+			const auto text = json::detail::serialize(json_value::object({{"schema", json_value::string("pbd-practice-move-picker-1")},
+				{"generation", json_value::string(current.picker.generation)},
+				{"id", json_value::string(current.picker.generation + "-" + std::to_string(current.open_sequence))}}));
+			files.submit(current.link.root / "open.json", [text]
 				{
-					current.next_publish = now + std::chrono::milliseconds(500);
-					const auto player_row = native_half(0x10090040 + (1 - port) * 0x8d0 + 0x42);
-					const auto text = current.link.status(current.picker, player_row);
-					files.submit(current.link.root / "status.json", [text]
-						{
-							return text;
-						});
-				}
-				if (current.open_requested)
-				{
-					using json::json_value;
-					const auto text = json::detail::serialize(json_value::object({{"schema", json_value::string("pbd-practice-move-picker-1")},
-						{"generation", json_value::string(current.picker.generation)},
-						{"id", json_value::string(current.picker.generation + "-" + std::to_string(current.open_sequence))}}));
-					files.submit(current.link.root / "open.json", [text]
-						{
-							return text;
-						});
-					current.open_requested = false;
-				}
-			}
+					return text;
+				});
+			current.open_requested = false;
 		}
 	}
 

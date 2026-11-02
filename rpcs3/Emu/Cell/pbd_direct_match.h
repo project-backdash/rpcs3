@@ -83,6 +83,8 @@ public:
 	// draws under the life bars; empty without a file, and for a live watcher's start, whose names come from the launcher.
 	const std::array<std::string, 2>& pbd_player_names() const noexcept;
 	std::array<u32, 2> pbd_player_ranks() const noexcept;
+	// The PLAYER DATA numbers the recorded game's bars showed, left and right, from its start; zeros when it names none.
+	std::array<pbd::game_profile::record, 2> pbd_player_records() const noexcept;
 	// The values the recorded game's own Ranked screens were written with (pbd::rank_stakes::game_values), from its start;
 	// none without a file or when the recording names none.
 	std::optional<pbd::rank_stakes::game_values> pbd_rank_screens() const noexcept;

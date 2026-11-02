@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Emu/Cell/pbd_game_profile.h"
 #include "Emu/Cell/pbd_replay_game_file.h"
 #include "pbd_character_rule.h"
 #include "pbd_replay_restore.h"
@@ -17,6 +18,8 @@ namespace pbd::replay_start
 		bool allow_jinpachi = true, input_context = false;
 		std::array<std::uint32_t, 2> handicaps{};
 		std::array<std::uint32_t, 2> ranks{};
+		// The PLAYER DATA numbers each bar showed (players[i] "wins" and "losses"); zeros when a start names none.
+		std::array<pbd::game_profile::record, 2> records{};
 		std::array<std::uint8_t, 13> options{};
 		std::array<std::uint8_t, 1> rounds_option{};
 		std::array<std::uint8_t, 44> rules{};
@@ -24,6 +27,23 @@ namespace pbd::replay_start
 		std::optional<replay_notices::placements> placements;
 		std::unique_ptr<replay_restore::generators> before_styles, before_match;
 	};
+
+	// One player of a game start's capsule (players[i]) as the recorder writes it: the display identity, the fighter, costume and
+	// row the game loaded, the rank its record held and, when the bar showed a record, its PLAYER DATA numbers, which
+	// pbd_read_capsule_start reads back.
+	inline pbd::set_channel::json_value capsule_player(std::string id, std::string name, std::uint32_t fighter, std::uint32_t costume,
+		std::uint32_t row, std::uint32_t rank, const std::optional<pbd::game_profile::record>& shown)
+	{
+		using json = pbd::set_channel::json_value;
+		auto entry = json::object({{"id", json::string(std::move(id))}, {"name", json::string(std::move(name))}, {"fighter", json::number(fighter)},
+			{"costume", json::number(costume)}, {"row", json::number(row)}, {"rank", json::number(rank)}});
+		if (shown)
+		{
+			entry.fields.emplace_back("wins", json::number(shown->wins));
+			entry.fields.emplace_back("losses", json::number(shown->losses));
+		}
+		return entry;
+	}
 
 	// Read a game_start.capsule or the JSON payload of capsule_start. The caller authenticates its transport identity;
 	// this reader checks exactly the same start values the fresh-game player uses, without needing a completed game.
@@ -42,9 +62,16 @@ namespace pbd::replay_start
 				if (players->kind != kind::array || players->items.size() != 2)
 					return {{}, "capsule_start_players"};
 				for (std::size_t side = 0; side < out.ranks.size(); ++side)
-					if (const auto* rank = players->items[side].find("rank"); rank &&
-																			  !pbd::json::detail::number32(rank, 0, 36, out.ranks[side]))
+				{
+					const auto& player = players->items[side];
+					if (const auto* rank = player.find("rank"); rank && !pbd::json::detail::number32(rank, 0, 36, out.ranks[side]))
 						return {{}, "capsule_start_ranks"};
+					// Display only: a missing or invalid pair reads as none, never a refusal, and the bar shows zeros.
+					pbd::game_profile::record shown;
+					if (pbd::json::detail::number32(player.find("wins"), 0, pbd::game_profile::record_max, shown.wins) &&
+						pbd::json::detail::number32(player.find("losses"), 0, pbd::game_profile::record_max, shown.losses))
+						out.records[side] = shown;
+				}
 			}
 			out.placements = replay_notices::read(cap.find("placements"));
 			if (cap.find("placements") && !out.placements)

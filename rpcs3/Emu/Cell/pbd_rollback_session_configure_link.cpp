@@ -131,8 +131,8 @@ bool pbd::rollback_session::boundary_call::local_standby()
 #ifdef _WIN32
 	if (data.lobby.local_standby_done || pc != pcs[0] || data.update_active || data.roundtrip.repeat_active)
 		return false;
-	const char* channel = pbd::env::find("PBD_LOCAL_STANDBY_CHANNEL");
-	if (!channel || !*channel)
+	const auto root = pbd::env::path("PBD_LOCAL_STANDBY_CHANNEL");
+	if (root.empty())
 		return false;
 	data.lobby.local_standby_done = true;
 	const auto end = [&]
@@ -144,7 +144,6 @@ bool pbd::rollback_session::boundary_call::local_standby()
 	try
 	{
 		const char* token = pbd::env::find("PBD_LOCAL_STANDBY_TOKEN");
-		const auto root = std::filesystem::u8path(channel);
 		u32 scene = 0, subscene = 0;
 		if (!token || std::string_view(token).size() != 36 || !root.is_absolute() || data.peer.enabled || data.lobby.match_standby ||
 			(!data.practice.rewind && !data.lobby.direct_match.enabled()) ||
@@ -163,10 +162,10 @@ bool pbd::rollback_session::boundary_call::local_standby()
 			return end();
 		pbd_session_log.notice("Local game: parked at character select (generation %u).", data.generation);
 		pbd::spectator_standby::bind_wait waiting;
-		const char* stop = pbd::env::find("PBD_STOP_FILE");
+		const auto stop = pbd::env::path("PBD_STOP_FILE");
 		for (;;)
 		{
-			if (pbd_emulation_stopping(ppu) || (stop && *stop && std::filesystem::exists(std::filesystem::u8path(stop))))
+			if (pbd_emulation_stopping(ppu) || (!stop.empty() && std::filesystem::exists(stop)))
 				return end();
 			auto request = pbd::json::detail::read_text(root / "local-activate.json");
 			if (request.value)

@@ -155,6 +155,8 @@ namespace pbd
 		void fault_arm_all() noexcept;
 		void fault_rearm() noexcept;
 		void fault_disarm_all() noexcept;
+		// Under Wine only: the host_timing row of tick-correction.jsonl when one is due, or the last one at the session's end.
+		void write_host_timing(bool end) noexcept;
 		bool write_header() noexcept;
 		bool write_status(const char* state, const char* reason) noexcept;
 		std::string pad_identity() const;
@@ -194,6 +196,8 @@ namespace pbd
 		void write_dummy_health();
 		void write_input_policy();
 		void send_session_end(u32 reason);
+		// Writes session-peer-stop.json, which asks the host to end the session; true when this call wrote it.
+		static bool write_peer_stop(storage& d, const char* reason, u32 remote_reason, u32 remote_tick, u64 last_valid_us) noexcept;
 		void restore_session_presentation();
 		void configure_watch_channels();
 		void configure_lobby_channel(const std::filesystem::path& root, bool late_bound = false);

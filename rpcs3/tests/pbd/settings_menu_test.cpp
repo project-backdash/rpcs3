@@ -223,11 +223,11 @@ PBD_TEST(PbdSettingsMenu, NavigationChecks)
 	c.poll(m, right, 740);
 	c.poll(m, 0, 750);
 	check(m.current.resolution == 200, "Right stops at the largest size");
-	check(c.poll(m, cross, 760) == effect::none && c.dropdown && c.option_focus == 3, "Cross opens the list on the size in use");
+	check(c.poll(m, cross, 760) == effect::none && c.dropdown && c.option_focus == 4, "Cross opens the list on the size in use");
 	c.poll(m, 0, 770);
 	c.poll(m, up, 780);
 	c.poll(m, 0, 790);
-	check(c.option_focus == 2 && m.current.resolution == 200, "moving in the list changes nothing yet");
+	check(c.option_focus == 3 && m.current.resolution == 200, "moving in the list changes nothing yet");
 	check(c.poll(m, circle, 800) == effect::none && !c.dropdown && c.open && m.current.resolution == 200, "Circle leaves the list unchanged");
 	c.poll(m, 0, 810);
 	c.poll(m, cross, 820);
@@ -235,7 +235,7 @@ PBD_TEST(PbdSettingsMenu, NavigationChecks)
 	c.poll(m, down, 840);
 	c.poll(m, 0, 850);
 	check(c.option_focus == 0, "the list wraps");
-	check(c.poll(m, cross, 860) == effect::close && !c.open && m.current.resolution == 67, "Confirm chooses and leaves Settings");
+	check(c.poll(m, cross, 860) == effect::close && !c.open && m.current.resolution == 50, "Confirm chooses and leaves Settings");
 	c.poll(m, 0, 870);
 	c.show(0);
 	c.focus = at(row::resolution);

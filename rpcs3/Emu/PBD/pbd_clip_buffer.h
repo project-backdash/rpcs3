@@ -1,12 +1,16 @@
 #pragma once
 
+#include "pbd_controller_mapper.h"
+
 #include <algorithm>
+#include <charconv>
 #include <cstdint>
 #include <deque>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 namespace pbd::clips
@@ -101,14 +105,13 @@ namespace pbd::clips
 		save,
 		record
 	};
-	// A button only clips use (the touchpad, an Xbox Share button): a tap saves, a one-second hold starts or stops
-	// recording. A button the game also reads (Create/Share is the game's Select): only a half-second hold saves, as
-	// the consoles' own capture button does, so a tap stays a plain Select.
+	// Presses of the controller's clip button (pad_button), which the game never reads: a tap saves once, on release; a
+	// one-second hold starts or stops recording and saves nothing.
 	struct gesture
 	{
 		bool armed = false, down = false, held = false;
 		std::uint64_t since = 0;
-		action update(bool pressed, std::uint64_t now_ms, bool shared_with_game = false)
+		action update(bool pressed, std::uint64_t now_ms)
 		{
 			if (!armed)
 			{
@@ -121,20 +124,169 @@ namespace pbd::clips
 				held = false;
 				since = now_ms;
 			}
-			const std::uint64_t hold_ms = shared_with_game ? 500 : 1000;
-			if (pressed && !held && now_ms >= since && now_ms - since >= hold_ms)
+			if (pressed && !held && now_ms >= since && now_ms - since >= 1000)
 			{
 				held = true;
-				return shared_with_game ? action::save : action::record;
+				return action::record;
 			}
 			if (!pressed && down)
 			{
 				down = false;
-				return held || shared_with_game ? action::none : action::save;
+				return held ? action::none : action::save;
 			}
 			return action::none;
 		}
 	};
+
+	// The controller's clip button, from the launcher's Clips setting "padButton". It is never a button the game reads, so
+	// a press saves a clip and does nothing in the game:
+	//   home      PS / Home / Guide, which then opens no menu; never in a match, where it is the game's Start.
+	//   button-N  raw button N, unless the pad's layout makes it Select or Start (reaches_select_or_start).
+	// Any other value ("create", the default, and the older "share" and "touchpad" among them) is the pad's own capture
+	// button: SDL's MISC1, which is an Xbox Share, a Switch Capture, a DualSense Mute or a Steam Deck Quick Access button.
+	// The touchpad click is never a clip button: the game gets it as Select or Start. A pad without MISC1 has no clip
+	// button; the clip keys still save.
+	enum class pad_source
+	{
+		capture,
+		home,
+		raw
+	};
+	struct pad_button
+	{
+		pad_source source = pad_source::capture;
+		unsigned index = 0;
+	};
+	inline pad_button parse_pad_button(std::string_view text)
+	{
+		if (text == "home")
+			return {pad_source::home};
+		constexpr std::string_view raw = "button-";
+		if (text.starts_with(raw) && text.size() > raw.size())
+		{
+			unsigned index = 0;
+			const auto* end = text.data() + text.size();
+			const auto [stop, error] = std::from_chars(text.data() + raw.size(), end, index);
+			if (error == std::errc{} && stop == end)
+				return {pad_source::raw, index};
+		}
+		return {};
+	}
+
+	// Whether raw button `index` reaches the game as Select or Start: as either, as the touchpad click (the game gets it as
+	// one of them) or, in a match, as Home (the game's Start there). A button keeps its default job (SDL's mapping or the
+	// Sony layout) unless the player taught it another job or taught that job to another button, as apply_device_layout
+	// and controllers::map do.
+	inline bool reaches_select_or_start(const controllers::layout& defaults, const controllers::layout& taught, unsigned index, bool versus)
+	{
+		const controllers::binding button{controllers::binding::button, index};
+		const auto is_button = [&](const std::optional<controllers::binding>& value)
+		{
+			return value && controllers::same_input(*value, button);
+		};
+		const bool retaught = std::any_of(taught.begin(), taught.end(), is_button);
+		for (const unsigned job : {controllers::select, controllers::start, controllers::touchpad, controllers::home})
+			if ((job != controllers::home || versus) && (taught[job] ? is_button(taught[job]) : !retaught && is_button(defaults[job])))
+				return true;
+		return false;
+	}
+
+	// One sample of a controller, as the clip button reads it.
+	struct pad_report
+	{
+		const controllers::raw_state& raw;
+		const controllers::layout& defaults;             // SDL's mapping or the Sony layout
+		const controllers::layout& taught;               // what the player taught this controller type (padLayouts)
+		std::uint32_t buttons = 0;                       // the logical buttons after both
+		bool misc1 = false;                              // SDL's MISC1, which no default game button uses
+		bool versus = false;                             // a match, where Home is the game's Start
+		std::optional<controllers::binding> misc1_input; // the pad input SDL reads as MISC1, when its mapping names one
+	};
+	// A MISC1 button the player taught a game job (Select on the Share button) does that job and saves nothing.
+	inline bool misc1_free(const controllers::layout& taught, const std::optional<controllers::binding>& misc1_input)
+	{
+		return std::none_of(taught.begin(), taught.end(), [&](const std::optional<controllers::binding>& value)
+			{
+				return value && misc1_input && controllers::same_input(*value, *misc1_input);
+			});
+	}
+	inline bool pressed(const pad_button& choice, const pad_report& pad)
+	{
+		const auto down = [&](unsigned logical)
+		{
+			return (pad.buttons & controllers::bit(logical)) != 0;
+		};
+		const bool misc1 = pad.misc1 && misc1_free(pad.taught, pad.misc1_input);
+		switch (choice.source)
+		{
+		case pad_source::capture: return misc1;
+		case pad_source::home: return !pad.versus && down(controllers::home);
+		case pad_source::raw:
+			return choice.index < pad.raw.buttons.size() && pad.raw.buttons[choice.index] &&
+			       !reaches_select_or_start(pad.defaults, pad.taught, choice.index, pad.versus);
+		}
+		return false;
+	}
+
+	// The buttons a controller has for clips, as SDL reports the device.
+	struct pad_buttons
+	{
+		std::string_view family; // the controller as detected: "playstation", "xbox", "switch", "steamdeck"
+		bool misc1 = false;      // SDL's MISC1, free of any game job the player taught it (misc1_free)
+	};
+
+	// The clip button `choice` on this controller as the in-game prompts name it: the button's own name ("Share", "Capture")
+	// or the glyph token of the job a raw button already has ("{l3}"). Empty when the controller has no such button, so the
+	// prompts show only the keyboard keys.
+	inline std::string prompt_name(const pad_button& choice, const pad_buttons& pad, const controllers::layout& defaults,
+		const controllers::layout& taught, bool versus)
+	{
+		// MISC1 is the Share button on an Xbox pad, Capture on a Switch pad, the microphone button on a DualSense and the
+		// Quick Access button on a Steam Deck, which is printed "...".
+		const std::string misc1 = !pad.misc1                  ? "" :
+		                          pad.family == "switch"      ? "Capture" :
+		                          pad.family == "playstation" ? "Mute" :
+		                          pad.family == "steamdeck"   ? "..." :
+		                                                        "Share";
+		const std::string home = pad.family == "playstation" ? "PS" : "Home";
+		switch (choice.source)
+		{
+		case pad_source::capture: return misc1;
+		case pad_source::home: return versus ? "" : home;
+		case pad_source::raw:
+		{
+			if (reaches_select_or_start(defaults, taught, choice.index, versus))
+				return {};
+			// The job this button does on this controller, read as reaches_select_or_start reads it.
+			const controllers::binding button{controllers::binding::button, choice.index};
+			const auto is_button = [&](const std::optional<controllers::binding>& value)
+			{
+				return value && controllers::same_input(*value, button);
+			};
+			const bool retaught = std::any_of(taught.begin(), taught.end(), is_button);
+			for (unsigned job = 0; job < controllers::count; ++job)
+			{
+				if (!(taught[job] ? is_button(taught[job]) : !retaught && is_button(defaults[job])))
+					continue;
+				if (job == controllers::home)
+					return home;
+				if (job >= controllers::up)
+					return "{dpad:" + std::string(1, "udlr"[job - controllers::up]) + "}";
+				return "{" + std::string(controllers::names[job]) + "}";
+			}
+			return "Button " + std::to_string(choice.index + 1);
+		}
+		}
+		return {};
+	}
+
+	// A controller's save or record press is for the game the player sees, whether it has the focus or not: controllers
+	// work while another program is in front. A held game (a standby waiting for its match, or parked) and a hidden or
+	// minimized window save and record nothing.
+	inline bool pad_press_counts(bool can_show, bool parked, bool window_shown)
+	{
+		return can_show && !parked && window_shown;
+	}
 
 	// What follows the date in a clip's file name. The launcher writes it from fixed words and the game's character names, but
 	// it arrives through a file, so only ASCII letters, digits and the marks in those names ("JACK-5", "Roger Jr.") are kept.

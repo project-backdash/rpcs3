@@ -28,7 +28,7 @@ namespace
 			m.inputs[k] = {largest - k, static_cast<std::uint16_t>(0xffff - k)};
 		m.sync = {largest, 0xffffffffffffffffULL, 0x0123456789abcdefULL, largest, largest, 1,
 			std::numeric_limits<std::int32_t>::min(), 1};
-		m.segment = {1, 2, 3, 4, 5, 6, largest, 0x8000ffff, largest};
+		m.segment = {1, 2, 3, 4, 5, 6, largest, 0x8000ffff, largest, 0x7fffffff, largest};
 		m.gate = {7, 8, largest};
 		m.digests = {9, 10, 11, 12, 1, {}, 13, largest};
 		for (std::size_t k = 0; k < m.digests.map.size(); k++)
@@ -78,9 +78,9 @@ PBD_TEST(PbdPeerConformance, BothRolesRoundTripEveryWindowSizeAndExtremeFields)
 
 PBD_TEST(PbdPeerConformance, EmptyInputsAndExtremeEndFieldsHaveGoldenBytes)
 {
-	const std::array<std::uint8_t, 196> empty{
+	const std::array<std::uint8_t, 204> empty{
 		0x50, 0x42, 0x44, 0x2d, 0x50, 0x45, 0x45, 0x52,
-		0x0b, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff};
+		0x0c, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff};
 	const auto written = encode({});
 	check(std::equal(empty.begin(), empty.end(), written.begin(), written.end()));
 	message::input_message actual;

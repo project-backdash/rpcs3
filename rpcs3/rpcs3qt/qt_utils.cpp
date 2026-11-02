@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "qt_utils.h"
+#include "window_geometry.h"
 #include "gui_settings.h"
 #include <QApplication>
 #include <QBitmap>
@@ -26,22 +27,11 @@ namespace gui
 		{
 			ensure(screen);
 
-			// Get minimum virtual screen x & y for clamping the
-			// window x & y later while taking the width and height
-			// into account, so they don't go offscreen
 			const QRect screen_geometry = screen->availableGeometry();
-			const s32 min_screen_x = screen_geometry.x();
-			const s32 max_screen_x = screen_geometry.x() + screen_geometry.width() - target_width;
-			const s32 min_screen_y = screen_geometry.y();
-			const s32 max_screen_y = screen_geometry.y() + screen_geometry.height() - target_height;
-
-			const s32 frame_x_raw = base.left() + ((base.width() - target_width) / 2);
-			const s32 frame_y_raw = base.top() + ((base.height() - target_height) / 2);
-
-			const s32 frame_x = std::clamp(frame_x_raw, min_screen_x, max_screen_x);
-			const s32 frame_y = std::clamp(frame_y_raw, min_screen_y, max_screen_y);
-
-			return QRect(frame_x, frame_y, target_width, target_height);
+			const auto geometry = centered_window_geometry(
+				{screen_geometry.x(), screen_geometry.y(), screen_geometry.width(), screen_geometry.height()},
+				{base.x(), base.y(), base.width(), base.height()}, target_width, target_height);
+			return QRect(geometry.x, geometry.y, geometry.width, geometry.height);
 		}
 
 		bool create_square_pixmap(QPixmap& pixmap, int target_size)

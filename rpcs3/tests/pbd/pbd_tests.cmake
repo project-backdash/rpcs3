@@ -1,6 +1,7 @@
 # The PBD unit tests in rpcs3_test. They build with C++ exceptions, since a failed check throws to end its test (see
 # pbd_test.h); the rest of the target builds without them.
 set(PBD_TESTS
+    ${CMAKE_CURRENT_LIST_DIR}/window_geometry_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_moment_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/match_bind_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/replay_entry_test.cpp
@@ -12,6 +13,7 @@ set(PBD_TESTS
     ${CMAKE_CURRENT_LIST_DIR}/replay_switches_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/peer_auth_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/peer_log_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/correction_journal_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/peer_wait_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/character_rule_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/pick_transition_test.cpp
@@ -21,11 +23,15 @@ set(PBD_TESTS
     ${CMAKE_CURRENT_LIST_DIR}/versus_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/input_taps_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/clip_buffer_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/clip_hud_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/corner_chat_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/env_parse_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/install_argument_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/package_path_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/env_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/frame_tags_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/game_host_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/host_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/game_overlay_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/game_profile_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/search_badge_test.cpp
@@ -59,6 +65,7 @@ set(PBD_TESTS
     ${CMAKE_CURRENT_LIST_DIR}/rematch_json_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/rematch_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/render_scale_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/swapchain_rebuild_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/replay_viewer_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/replay_rewind_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/select_band_test.cpp
@@ -97,9 +104,10 @@ set(PBD_TESTS
     ${CMAKE_CURRENT_LIST_DIR}/practice_input_delay_test.cpp
 )
 
-# The peer address test uses Winsock.
+# The peer address test uses Winsock; the clip encoder frame test uses Direct3D 11 and Media Foundation.
 if(WIN32)
     list(APPEND PBD_TESTS ${CMAKE_CURRENT_LIST_DIR}/peer_endpoint_test.cpp)
+    list(APPEND PBD_TESTS ${CMAKE_CURRENT_LIST_DIR}/clip_frames_test.cpp)
 endif()
 
 target_sources(rpcs3_test PRIVATE ${PBD_TESTS})

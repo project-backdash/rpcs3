@@ -31,29 +31,47 @@ bool pbd::rollback_session::boundary_call::open_original_stages()
 	return false;
 }
 
-// The game's own sound options, once, at the first owner boundary after the checkpoint loads. False ends the session.
+// The game's own sound options from the launcher (PBD_SOUND_OPTIONS), once per emulation, at the first owner boundary after
+// the checkpoint loads or a fresh boot reaches the VS select: before any rollback snapshot, so every later snapshot holds
+// them. The values stay on this PC: the setup digest leaves them out (pbd_setup_digest.h). A refusal keeps the game's own
+// values and play goes on; only an owner thread that could not be put back after a setter ran ends the session.
 bool pbd::rollback_session::boundary_call::apply_sound_options()
 {
 	if (!data.sound_options.pending() || pc != pcs[0] || data.update_active || data.roundtrip.repeat_active)
 		return true;
 	const auto result = data.sound_options.apply_at_owner_boundary(ppu, pc,
 		data.next_index == 0 && data.start_index == 0 && !data.session.start_synced);
+	if (result.status == pbd::sound_options::application_status::waiting)
+		return true;
 	const bool applied = result.status == pbd::sound_options::application_status::applied;
-	const auto text = fmt::format("{\"type\":\"sound_options\",\"applied\":%s,\"reason\":\"%s\",\"context_preserved\":%s,\"setters\":%u}\n",
-		json_bool(applied), result.reason, json_bool(result.context_preserved), result.setters_completed);
+	const auto word_json = [&](u32 address)
+	{
+		u32 value = 0;
+		return read_word(address, value) ? fmt::format("%u", value) : std::string("null");
+	};
+	const auto scene = word_json(pbd::t5dr::scene_address), subscene = word_json(pbd::t5dr::subscene_address);
+	const auto text = fmt::format("{\"type\":\"sound_options\",\"applied\":%s,\"reason\":\"%s\",\"context_preserved\":%s,"
+								  "\"setters\":%u,\"scene\":%s,\"subscene\":%s}\n",
+		json_bool(applied), result.reason, json_bool(result.context_preserved), result.setters_completed, scene, subscene);
 	if (data.peer.file)
 		data.peer.file.write(text.data(), text.size());
 	else
 		pbd_session_log.notice("Sound option result: %s", text);
-	if (!applied)
+	if (applied)
 	{
-		pbd_session_log.error("Sound settings could not be applied safely.");
-		session_runtime.finish(guard_failed);
-		data.end_callback();
-		return false;
+		pbd_session_log.notice("Sound settings applied.");
+		return true;
 	}
-	pbd_session_log.notice("Sound settings applied after checkpoint load.");
-	return true;
+	if (pbd::sound_options::play_continues(result))
+	{
+		pbd_session_log.warning("Sound settings were not applied (%s, scene %s/%s); the game keeps its own.", result.reason, scene,
+			subscene);
+		return true;
+	}
+	pbd_session_log.error("Sound settings left the game's main thread in an unknown state (%s).", result.reason);
+	session_runtime.finish(guard_failed);
+	data.end_callback();
+	return false;
 }
 
 #include "Emu/PBD/pbd_checkpoint_compatibility.h"
@@ -174,7 +192,8 @@ bool pbd::rollback_session::boundary_call::session_start_sync()
 			take_segment_digest(0);
 		}
 		// The players' names and ranks in the game's records from the session's first frame on (write_game_profiles): both
-		// peers start here from the same checkpoint on the same boundary.
+		// peers start here from the same checkpoint on the same boundary. With a peer, their PLAYER DATA numbers wait for the
+		// first scene barrier at which both PCs announce the same ones (agreed_game_records).
 		{
 			u32 scene = 0;
 			read_word(pbd::t5dr::scene_address, scene);

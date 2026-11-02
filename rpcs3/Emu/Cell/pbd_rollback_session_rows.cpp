@@ -132,10 +132,10 @@ void pbd::rollback_session::boundary_call::publish_lobby_through(u32 through)
 		// Publication can reject an older confirmed sample after the current tick has completed.
 		// Report that immutable sample rather than the speculative guest state at this callback.
 		if (const auto rejected = data.lobby.set->last_refusal())
-			pbd_session_log.warning("Lobby confirmed lifecycle refused at boundary %u: reason=%u, phase=%u, pending=%u, phase_verified=%u, result_verified=%u, score=%u/%u, outcome=%u, draw_verified=%u",
+			pbd_session_log.warning("Lobby confirmed lifecycle refused at boundary %u: reason=%u, phase=%u, pending=%u, phase_verified=%u, result_verified=%u, score=%u/%u, outcome=%u",
 				rejected->phase.boundary, static_cast<u32>(rejected->reason), static_cast<u32>(rejected->phase.native_phase), rejected->picks.pending_phase,
 				rejected->phase.phase_verified, rejected->phase.result_verified, rejected->phase.score_left, rejected->phase.score_right,
-				static_cast<u32>(rejected->phase.outcome), rejected->phase.draw_verified);
+				static_cast<u32>(rejected->phase.outcome));
 		session_runtime.finish(guard_failed);
 	}
 	if (data.lobby.set && data.lobby.channel)
@@ -407,6 +407,7 @@ void pbd::rollback_session::write_records() noexcept
 						  .in_callback = data.in_callback,
 						  .last_callback_ns = data.last_callback_ns,
 						  .overlay_poll_ns = data.overlay_poll_ns,
+						  .peer_heard_us = data.peer.link.watched_valid_us,
 						  .network = data.peer.link.recovery,
 						  .diagnostic_mutex = data.diagnostic_mutex,
 						  .diagnostic = data.diagnostic,
@@ -432,6 +433,8 @@ void pbd::rollback_session::write_records() noexcept
 			[this, &data](u32 reason)
 			{
 				data.match_replay.live.drain();
+				// The host may end the process once it learns of the end, so the journal's summary row goes to disk first.
+				data.correction.file.finish();
 				if (data.lobby.channel && !data.lobby.channel->flush())
 				{
 					reason = output_failed;
@@ -446,6 +449,12 @@ void pbd::rollback_session::write_records() noexcept
 						code = guard;
 				}
 				write_status("ended", code);
+			},
+			[&data](u64 quiet_ms)
+			{
+				if (write_peer_stop(data, "game_stall_timeout", ~0u, ~0u, data.peer.link.last_valid_us.load(std::memory_order_acquire)))
+					pbd_session_log.error("Game stall: no tick boundary for %u ms outside the boundary call while the other PC is still heard; host fail-stop requested.", quiet_ms);
+				return data.peer.link.stop_recorded.load(std::memory_order_acquire);
 			}}
 			.run();
 	}
@@ -454,6 +463,7 @@ void pbd::rollback_session::write_records() noexcept
 		finish(output_failed);
 		while (m_storage->in_callback.load())
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		data.correction.file.finish();
 		write_status("ended", reason_text(output_failed));
 		pbd_session_log.error("Update writer failed; injection disabled and output incomplete.");
 	}

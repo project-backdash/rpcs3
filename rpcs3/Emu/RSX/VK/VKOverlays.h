@@ -171,7 +171,7 @@ namespace vk
 		void emit_geometry(vk::command_buffer& cmd, glsl::program* program) override;
 
 		void run(vk::command_buffer& cmd, const areau& viewport, vk::framebuffer* target, VkRenderPass render_pass,
-				vk::data_heap& upload_heap, rsx::overlays::overlay& ui);
+			vk::data_heap& upload_heap, rsx::overlays::overlay& ui, bool capture);
 	};
 
 	struct attachment_clear_pass : public overlay_pass

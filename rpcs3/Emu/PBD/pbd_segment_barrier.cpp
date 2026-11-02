@@ -28,14 +28,15 @@ bool pbd::rollback_session::boundary_call::session_segment_barrier()
 			publish_set_notices(now_scene[0]);
 			publish_vs_cards(now_scene[0]);
 			// A saved replay's players, as its file recorded them, in the game's records (pbd::game_profile), so the replayed game
-			// draws their names and recorded ranks under the life bars. Display only, as in the
-			// recorded game; repeats write nothing, and after a scrub to an earlier frame the next fresh boundary writes them again.
-			// The game's own Ranked screens write what the recording's start names (pbd::rank_screens).
+			// draws their names, recorded ranks and PLAYER DATA numbers (zeros when the recording names none) under the life bars.
+			// Display only, as in the recorded game; repeats write nothing, and after a scrub to an earlier frame the next fresh
+			// boundary writes them again. The game's own Ranked screens write what the recording's start names (pbd::rank_screens).
 			if (!data.lobby.channel && data.lobby.direct_match.enabled() && !data.lobby.direct_match.pbd_live_inputs())
 			{
 				const auto& recorded = data.lobby.direct_match.pbd_player_names();
 				const auto ranks = data.lobby.direct_match.pbd_player_ranks();
 				store_game_profiles({recorded[0], recorded[1]}, with_kept_promotions(ranks));
+				store_game_records(data.lobby.direct_match.pbd_player_records());
 				if (pbd::rank_screens::configured().screens && pbd::rank_stakes::values_may_change(now_scene[0]))
 					pbd::rank_screens::arm(data.lobby.direct_match.pbd_rank_screens().value_or(pbd::rank_stakes::game_values{}), ranks);
 			}
@@ -124,10 +125,10 @@ bool pbd::rollback_session::boundary_call::peer_segment_change(const std::array<
 	}
 	if (sync_segment_state(n, k, counter_now, now_scene))
 		return true;
-	// The players' names and ranks in the game's records (write_game_profiles), here where both peers stand aligned on
-	// boundary `target` and nothing earlier can be re-executed, and the Ranked stakes both peers hold, from which the next game's
-	// command plans the game's own Ranked screens (settle_rank_stakes).
-	write_game_profiles(target, now_scene[0]);
+	// The players' names, ranks and PLAYER DATA numbers in the game's records (write_game_profiles), here where both peers stand
+	// aligned on boundary `target` and nothing earlier can be re-executed, and the Ranked stakes both peers hold, from which the
+	// next game's command plans the game's own Ranked screens (settle_rank_stakes).
+	write_game_profiles(target, now_scene[0], n);
 	settle_rank_stakes(n);
 	// Settle aligned peers before the configured loading scene so host loading latency does not change its executed frames.
 	// PBD_SESSION_SETTLE_MS defaults to 1500; PBD_SESSION_SETTLE_SCENE defaults to 12, the last screen before battle.
@@ -166,6 +167,11 @@ u32 pbd::rollback_session::boundary_call::prepare_peer_segment(u32 k, const std:
 	data.session.segments.rank_stakes = pbd::rank_screens::configured().screens && data.lobby.rank_stakes ?
 	                                        pbd::rank_stakes::stakes_word(*data.lobby.rank_stakes) :
 	                                        0u;
+	// The PLAYER DATA numbers this PC would write at this barrier, fixed here with the word it announces: a record that reaches
+	// the set during the wait shows from the next barrier on (write_game_profiles).
+	data.session.segments.prev_records = data.session.segments.records;
+	data.lobby.records_plan = shown_game_records();
+	data.session.segments.records = pbd::game_profile::records_word(data.lobby.records_plan);
 	const u32 n = data.session.segments.number;
 	if (!pbd::fn_hook::draw_statistics.empty() || pbd::fn_hook::draw_statistics_active.load())
 	{

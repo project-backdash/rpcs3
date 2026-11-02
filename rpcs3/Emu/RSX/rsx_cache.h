@@ -234,8 +234,11 @@ namespace rsx
 
 			fs::dir root = fs::dir(directory_path);
 
+			// PBD (log only): the folder this GPU's cache is read from (the Vulkan renderer keeps one per depth format) and how
+			// many pipelines it holds.
 			if (!root)
 			{
+				rsx_log.notice("shaders_cache: no cached pipelines in %s/%s yet", pipeline_class_name, version_prefix);
 				fs::create_path(directory_path);
 				fs::create_path(root_path + "/raw");
 				return;
@@ -252,6 +255,7 @@ namespace rsx
 			}
 
 			u32 entry_count = ::size32(entries);
+			rsx_log.notice("shaders_cache: %u cached pipelines in %s/%s", entry_count, pipeline_class_name, version_prefix);
 
 			if (!entry_count)
 				return;

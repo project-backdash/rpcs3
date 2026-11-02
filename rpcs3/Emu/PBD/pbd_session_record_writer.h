@@ -1,6 +1,9 @@
 #pragma once
 
+#include "pbd_freeze_probe.h"
+#include "pbd_held_presentation.h"
 #include "pbd_session_health.h"
+#include "Emu/Cell/lv2/sys_semaphore.h"
 
 struct pbd::rollback_session::record_writer
 {
@@ -25,6 +28,7 @@ struct pbd::rollback_session::record_writer
 		const std::atomic<bool>& in_callback;
 		const std::atomic<u64>& last_callback_ns;
 		const std::atomic<u64>& overlay_poll_ns;
+		const std::atomic<u64>& peer_heard_us; // the fail-stop receiver's last valid input from the other PC; 0 while it watches none
 		const pbd::peer_recovery::state& network;
 		std::mutex& diagnostic_mutex;
 		const pbd::session_runtime::boundary_diagnostic& diagnostic;
@@ -60,6 +64,13 @@ struct pbd::rollback_session::record_writer
 		{
 			return matches[slot(index)];
 		}
+		// The battle flag of the owner's latest published boundary, read from its history rather than from the last row
+		// written, so it stays current after trace output stops.
+		bool published_battle() const noexcept
+		{
+			const u32 through = published.load(std::memory_order_acquire);
+			return session_enabled && through > start_index && history_contains(through - 1) && match_at(through - 1) != 0;
+		}
 		bool history_contains(u32 index) const noexcept
 		{
 			return practice_continuous ? window.owns(index) : index < extent && (!history_rolling || pbd::session_history::buffer<u8, max_updates>::retained(index, published.load(std::memory_order_acquire)));
@@ -71,16 +82,17 @@ struct pbd::rollback_session::record_writer
 	} data;
 	std::function<void()> fail_output;
 	std::function<void(u32)> publish_end;
+	// Asks the host to end a stalled game (game_stall_timeout); true once a stop record exists, whichever watch wrote it.
+	std::function<bool(u64)> stall_stop;
 	u32 written = 0;
 	u64 completed = 0, injected_total = 0;
 	fs::file health;
 	fs::file health_snapshot;
 	u64 health_sequence = 0, health_next_ns = 0;
 	u64 health_network_sequence = ~u64{0};
-	bool health_battle = false, freeze_pause_seen = false;
 	pbd::session_health::activity health_activity;
-	u64 freeze_quiet_from = 0;
-	bool output_bad = false, freeze_dumped = false;
+	pbd::session_health::quiet_clock freeze_quiet;
+	bool output_bad = false, freeze_dumped = false, stall_stopped = false;
 	pbd::session_runtime::boundary_diagnostic last_diagnostic{};
 	u64 diagnostic_next_ns = 0;
 
@@ -218,7 +230,6 @@ struct pbd::rollback_session::record_writer
 		if (!captured && !data.history_contains(index))
 			return false;
 		const auto& row = captured ? captured->row : data.sample_at(index);
-		health_battle = data.session_enabled && (captured ? captured->in_match : data.match_at(index) != 0);
 		const u32 injected = u32{row.ports[0].injected} + u32{row.ports[1].injected};
 		const u32 posted = u32{row.ports[0].posted} + u32{row.ports[1].posted};
 		if (data.quiet)
@@ -252,19 +263,20 @@ struct pbd::rollback_session::record_writer
 		line += "]}\n";
 		if (data.file.write(line.data(), line.size()) != line.size())
 			return false;
-		if (!write_tick_row(index, row, partial_reason, captured ? &captured->tick : nullptr))
+		const bool battle = data.session_enabled && (captured ? captured->in_match : data.match_at(index) != 0);
+		if (!write_tick_row(index, row, partial_reason, battle, captured ? &captured->tick : nullptr))
 			return false;
 		completed += row.completed;
 		injected_total += injected;
 		return true;
 	}
 
-	bool write_tick_row(u32 index, const update_sample& row, const char* partial_reason, const tick_sample* captured = nullptr)
+	bool write_tick_row(u32 index, const update_sample& row, const char* partial_reason, bool battle, const tick_sample* captured = nullptr)
 	{
 		if (data.tick && row.entry_seen)
 		{
 			const auto& tick = captured ? *captured : data.tick_at(index);
-			const u32 mask = data.session_enabled && !(captured ? health_battle : data.match_at(index) != 0) ? data.menu_hash_mask : 7u;
+			const u32 mask = data.session_enabled && !battle ? data.menu_hash_mask : 7u;
 			const auto tick_line = fmt::format(
 				"{\"type\":\"tick\",\"index\":%u,\"consumer\":%u,\"session_segment\":%u,\"sync_hash_mask\":%u,\"gate_hold\":%u,"
 				"\"witness_read\":%s,\"witness\":[%u,%u,%u,%u,%u],\"checked\":%s,\"one_tick\":%s,"
@@ -379,29 +391,25 @@ struct pbd::rollback_session::record_writer
 		// owner-published boundary and renderer facts; absence of a boundary does not establish a guest suspension.
 		// in_callback is read BEFORE the stamp: the callback exit stores the stamp and then clears in_callback, so
 		// idle == true guarantees the stamp read next is that exit's (or newer), never a long hold's entry stamp. A paused
-		// emulator is not a freeze: the quiet time restarts when it resumes.
+		// emulator or a parked standby game is not a freeze: the quiet time restarts when the hold ends.
 		const bool idle = !data.in_callback.load();
 		const u64 menu_poll = data.overlay_poll_ns.load();
-		if (Emu.IsPaused() || (!idle && pbd::game_overlay::hold_live(data.now_ns(), menu_poll)))
-			freeze_pause_seen = true;
-		else if (freeze_pause_seen)
-		{
-			freeze_pause_seen = false;
-			freeze_quiet_from = data.now_ns();
-		}
+		freeze_quiet.observe(Emu.IsPaused(), pbd::held_presentation::output().parked(),
+			!idle && pbd::game_overlay::hold_live(data.now_ns(), menu_poll), data.now_ns());
+		const bool battle = data.published_battle();
 		const auto network_sequence = data.network.traffic().sequence;
 		if (const u64 now = data.now_ns(); (health || health_snapshot) && (now >= health_next_ns || network_sequence != health_network_sequence))
 		{
 			const auto network = data.network.get();
 			health_network_sequence = network.sequence;
 			health_next_ns = now + 1'000'000'000ull;
-			const u64 last = std::max(data.last_callback_ns.load(), freeze_quiet_from);
+			const u64 last = freeze_quiet.since(data.last_callback_ns.load());
 			const auto at_us = static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(session_clock::now().time_since_epoch()).count());
 			const auto details = network.enabled ? ",\"network\":" + pbd::peer_recovery::status_json(network, at_us) +
 			                                           pbd::session_health::progress_json(network.progress) :
 			                                       std::string{};
 			const auto line = fmt::format("{\"type\":\"health\",\"schema\":1,\"sequence\":%u,\"state\":\"%s\",\"idle_ms\":%u%s}\n",
-				++health_sequence, health_activity.observe(data.published.load(std::memory_order_acquire), now, health_battle, freeze_pause_seen, network.recovering),
+				++health_sequence, health_activity.observe(data.published.load(std::memory_order_acquire), now, battle, freeze_quiet.held(), network.recovering),
 				last && now > last ? (now - last) / 1000000 : 0, details);
 			if (health && health.write(line.data(), line.size()) != line.size())
 				health.close();
@@ -412,13 +420,17 @@ struct pbd::rollback_session::record_writer
 					health_snapshot.close(); // No stale-file/PID fallback: the launcher still requires a fresh valid sequence.
 			}
 		}
-		if (const u64 last = data.last_callback_ns.load(); idle && last && !freeze_dumped && !freeze_pause_seen)
+		if (const u64 last = data.last_callback_ns.load(); idle && last)
 		{
 			const u64 now_ns = data.now_ns();
-			if (now_ns > std::max(last, freeze_quiet_from) + 4'000'000'000ull)
-			{
+			const u64 quiet_from = freeze_quiet.since(last);
+			if (!freeze_dumped && !freeze_quiet.held() && now_ns > quiet_from + 4'000'000'000ull)
 				dump_freeze(now_ns, last);
-			}
+			// The stall watch acts where the probe only records: a battle with no boundary for 10 s outside the callback,
+			// while the other PC is still heard, asks the host to end the game as frozen. A held game never stalls.
+			const auto now_us = static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(session_clock::now().time_since_epoch()).count());
+			if (!stall_stopped && pbd::session_health::stalled({.idle = true, .battle = battle, .held = freeze_quiet.held(), .boundary_seen = true, .quiet_from_ns = quiet_from, .now_ns = now_ns, .peer_heard_us = data.peer_heard_us.load(std::memory_order_acquire), .now_us = now_us}))
+				stall_stopped = stall_stop((now_ns - quiet_from) / 1'000'000);
 		}
 	}
 
@@ -437,10 +449,49 @@ struct pbd::rollback_session::record_writer
 				pbd::replay_pacing::marker_write.load(), pbd::replay_pacing::markers_missed.load(), static_cast<u32>(pbd::replay_pacing::frames_ended.load()),
 				static_cast<u32>(pbd::replay_pacing::credits.load()), static_cast<u32>(pbd::replay_pacing::granted.load()), static_cast<u32>(pbd::replay_pacing::posted.load()),
 				static_cast<u32>(pbd::replay_pacing::skip_draws.load()), static_cast<u32>(pbd::replay_pacing::exact.load()));
+		text += geometry_probe();
 		const auto path = (data.directory / "freeze-probe.txt").u8string();
 		if (fs::file out(std::string(path.begin(), path.end()), fs::rewrite); out)
 			out.write(text.data(), text.size());
 		pbd_session_log.error("Freeze probe: no tick boundary for 4 s; published diagnostic facts written to freeze-probe.txt.");
 		// A missing boundary establishes no cause. Keep this diagnostic observational; peer/session liveness owns failure policy.
+	}
+
+	// The geometry and draw request managers and the geometry worker's semaphore, read without writing and without waiting
+	// on any guest or kernel object lock, so a stalled worker cannot hold up the probe; a source that cannot be read at
+	// once is reported unreadable.
+	static std::string geometry_probe()
+	{
+		namespace probe = pbd::freeze_probe;
+		const auto read = []<typename Image>(u32 address, std::optional<Image>& image)
+		{
+			image.emplace();
+			if (!vm::try_access(address, image->data(), static_cast<u32>(image->size()), false))
+				image.reset();
+		};
+		std::optional<probe::manager_image> manager;
+		std::optional<probe::list_image> pending, requests;
+		std::optional<probe::draw_image> draw;
+		read(probe::manager_address, manager);
+		read(probe::pending_address, pending);
+		read(probe::request_address, requests);
+		read(probe::draw_address, draw);
+		std::optional<probe::semaphore_facts> semaphore;
+		// This thread is not joined when emulation aborts. The id manager's shared lock keeps the semaphore and its
+		// sleeping threads alive while they are walked (only creation and removal take it exclusively), and a stopping
+		// emulator is not read at all.
+		if (!Emu.IsStopped())
+			idm::check<lv2_obj, lv2_sema>(probe::semaphore_id, [&](lv2_sema& sema)
+				{
+					std::shared_lock object_lock(sema.mutex, std::try_to_lock);
+					if (!object_lock.owns_lock())
+						return;
+					probe::semaphore_facts facts{.value = sema.val.load()};
+					for (const ppu_thread* waiter = sema.sq; waiter; waiter = waiter->next_cpu)
+						if (!facts.waiters++)
+							facts.first_waiter = waiter->id;
+					semaphore = facts;
+				});
+		return probe::geometry_text(manager, pending, requests, semaphore) + probe::draw_text(draw);
 	}
 };

@@ -282,10 +282,20 @@ namespace pbd::lobby_set
 			// Only a confirmed observation reaches here, with every required chunk/result/tail record accepted in serial order.
 			// The background writer publishes those records; shutdown drains pending output.
 			// Paused or opted-out spectator publication remains an explicit stream policy, not invented input coverage.
+			const bool chosen = in_game(m) && observed;
 			sealed = sealed_game_result{m.game_number, game_origin, row.boundary, confirmed_through, frame,
 				row.score_left, row.score_right, games, row.outcome, clean.generation, output.last_event(),
-				terminal, stream_enabled && m.publish_confirmed_inputs};
+				terminal, stream_enabled && m.publish_confirmed_inputs,
+				{chosen ? observed->left_row : m.left.row, chosen ? observed->right_row : m.right.row}};
 			return true;
+		}
+		// The sealed game as the PLAYER DATA bar counts it once a command confirms it; none after a draw.
+		std::optional<decided_game> decided() const
+		{
+			using pbd::match_recording::winner;
+			if (!sealed || (sealed->outcome != winner::left && sealed->outcome != winner::right))
+				return {};
+			return decided_game{sealed->rows, sealed->outcome == winner::left ? side::left : side::right};
 		}
 
 		bool consume(const sample& value, u32 confirmed_through)
@@ -513,7 +523,7 @@ namespace pbd::lobby_set
 					(value.rematch->repick && *value.rematch->repick != loser))
 					return refuse("rematch_load_changed", "The Rematch does not match the completed game.");
 			}
-			if (!output.continue_naturally(value))
+			if (!output.continue_naturally(value, decided()))
 				return refuse("natural_continuation_channel_failed", "The next game could not be acknowledged.");
 			current_load = value.rematch;
 			if (current_load)
@@ -533,7 +543,7 @@ namespace pbd::lobby_set
 				return refuse("direct_start_load_required", "A matched set needs the agreed fighters and stage for a direct start.");
 			if (value.rematch && (!previous || pbd::rematch::validate(*value.rematch, *previous, false, true) != pbd::rematch::error::none))
 				return refuse("rematch_load_changed", "The next set does not match the completed game's Rematch state.");
-			if (!output.next_set(value))
+			if (!output.next_set(value, decided()))
 				return refuse("next_set_channel_failed", "The next set could not be acknowledged.");
 			games = {};
 			current_load = value.rematch;

@@ -57,8 +57,8 @@ namespace pbd::pads
 	{
 		if (Emu.IsVsh())
 			return nullptr;
-		const char* config = pbd::env::find("PBD_CONTROLLER_CONFIG");
-		if (!config || !*config)
+		const auto config = pbd::env::utf8_path("PBD_CONTROLLER_CONFIG");
+		if (config.empty())
 			return nullptr;
 		auto backend = std::make_unique<pbd::controllers::backend>(config);
 		if (!backend->available())

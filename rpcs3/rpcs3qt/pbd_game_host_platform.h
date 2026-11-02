@@ -9,6 +9,7 @@ namespace pbd::game_host
 		constexpr UINT host_message = WM_APP + 0x42;
 		constexpr UINT control_message = WM_APP + 0x43;
 		const int geometry_event = QEvent::registerEventType();
+		const int recovery_event = QEvent::registerEventType();
 
 		struct handle
 		{
@@ -29,7 +30,8 @@ namespace pbd::game_host
 			const auto foreground = GetForegroundWindow();
 			return foreground && GetAncestor(foreground, GA_ROOT) == parent;
 		}
-		HWND read_contract(DWORD& pid, WPARAM& token, bool& hosted, bool& painted_return, bool& external_overlay)
+		HWND read_contract(DWORD& pid, WPARAM& token, bool& hosted, bool& painted_return, bool& external_overlay, bool& popup,
+			bool& force_hidden)
 		{
 			const QByteArray bytes(pbd::env::find("PBD_GAME_HOST"));
 			if (bytes.isEmpty())
@@ -42,6 +44,7 @@ namespace pbd::game_host
 			const auto secret = object["token"].toInteger();
 			const auto presentation = object["presentation"].toString("hosted");
 			const auto mode = object["displayMode"].toString("windowed");
+			const auto surface = object["surface"].toString("child");
 			if (error.error != QJsonParseError::NoError || object["schema"] != "pbd-game-host-1" || !valid_handle ||
 				!hwnd || process <= 0 || process > MAXDWORD || secret <= 0 || secret > INT_MAX ||
 				(presentation != "hosted" && presentation != "standalone") ||
@@ -52,6 +55,15 @@ namespace pbd::game_host
 			hosted = presentation == "hosted";
 			painted_return = object["paintedReturn"].toBool(false);
 			external_overlay = object["externalOverlay"].toBool(false) && hosted;
+			// Windowed mode draws in a window the launcher owns: a child window there can be composed under the launcher's
+			// page on PCs whose rendering GPU drives the screen. A Steam launch keeps its own unowned window. A surface this
+			// build does not know, from a newer launcher, draws as a child window, as before the field existed.
+			if (surface != "child" && surface != "popup")
+				game_host_log.warning("The launcher asked for an unknown game surface '%s'; the game draws in the launcher window.",
+					surface.left(32).toStdString());
+			popup = surface == "popup" && hosted && !external_overlay;
+			// A hardware test of the move into the game's own window: every on-screen check finds the picture missing.
+			force_hidden = object["screenCheck"].toString() == "hidden";
 			const auto parent = reinterpret_cast<HWND>(hwnd);
 			DWORD actual = 0, parent_session = 0, game_session = 0;
 			GetWindowThreadProcessId(parent, &actual);

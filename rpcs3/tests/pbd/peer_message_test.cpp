@@ -1,4 +1,4 @@
-// Golden bytes of the datagrams two peers exchange during a session: the version-11 input message with no inputs
+// Golden bytes of the datagrams two peers exchange during a session: the version-12 input message with no inputs
 // and with the full window of 16, and the end message. A receiver accepts only this exact layout, so a changed byte
 // splits players on different builds. The bytes are written out here field by field; the codec in pbd_peer_message.h,
 // which the sender, the receive thread and peer_poll all use, must read them back field by field and write exactly
@@ -34,7 +34,7 @@ namespace
 	// One field per line, at the offset in its comment; spaces split an input entry into its parts.
 	constexpr const char* empty_input_hex[] = {
 		"5042442d50454552",                 // 0 magic "PBD-PEER"
-		"0b000000",                         // 8 version
+		"0c000000",                         // 8 version
 		"00000000",                         // 12 sender role
 		"ffffffff",                         // 16 newest confirmed tick (-1: none)
 		"0000000000000000",                 // 20 its combat hash 0
@@ -70,11 +70,13 @@ namespace
 		"4786c861",                         // 184 state digest
 		"00000080",                         // 188 the segment's rank plan
 		"00000000",                         // 192 the previous segment's rank plan
+		"0da51142",                         // 196 the segment's PLAYER DATA numbers
+		"00000000",                         // 200 the previous segment's PLAYER DATA numbers
 	};
 
 	constexpr const char* full_input_hex[] = {
 		"5042442d50454552",                 // 0 magic "PBD-PEER"
-		"0b000000",                         // 8 version
+		"0c000000",                         // 8 version
 		"01000000",                         // 12 sender role
 		"f1030000",                         // 16 newest confirmed tick (-1: none)
 		"efcdab8967452301",                 // 20 its combat hash 0
@@ -126,6 +128,8 @@ namespace
 		"35aeb2c2",                         // 312 state digest
 		"d9000080",                         // 316 the segment's rank plan
 		"00000080",                         // 320 the previous segment's rank plan
+		"7bf6a42e",                         // 324 the segment's PLAYER DATA numbers
+		"0da51142",                         // 328 the previous segment's PLAYER DATA numbers
 	};
 
 	constexpr const char* end_hex[] = {
@@ -177,7 +181,7 @@ namespace
 		m.role = 0;
 		m.confirmed = -1;
 		m.sync = {session_tag, 0xb54a98ce, 0, 0, 0, 3, -250, 0};
-		m.segment = {1, 20, 0x0005000a, 4, 0x00030007, 0x100, 0xff, 0x80000000, 0};
+		m.segment = {1, 20, 0x0005000a, 4, 0x00030007, 0x100, 0xff, 0x80000000, 0, 0x4211a50d, 0};
 		m.gate = {1, 21, 19};
 		m.digests = {1, 0x165667b1, 1, 0x27d4eb2f, 1, map_from(0x40), 1, 0x61c88647};
 		return m;
@@ -193,7 +197,7 @@ namespace
 		for (u32 k = 0; k < message::max_inputs; k++)
 			m.inputs[m.count++] = {1000 + k, static_cast<u16>(0x8040 + 0x0101 * k)};
 		m.sync = {session_tag, 0x1234567890, 0x1234500000, 1500, 1012, 0, 2500, 1};
-		m.segment = {7, 980, 0x0011002c, 900, 0x0010002c, 0x4e0, 0x4df, 0x800000d9, 0x80000000};
+		m.segment = {7, 980, 0x0011002c, 900, 0x0010002c, 0x4e0, 0x4df, 0x800000d9, 0x80000000, 0x2ea4f67b, 0x4211a50d};
 		m.gate = {7, 1001, 1010};
 		m.digests = {3, 0x9e3779b9, 2, 0x85ebca6b, 1, map_from(0xa0), 6, 0xc2b2ae35};
 		return m;
@@ -265,7 +269,7 @@ namespace
 		for (u32 k = 0; k < m.count; k++)
 			m.inputs[k] = {n.word(), static_cast<u16>(n.word())};
 		m.sync = {n.word(), n.next(), n.next(), n.word(), n.word(), n.word(), static_cast<std::int32_t>(n.word()), n.word()};
-		m.segment = {n.word(), n.word(), n.word(), n.word(), n.word(), n.word(), n.word(), n.word(), n.word()};
+		m.segment = {n.word(), n.word(), n.word(), n.word(), n.word(), n.word(), n.word(), n.word(), n.word(), n.word(), n.word()};
 		m.gate = {n.word(), n.word(), n.word()};
 		m.digests = {n.word(), n.word(), n.word(), n.word(), n.word(), {}, n.word(), n.word()};
 		for (auto& b : m.digests.map)
@@ -277,7 +281,7 @@ namespace
 PBD_TEST(PbdPeerMessage, TheGoldenInputMessagesReadBackFieldByField)
 {
 	const bytes empty = from_hex(empty_input_hex), full = from_hex(full_input_hex);
-	check(empty.size() == 196 && full.size() == 324, "input messages are 196 bytes plus 8 per input");
+	check(empty.size() == 204 && full.size() == 332, "input messages are 204 bytes plus 8 per input");
 	check(read(empty, 1) == empty_input(), "the empty message reads back field by field");
 	check(read(full, 0) == full_input(), "the full message reads back field by field");
 }
@@ -314,7 +318,7 @@ PBD_TEST(PbdPeerMessage, AnInputMessageOutsideTheLayoutIsRejectedByTheRuleItBrea
 {
 	const bytes full = from_hex(full_input_hex);
 	check(status(full) == input_check::valid, "the golden message is valid for role 0");
-	check(status(with32(full, 8, 10)) == input_check::bad_message && status(with32(full, 8, 12)) == input_check::bad_message,
+	check(status(with32(full, 8, 11)) == input_check::bad_message && status(with32(full, 8, 13)) == input_check::bad_message,
 		"another version is a bad message");
 	check(status(full, 1) == input_check::bad_message, "a message from the receiver's own role is a bad message");
 	bytes renamed = full;

@@ -18,21 +18,48 @@ namespace pbd::game_host
 		std::atomic<double> refresh{60};
 		std::atomic<ULONGLONG> first_frame{0};
 		bool show_requested = false;
-		// The surface refresh (see refresh_surface): when it is due, and whether the window is shrunk by a pixel now.
-		ULONGLONG refresh_due = 0;
+		// The surface refresh (see refresh_surface): when it is due, when it last finished, and whether the window is shrunk
+		// by a pixel now.
+		ULONGLONG refresh_due = 0, refresh_done = 0;
 		bool refresh_shrunk = false, refreshed_once = false;
-		std::atomic<bool> detached{false};
+		// detached: the render window is a top-level window, not the launcher's child. A Steam launch's window has no owner
+		// (external_overlay); any other is owned by the launcher and follows it (owned_popup). Windowed mode starts that way,
+		// and a hosted game whose picture the on-screen check finds missing moves there.
+		std::atomic<bool> detached{false}, owned_popup{false};
 		RECT normal_bounds{};
+		HWINEVENTHOOK follow_hook = nullptr;
+		DWORD launcher_thread = 0;
 		bool hosted = false, painted_return = false, external_overlay = false;
+		// An owned window waits to take the keyboard back from the launcher until doing so cancels nothing (try_hand_back).
+		bool hand_back_pending = false;
+		// The on-screen check of the latest show (screen_check_step). The visible answer says OK only once it has passed.
+		std::atomic<bool> screen_passed{false};
+		bool force_hidden = false;
+		struct
+		{
+			ULONGLONG due = 0, requested_at = 0, first_at = 0; // due 0: no check is running
+			ULONGLONG started = 0;                             // the show this check is for
+			std::uint64_t request = 0;                         // the frame colours asked for the next sample
+			int taken = 0;
+			screen_sample first{}, previous{}, launcher{};
+			bool has_launcher = false;
+			long long slowest_read_us = 0;
+			const char* held = nullptr; // what a sample last waited for, for the log
+		} check;
 		inline static thread_local state* event_owner = nullptr;
 		// The keyboard, read on a thread of its own (pbd_raw_keyboard.h).
 		std::shared_ptr<raw_keyboard::sink> raw_keys;
 
 		explicit state(QWindow& target) : game(target)
 		{
-			parent = read_contract(launcher_pid, token, hosted, painted_return, external_overlay);
+			bool popup_surface = false;
+			parent = read_contract(launcher_pid, token, hosted, painted_return, external_overlay, popup_surface, force_hidden);
 			if (!parent)
 				return;
+			owned_popup.store(popup_surface);
+			launcher_thread = GetWindowThreadProcessId(parent, nullptr);
+			if (force_hidden)
+				game_host_log.warning("Hardware test: every on-screen check finds the game picture missing.");
 			qt_window = reinterpret_cast<HWND>(game.winId());
 			launcher.value = OpenProcess(SYNCHRONIZE, FALSE, launcher_pid);
 			stop_event.value = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -62,7 +89,7 @@ namespace pbd::game_host
 					start_raw_keys();
 			}
 			// For the run summary: where the game is drawn and how its keys arrive.
-			pbd::presentation::journal::get().hosted(hosted && !external_overlay);
+			pbd::presentation::journal::get().hosted(hosted && !detached.load());
 			pbd::presentation::journal::get().keyboard(raw_keys_active());
 			control_thread = std::jthread(
 				[this](std::stop_token stop)
@@ -105,17 +132,44 @@ namespace pbd::game_host
 			g_game_window_focused = value;
 			post(new QFocusEvent(value ? QEvent::FocusIn : QEvent::FocusOut));
 		}
+		// The player is in front of the game: its own window, or the launcher it is drawn in or owned by.
+		bool game_root_foreground() const
+		{
+			const auto child = render_window.load();
+			if (external_overlay)
+				return foreground_within(child);
+			if (owned_popup.load())
+				return foreground_within(child) || foreground_within(parent);
+			return foreground_within(parent);
+		}
 		static void CALLBACK foreground_event(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD)
 		{
 			if (event_owner)
 			{
 				const auto child = event_owner->render_window.load();
-				const auto root = event_owner->detached ? child : event_owner->parent;
-				// Restore the active game's keyboard target only on foreground transitions, never by polling.
-				if (child && event_owner->visible.load() && !event_owner->closing.load() && foreground_within(root) && GetFocus() != child)
-					SetFocus(child);
-				event_owner->focus(child && foreground_within(root) && GetFocus() == child);
+				const bool front = event_owner->game_root_foreground();
+				// Restore the active game's keyboard target only on foreground transitions, never by polling. A child window
+				// takes the focus inside the launcher's active window; an owned window must take the activation itself, which
+				// waits until it cancels nothing (try_hand_back).
+				if (child && event_owner->visible.load() && !event_owner->closing.load() && front && GetFocus() != child)
+				{
+					if (event_owner->owned_popup.load() && event_owner->detached.load())
+					{
+						event_owner->hand_back_pending = true;
+						event_owner->try_hand_back(child);
+					}
+					else
+						SetFocus(child);
+				}
+				event_owner->focus(child && front && GetFocus() == child);
 			}
+		}
+		// An owned window follows each move and resize of the launcher as it happens, not only when the launcher asks.
+		static void CALLBACK launcher_moved(HWINEVENTHOOK, DWORD, HWND moved, LONG object, LONG item, DWORD, DWORD)
+		{
+			if (event_owner && moved == event_owner->parent && object == OBJID_WINDOW && item == CHILDID_SELF && event_owner->owned_popup.load())
+				if (const auto child = event_owner->render_window.load())
+					event_owner->place_popup(child);
 		}
 		void publish_geometry(HWND child)
 		{
@@ -127,10 +181,71 @@ namespace pbd::game_host
 			height.store(std::max(bounds.bottom, 1L));
 			post(new geometry_change(QSize(MulDiv(width.load(), 96, dpi), MulDiv(height.load(), 96, dpi))));
 		}
+		// An owned window covers the launcher's client area exactly, wherever the launcher is. A minimized launcher hides
+		// its owned windows itself, so its parked position is never followed. The window's own rectangle is compared, not
+		// the last one set: Windows moves windows itself on display and scale changes.
+		void place_popup(HWND child)
+		{
+			RECT client{}, actual{};
+			POINT origin{};
+			if (IsIconic(parent) || !GetClientRect(parent, &client) || !ClientToScreen(parent, &origin))
+				return;
+			const RECT target{origin.x, origin.y, origin.x + std::max(client.right, 1L), origin.y + std::max(client.bottom, 1L)};
+			if (GetWindowRect(child, &actual) && EqualRect(&target, &actual))
+				return;
+			normal_bounds = place_overlay_surface(child, parent);
+		}
+		// The launcher's thread is moving or sizing its window, or shows a menu: activating another window would end that.
+		bool launcher_busy() const
+		{
+			GUITHREADINFO info{};
+			info.cbSize = sizeof(info);
+			return GetGUIThreadInfo(launcher_thread, &info) &&
+			       (info.flags & (GUI_INMOVESIZE | GUI_INMENUMODE | GUI_POPUPMENUMODE | GUI_SYSTEMMENUMODE));
+		}
+		// Physical buttons, whichever is primary: a press on the launcher's frame can be the start of a drag.
+		static bool mouse_button_down()
+		{
+			return ((GetAsyncKeyState(VK_LBUTTON) | GetAsyncKeyState(VK_RBUTTON) | GetAsyncKeyState(VK_MBUTTON)) & 0x8000) != 0;
+		}
+		// An owned window takes the keyboard back from its launcher once that cancels nothing; called on each pass of the
+		// window thread's loop while it waits.
+		void try_hand_back(HWND child)
+		{
+			if (!hand_back_pending)
+				return;
+			if (!visible.load() || closing.load() || !detached.load() || !owned_popup.load())
+			{
+				hand_back_pending = false;
+				return;
+			}
+			const bool game_in_front = foreground_within(child);
+			if (game_in_front && GetFocus() != child)
+				SetFocus(child);
+			switch (plan_hand_back(game_in_front, foreground_within(parent), launcher_busy(), mouse_button_down()))
+			{
+			case hand_back::none: hand_back_pending = false; break;
+			case hand_back::later: break;
+			case hand_back::now:
+				hand_back_pending = false;
+				SetForegroundWindow(child);
+				SetFocus(child);
+				break;
+			}
+		}
+		void follow_launcher(HWND child)
+		{
+			place_popup(child);
+			if (!follow_hook)
+				follow_hook = SetWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, nullptr, launcher_moved,
+					launcher_pid, GetWindowThreadProcessId(parent, nullptr), WINEVENT_OUTOFCONTEXT);
+		}
 		void resize(HWND child)
 		{
 			if (detached)
 			{
+				if (owned_popup.load())
+					place_popup(child);
 				publish_geometry(child);
 				return;
 			}
@@ -157,10 +272,7 @@ namespace pbd::game_host
 				GetWindowThreadProcessId(w, &pid);
 				RECT r{};
 				GetWindowRect(w, &r);
-				std::string cls;
-				for (const wchar_t* c = name; *c; ++c)
-					cls += *c < 128 ? static_cast<char>(*c) : '?';
-				layers += fmt::format("%s%s[%s pid %u %s ex 0x%x %dx%d]", count ? " " : "", w == child ? "*" : "", cls, pid,
+				layers += fmt::format("%s%s[%s pid %u %s ex 0x%x %dx%d]", count ? " " : "", w == child ? "*" : "", printable_ascii(name), pid,
 					IsWindowVisible(w) ? "shown" : "hidden", static_cast<u32>(GetWindowLongPtrW(w, GWL_EXSTYLE)), static_cast<int>(r.right - r.left), static_cast<int>(r.bottom - r.top));
 			}
 			game_host_log.notice("Hosted layers %s (top first, * = game): %s", when, layers);
@@ -184,42 +296,283 @@ namespace pbd::game_host
 			resize(child);
 			refresh_shrunk = false;
 			refresh_due = 0;
+			refresh_done = now;
 			refreshed_once = true;
 			log_layers(child, "after the surface refresh");
 		}
-		void fallback(HWND child)
+		// Moves the render window out of the launcher's child list into a top-level window the launcher owns. Owned, it stays
+		// above the launcher, follows it and has no taskbar button, so it still looks like one window; and no layer of the
+		// launcher's page can cover a top-level window. The render HWND and its Vulkan surface stay the same.
+		bool make_owned_popup(HWND child, std::string_view reason)
 		{
-			// Keep the render HWND and its Vulkan surface alive while removing Chromium's covering layers.
+			const bool shown = visible.load();
 			const bool owned_focus = has_focus.load() && foreground_within(parent);
-			RECT bounds{};
-			GetWindowRect(child, &bounds);
+			// Hidden while it changes hands, so no window without an owner is ever shown, not even for a moment: it would
+			// flash a taskbar button.
+			if (shown)
+				ShowWindow(child, SW_HIDE);
 			SetLastError(0);
 			if (!SetParent(child, nullptr) && GetLastError())
 			{
-				game_host_log.error("Standalone fallback could not detach the render window: %u", GetLastError());
-				return;
+				game_host_log.error("The game window could not leave the launcher window: %u", GetLastError());
+				if (shown)
+					ShowWindow(child, SW_SHOWNOACTIVATE);
+				return false;
 			}
+			SetWindowLongPtrW(child, GWL_STYLE, WS_POPUP | WS_CLIPSIBLINGS);
+			SetWindowLongPtrW(child, GWL_EXSTYLE, 0);
+			// On a top-level window this sets the owner.
+			SetWindowLongPtrW(child, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(parent));
 			detached.store(true);
+			owned_popup.store(true);
+			// The surface refresh runs only in the launcher window: one under way now would hold every sample of the check
+			// from here on. Following the launcher gives the window its full size back.
+			refresh_due = 0;
+			refresh_shrunk = false;
 			pbd::presentation::journal::get().hosted(false);
-			normal_bounds = bounds;
-			MONITORINFO monitor{sizeof(monitor)};
-			if (GetMonitorInfoW(MonitorFromWindow(child, MONITOR_DEFAULTTONEAREST), &monitor) && EqualRect(&bounds, &monitor.rcMonitor))
-			{
-				const LONG width = std::min(1280L, monitor.rcWork.right - monitor.rcWork.left);
-				const LONG height = std::min(720L, monitor.rcWork.bottom - monitor.rcWork.top);
-				normal_bounds = {monitor.rcWork.left, monitor.rcWork.top, monitor.rcWork.left + width, monitor.rcWork.top + height};
-			}
-			SetWindowLongPtrW(child, GWL_STYLE, WS_POPUP | WS_VISIBLE | WS_CLIPSIBLINGS);
-			SetWindowLongPtrW(child, GWL_EXSTYLE, WS_EX_APPWINDOW);
-			SetWindowPos(child, HWND_TOP, bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top,
-				SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOACTIVATE);
+			follow_launcher(child);
+			SetWindowPos(child, HWND_TOP, 0, 0, 0, 0,
+				SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_NOACTIVATE | (shown ? SWP_SHOWWINDOW : 0));
+			publish_geometry(child);
 			if (owned_focus)
 			{
-				SetForegroundWindow(child);
-				SetFocus(child);
+				hand_back_pending = true;
+				try_hand_back(child);
 			}
-			PostMessageW(parent, host_message, token, (static_cast<LPARAM>(GetCurrentProcessId()) << 8) | 5);
-			game_host_log.error("Hosted frame remained below launcher layers for 2000 ms; using the standalone render window.");
+			PostMessageW(parent, host_message, token, (static_cast<LPARAM>(GetCurrentProcessId()) << 8) | 9);
+			game_host_log.warning("The game draws in its own window over the launcher from now on: %s.", reason);
+			return true;
+		}
+		// Shift+F11 (escape_key): the player sees no picture. A game in the launcher window moves into its own window, the
+		// fix the on-screen check would make; one there already asks the launcher for its way out.
+		void player_escape(HWND child)
+		{
+			game_host_log.warning("The player pressed Shift+F11: no game picture for them (%s).", surface_name());
+			if (!detached.load() && !external_overlay && make_owned_popup(child, "the player pressed Shift+F11"))
+			{
+				screen_check_start(nullptr);
+				return;
+			}
+			PostMessageW(parent, host_message, token, (static_cast<LPARAM>(GetCurrentProcessId()) << 8) | 10);
+		}
+		// The composed desktop at the check's points of the game's client area, as the player sees it. A point counts only
+		// where the window under it is the game's or the launcher's: another program's window there proves nothing. Each
+		// desktop read waits on the compositor, and this thread shares the launcher's input, so the four rows of points are
+		// read as four one-pixel strips at their exact positions. CAPTUREBLT is left out: the compositor's desktop has every
+		// window in it already, and that flag hides software cursors while it reads (remote and virtual displays).
+		// `colours`: the presented frame the screen is compared with, or none. Its points are read where the window shows
+		// them; a scaled frame's in both readings (screen_sample::scaled), four strips each, and a point is usable only where
+		// both of its spots are. The time measured covers the window lookups too.
+		bool read_screen(HWND child, screen_sample& sample, const pbd::screen_check::frame_colours* colours = nullptr)
+		{
+			RECT client{};
+			POINT origin{};
+			if (!GetClientRect(child, &client) || !ClientToScreen(child, &origin) || client.right < 8 || client.bottom < 8)
+				return false;
+			std::uint32_t drawn_width = 0, drawn_height = 0, image_width = 0, image_height = 0;
+			if (colours && colours->width && colours->height)
+			{
+				sample.frame = colours->rgb;
+				sample.framed = true;
+				sample.scaled = !frame_fits_window(colours->image_width, colours->image_height, client.right, client.bottom);
+				drawn_width = colours->width;
+				drawn_height = colours->height;
+				image_width = colours->image_width;
+				image_height = colours->image_height;
+			}
+			const std::uint32_t readings = sample.scaled ? 2 : 1;
+			const auto x_at = [&](std::uint32_t i, std::uint32_t reading)
+			{
+				return pbd::screen_check::client_x(i, drawn_width, image_width, static_cast<std::uint32_t>(client.right), reading != 0);
+			};
+			const auto y_at = [&](std::uint32_t i, std::uint32_t reading)
+			{
+				return pbd::screen_check::client_y(i, drawn_height, image_height, static_cast<std::uint32_t>(client.bottom), reading != 0);
+			};
+			const auto started = std::chrono::steady_clock::now();
+			const auto own_root = GetAncestor(child, GA_ROOT);
+			sample.usable = (1u << screen_points) - 1;
+			for (std::uint32_t reading = 0; reading < readings; ++reading)
+			{
+				for (std::uint32_t i = 0; i < screen_points; ++i)
+				{
+					const POINT at{origin.x + static_cast<LONG>(x_at(i, reading)), origin.y + static_cast<LONG>(y_at(i, reading))};
+					const auto over = WindowFromPoint(at);
+					const auto root = over ? GetAncestor(over, GA_ROOT) : nullptr;
+					if (!root || (root != parent && root != own_root))
+						sample.usable &= ~(1u << i);
+				}
+			}
+			const auto screen_dc = GetDC(nullptr);
+			if (!screen_dc)
+				return false;
+			const auto memory = CreateCompatibleDC(screen_dc);
+			BITMAPINFO info{};
+			info.bmiHeader.biSize = sizeof(info.bmiHeader);
+			info.bmiHeader.biWidth = client.right;
+			info.bmiHeader.biHeight = -static_cast<LONG>(readings * pbd::screen_check::grid);
+			info.bmiHeader.biPlanes = 1;
+			info.bmiHeader.biBitCount = 32;
+			info.bmiHeader.biCompression = BI_RGB;
+			void* bits = nullptr;
+			const auto bitmap = memory ? CreateDIBSection(memory, &info, DIB_RGB_COLORS, &bits, nullptr, 0) : nullptr;
+			bool read = bitmap && bits;
+			if (read)
+			{
+				const auto previous = SelectObject(memory, bitmap);
+				for (std::uint32_t row = 0; row < readings * pbd::screen_check::grid; ++row)
+				{
+					const auto reading = row / pbd::screen_check::grid, line = row % pbd::screen_check::grid;
+					const int y = origin.y + static_cast<int>(y_at(line * pbd::screen_check::grid, reading));
+					read = BitBlt(memory, 0, static_cast<int>(row), client.right, 1, screen_dc, origin.x, y, SRCCOPY) && read;
+				}
+				GdiFlush();
+				const auto* pixels = static_cast<const std::uint32_t*>(bits);
+				for (std::uint32_t reading = 0; reading < readings; ++reading)
+				{
+					auto& target = reading ? sample.stretched : sample.screen;
+					for (std::uint32_t i = 0; i < screen_points; ++i)
+					{
+						const auto row = reading * pbd::screen_check::grid + i / pbd::screen_check::grid;
+						target[i] = pixels[row * client.right + x_at(i, reading)] & 0xffffff;
+					}
+				}
+				SelectObject(memory, previous);
+			}
+			if (bitmap)
+				DeleteObject(bitmap);
+			if (memory)
+				DeleteDC(memory);
+			ReleaseDC(nullptr, screen_dc);
+			check.slowest_read_us = std::max<long long>(check.slowest_read_us,
+				std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count());
+			return read;
+		}
+		static std::string describe_points(const std::array<std::uint32_t, screen_points>& colours)
+		{
+			std::string text;
+			for (const auto colour : colours)
+				text += fmt::format("%s%06x", text.empty() ? "" : ",", colour);
+			return text;
+		}
+		// Starts the check of a show. `launcher_view`: the screen just before it, while the launcher was what it showed.
+		void screen_check_start(const screen_sample* launcher_view)
+		{
+			screen_passed.store(false);
+			const auto slowest_read_us = check.slowest_read_us;
+			check = {};
+			check.slowest_read_us = slowest_read_us;
+			check.started = GetTickCount64();
+			check.due = check.started + screen_first_sample_ms;
+			if (launcher_view)
+			{
+				check.launcher = *launcher_view;
+				check.has_launcher = true;
+			}
+		}
+		const char* surface_name() const
+		{
+			return !detached.load() ? "in the launcher window" : external_overlay ? "Steam window" :
+			                                                                        "own window";
+		}
+		void log_screen_check(const char* outcome, ULONGLONG now, const screen_sample& last)
+		{
+			game_host_log.notice("Screen check (%s): %s after %d sample(s) in %llu ms; slowest screen read %lld us; usable=0x%04x screen=%s frame=%s%s",
+				surface_name(), outcome, check.taken, check.first_at ? now - check.first_at : 0ull, check.slowest_read_us, last.usable,
+				describe_points(last.screen), last.framed ? describe_points(last.frame) : std::string("none"),
+				last.scaled ? " stretched=" + describe_points(last.stretched) : std::string());
+		}
+		// One step of the running check, from the window thread's loop. A sample waits for the player to be in front of the
+		// game (other windows could cover it otherwise) and for a surface refresh to settle; it pairs the screen with the
+		// colours of an image presented after it was asked for, or with none when the renderer does not answer in time.
+		void screen_check_step(HWND child, ULONGLONG now)
+		{
+			if (!check.due || now < check.due || !visible.load() || closing.load())
+				return;
+			if (screen_check_overdue(detached.load(), now - check.started, screen_passed.load()))
+			{
+				// The waits below last as long as their causes; a check still undecided at its bound passes as one whose
+				// samples ran out does, and the slow re-check goes on from when the first sample was due.
+				if (!check.first_at)
+					check.first_at = check.started + screen_first_sample_ms;
+				const auto outcome = fmt::format("inconclusive at the time bound, passed; re-checking (samples last waited for %s)",
+					check.held ? check.held : "nothing");
+				log_screen_check(outcome.c_str(), now, check.previous);
+				screen_passed.store(true);
+			}
+			const char* held = refresh_due || refresh_shrunk || now < refresh_done + 150 ? "a surface refresh" :
+			                   IsIconic(parent)                                          ? "the launcher to be restored" :
+			                   !game_root_foreground()                                   ? "the player to be in front" :
+			                                                                               nullptr;
+			if (held)
+			{
+				// An answer asked before this wait would be paired with a screen read long after it: asked again after.
+				check.held = held;
+				check.request = 0;
+				return;
+			}
+			auto& frames = pbd::screen_check::frames();
+			if (!check.request)
+			{
+				check.request = frames.request();
+				check.requested_at = now;
+				return;
+			}
+			const auto colours = frames.answered(check.request);
+			if (!colours && now - check.requested_at < screen_answer_ms)
+				return;
+			check.request = 0;
+			screen_sample sample{};
+			if (!read_screen(child, sample, colours ? &*colours : nullptr))
+				sample.usable = 0;
+			const auto* launcher_view = check.has_launcher ? &check.launcher : nullptr;
+			const bool first = ++check.taken == 1;
+			if (first)
+			{
+				check.first = sample;
+				check.first_at = now;
+			}
+			const auto verdict = force_hidden ? screen_verdict::forced_hidden :
+			                     first        ? (screen_confirmed(sample, launcher_view) ? screen_verdict::confirmed : screen_verdict::undecided) :
+			                                    judge_screen(launcher_view, check.first, check.previous, sample, detached.load());
+			check.previous = sample;
+			if (verdict != screen_verdict::undecided)
+			{
+				screen_check_finish(child, verdict, now, sample);
+				return;
+			}
+			const auto next = schedule_after_undecided(now - check.first_at, check.taken, screen_passed.load());
+			if (next.pass)
+			{
+				// Screen reads can miss a picture the display shows directly, and windows of other programs can cover points,
+				// so no evidence either way passes; the slow re-check goes on.
+				log_screen_check("inconclusive, passed; re-checking", now, sample);
+				screen_passed.store(true);
+			}
+			if (!next.next_ms)
+			{
+				log_screen_check("re-check over, inconclusive", now, sample);
+				check.due = 0;
+				return;
+			}
+			check.due = now + next.next_ms;
+		}
+		void screen_check_finish(HWND child, screen_verdict verdict, ULONGLONG now, const screen_sample& last)
+		{
+			check.due = 0;
+			log_screen_check(std::string(screen_verdict_name(verdict)).c_str(), now, last);
+			// The hidden child's last sample is what the launcher shows: the view an own window must change.
+			if (screen_hidden(verdict) && !detached.load() && !external_overlay && make_owned_popup(child, screen_verdict_name(verdict)))
+			{
+				screen_check_start(&last);
+				return;
+			}
+			// Nothing of the launcher can cover a top-level window. A picture still missing there is beyond what moving
+			// windows can mend, and a desktop read can miss a picture the display shows directly, so the game keeps its
+			// window as it is and the player has Shift+F11 for the launcher's way out; the log keeps the evidence.
+			if (screen_hidden(verdict))
+				game_host_log.warning("The screen still showed no game picture (%s); the game keeps its window.", surface_name());
+			screen_passed.store(true);
 		}
 		void update_refresh()
 		{
@@ -235,7 +588,7 @@ namespace pbd::game_host
 		void return_foreground(bool already_granted = false)
 		{
 			// The standalone window owns focus directly; its hosted-child focus flag is never set.
-			const bool grant = already_granted || (hosted ? has_focus.load() && foreground_within(detached ? render_window.load() : parent) : foreground_within(qt_window));
+			const bool grant = already_granted || (hosted ? has_focus.load() && game_root_foreground() : foreground_within(qt_window));
 			if (grant)
 				AllowSetForegroundWindow(launcher_pid);
 			PostMessageW(
@@ -250,7 +603,7 @@ namespace pbd::game_host
 			const QPointF local(point.x / scale, point.y / scale);
 			POINT global = point;
 			ClientToScreen(child, &global);
-			const QPointF screen(global.x / scale, global.y / scale);
+			const QPointF screen_point(global.x / scale, global.y / scale);
 			Qt::MouseButtons buttons{};
 			if (key & MK_LBUTTON)
 				buttons |= Qt::LeftButton;
@@ -266,7 +619,7 @@ namespace pbd::game_host
 			                        Qt::MiddleButton :
 			                        Qt::NoButton;
 			if (message == WM_MOUSEWHEEL)
-				post(new QWheelEvent(local, screen, QPoint(), QPoint(0, GET_WHEEL_DELTA_WPARAM(key)), buttons,
+				post(new QWheelEvent(local, screen_point, QPoint(), QPoint(0, GET_WHEEL_DELTA_WPARAM(key)), buttons,
 					modifiers(), Qt::NoScrollPhase, false));
 			else
 			{
@@ -277,16 +630,25 @@ namespace pbd::game_host
 					(message == WM_LBUTTONDBLCLK || message == WM_RBUTTONDBLCLK || message == WM_MBUTTONDBLCLK) ?
 											  QEvent::MouseButtonDblClick :
 											  QEvent::MouseButtonPress;
-				post(new QMouseEvent(type, local, screen, button, buttons, modifiers()));
+				post(new QMouseEvent(type, local, screen_point, button, buttons, modifiers()));
 			}
 		}
 		void keyboard(HWND child, UINT message, WPARAM key, LPARAM value)
 		{
 			const bool pressed = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
-			if (fullscreen_key(key == VK_F11, modifiers() != Qt::NoModifier))
+			const auto held = modifiers();
+			if (escape_key(key == VK_F11, held.testFlag(Qt::ShiftModifier),
+					held.testFlag(Qt::ControlModifier) || held.testFlag(Qt::AltModifier) || held.testFlag(Qt::MetaModifier)))
 			{
 				if (pressed && !(value & (1 << 30)))
-					if (detached)
+					player_escape(child);
+				return;
+			}
+			if (fullscreen_key(key == VK_F11, held != Qt::NoModifier))
+			{
+				// A Steam window has its own full screen; an owned window follows the launcher's.
+				if (pressed && !(value & (1 << 30)))
+					if (external_overlay)
 						command(child, 7);
 					else
 						PostMessageW(parent, host_message, token, 2);
@@ -321,7 +683,7 @@ namespace pbd::game_host
 				},
 				[this]()
 				{
-					return visible.load() && has_focus.load() && foreground_within(detached ? render_window.load() : parent);
+					return visible.load() && has_focus.load() && game_root_foreground();
 				},
 				[]()
 				{
@@ -337,19 +699,94 @@ namespace pbd::game_host
 		{
 			return raw_keys && raw_keys->active();
 		}
+		bool presentation_ready() const
+		{
+			return !closing.load() && can_show_frame(first_frame.load() != 0, pbd::held_presentation::output().can_show());
+		}
+		struct visibility_answer
+		{
+			bool verified = false;        // the visible answer: shown, in front, and confirmed on screen
+			bool window_verified = false; // the window state alone
+			bool front = false;           // the player is in front of the game or the launcher it belongs to
+			bool pending = false;         // the game's own window is shown and in front while its screen check runs
+		};
+		visibility_answer observe_visibility(const char* action)
+		{
+			const auto child = hosted ? render_window.load() : qt_window;
+			const bool popup = hosted && owned_popup.load() && detached.load();
+			const auto root = hosted && !detached.load() ? parent : child;
+			const auto observed = observe_window_visibility(child, root, popup ? parent : nullptr);
+			const auto& value = observed.state;
+			const bool ready = presentation_ready();
+			const bool on_screen = !hosted || screen_passed.load();
+			game_host_log.notice("Window visibility %s: ready=%d exists=%d visible=%d minimized=%d cloakKnown=%d cloaked=%d rect=%d,%d,%d,%d clippedRect=%d,%d,%d,%d monitor=%d foreground=%d screen=%s",
+				action, ready, value.exists, value.visible, value.minimized, value.cloak_known, value.cloaked,
+				observed.bounds.left, observed.bounds.top, observed.bounds.right, observed.bounds.bottom,
+				observed.clipped.left, observed.clipped.top, observed.clipped.right, observed.clipped.bottom,
+				value.on_screen, value.foreground, on_screen ? "passed" : "pending");
+			if (value.on_screen)
+				game_host_log.notice("Window monitor: rect=%d,%d,%d,%d workArea=%d,%d,%d,%d dpi=%u",
+					observed.screen.rcMonitor.left, observed.screen.rcMonitor.top, observed.screen.rcMonitor.right, observed.screen.rcMonitor.bottom,
+					observed.screen.rcWork.left, observed.screen.rcWork.top, observed.screen.rcWork.right, observed.screen.rcWork.bottom, GetDpiForWindow(child));
+			return {ready && value.verified() && on_screen, value.verified(), hosted ? game_root_foreground() : foreground_within(qt_window),
+				screen_check_pending(hosted && detached.load(), ready && value.verified(), on_screen)};
+		}
+		void recover(HWND child)
+		{
+			const auto observed = observe_visibility("before recovery");
+			if (!presentation_ready() || !child || !IsWindow(child))
+				return;
+			// The launcher asks while the visible answer is NO, which it is while the check runs.
+			if (hosted && recovery_skipped(check.due && !screen_passed.load(), observed.window_verified))
+			{
+				game_host_log.notice("Window recovery skipped: the window is shown and in front, and the screen check is running.");
+				return;
+			}
+			if (hosted)
+				command(child, 4);
+			else
+				game.showNormal();
+			// An owned window goes where the launcher goes, so the launcher is what is put back on screen.
+			const auto root = hosted && (!detached.load() || owned_popup.load()) ? parent : child;
+			const auto repair = recover_window_position(root);
+			if (hosted)
+			{
+				ShowWindow(child, SW_SHOWNOACTIVATE);
+				resize(child);
+				if (!detached.load())
+				{
+					raise(child);
+					refresh_shrunk = false;
+					refresh_due = GetTickCount64() + 300;
+				}
+				if (foreground_within(root))
+					SetFocus(child);
+			}
+			pbd::output_gain::output().visible(true);
+			game_host_log.notice("Window recovery: restore=%d fit=%d foreground=%d target=%d,%d,%d,%d",
+				repair.restored, repair.positioned, repair.foreground, repair.target.x, repair.target.y, repair.target.width, repair.target.height);
+			observe_visibility("after recovery");
+		}
 		void command(HWND child, LPARAM value)
 		{
+			if (value == 6)
+			{
+				recover(child);
+				return;
+			}
 			if (value == 2)
 				resize(child);
-			if (value == 3 && (!detached || external_overlay || closing.load()))
+			if (value == 3)
 			{
-				if (external_overlay && foreground_within(child))
+				// A top-level game window in front hands the foreground back to the launcher before it hides.
+				if (detached && foreground_within(child))
 				{
 					AllowSetForegroundWindow(launcher_pid);
 					SetForegroundWindow(parent);
 				}
 				show_requested = false;
 				visible.store(false);
+				check.due = 0;
 				pbd::output_gain::output().visible(false);
 				focus(false);
 				ShowWindow(child, SW_HIDE);
@@ -363,24 +800,45 @@ namespace pbd::game_host
 				// The launcher repeats this command on every focus, move and resize of its window. Only a real show (hidden
 				// to visible) shows the window and rebuilds the surface: a rebuild on each repeat drops frames and opens the
 				// one-pixel strip where the launcher shows through, which a launcher filling the same screen does constantly.
-				if (external_overlay && !visible.load())
-					normal_bounds = place_overlay_surface(child, parent);
+				if (detached && !visible.load())
+				{
+					if (external_overlay)
+						normal_bounds = place_overlay_surface(child, parent);
+					else
+						follow_launcher(child);
+				}
 				const bool shown = !visible.exchange(true);
 				if (shown)
 				{
+					// What the screen shows before the game: the view the game must replace for the check to pass.
+					screen_sample launcher_view{};
+					check.slowest_read_us = 0;
+					const bool seen = read_screen(child, launcher_view);
 					ResetEvent(page_ready.value);
 					ShowWindow(child, SW_SHOWNOACTIVATE);
 					pbd::output_gain::output().visible(true);
+					screen_check_start(seen ? &launcher_view : nullptr);
 				}
 				if (!detached)
 					raise(child);
 				if (shown && !detached && first_frame.load())
 					refresh_due = GetTickCount64() + 300;
-				if (shown)
+				if (shown && !detached)
 					log_layers(child, "when shown");
-				if (foreground_within(parent))
+				// An owned window takes the keyboard on a real show, once that cancels nothing. The repeats come with every
+				// focus, move and resize of the launcher; one handed back on each would take the activation in the middle of
+				// a drag by the launcher's frame. The launcher's activation is followed by foreground_event instead.
+				if (detached && owned_popup.load())
 				{
-					if (external_overlay)
+					if (shown)
+					{
+						hand_back_pending = true;
+						try_hand_back(child);
+					}
+				}
+				else if (foreground_within(parent))
+				{
+					if (detached)
 						SetForegroundWindow(child);
 					SetFocus(child);
 				}
@@ -395,12 +853,13 @@ namespace pbd::game_host
 				show_requested = false;
 				return_foreground();
 				visible.store(false);
+				check.due = 0;
 				pbd::output_gain::output().visible(false);
 				focus(false);
 				ShowWindow(child, SW_HIDE);
 				PostMessageW(qt_window, WM_CLOSE, 0, 0);
 			}
-			if (value == 7 && detached)
+			if (value == 7 && external_overlay)
 			{
 				RECT bounds{};
 				MONITORINFO monitor{sizeof(monitor)};
@@ -484,11 +943,12 @@ namespace pbd::game_host
 			type.hCursor = LoadCursorW(nullptr, IDC_ARROW);
 			type.style = CS_DBLCLKS;
 			RegisterClassW(&type);
-			// Steam needs the render surface and foreground root to belong to this process. The same first-frame,
-			// paint-before-return and private control protocol still govern when it may appear.
-			detached.store(external_overlay);
+			// Steam needs the render surface and foreground root to belong to this process, so its window has no owner and
+			// its own taskbar button. Any other top-level game window is owned by the launcher: no taskbar button, always
+			// above it. The same first-frame, paint-before-return and private control protocol govern when either appears.
+			detached.store(external_overlay || owned_popup.load());
 			const auto child = CreateWindowExW(external_overlay ? WS_EX_APPWINDOW : 0, type.lpszClassName, L"PROJECT BACKDASH",
-				(external_overlay ? WS_POPUP : WS_CHILD) | WS_CLIPSIBLINGS,
+				(detached ? WS_POPUP : WS_CHILD) | WS_CLIPSIBLINGS,
 				0, 0, 160, 90, external_overlay ? nullptr : parent, nullptr, type.hInstance, this);
 			render_window.store(child);
 			if (!child)
@@ -511,6 +971,12 @@ namespace pbd::game_host
 				normal_bounds = place_overlay_surface(child, parent);
 				game_host_log.notice("Steam launch: game-owned top-level render window; keyboard uses window messages.");
 			}
+			else if (owned_popup.load())
+			{
+				follow_launcher(child);
+				game_host_log.notice("Windowed: the game draws in its own window over the launcher, owned by it.");
+			}
+			game_host_log.notice("Displays (adapter driving each): %s", display_adapters());
 			resize(child);
 			ready.set_value(child);
 			bool announced = false;
@@ -542,10 +1008,12 @@ namespace pbd::game_host
 				if (visible.load() && !pbd::held_presentation::output().can_show())
 				{
 					visible.store(false);
+					check.due = 0;
 					pbd::output_gain::output().visible(false);
 					focus(false);
 					ShowWindow(child, SW_HIDE);
 				}
+				const auto now = GetTickCount64();
 				if (!detached && visible.load() && !IsIconic(parent))
 				{
 					if (GetWindow(parent, GW_CHILD) != child)
@@ -553,11 +1021,15 @@ namespace pbd::game_host
 					const auto first = first_frame.load();
 					if (first && !refreshed_once && !refresh_due)
 						refresh_due = first + 500;
-					refresh_surface(child, GetTickCount64());
-					if (first && GetTickCount64() - first >= 2000 && GetWindow(parent, GW_CHILD) != child)
-						fallback(child);
+					refresh_surface(child, now);
 				}
+				// The screen, not the window order, decides whether the game is seen (screen_check_step).
+				screen_check_step(child, now);
+				try_hand_back(child);
 			}
+			if (follow_hook)
+				UnhookWinEvent(follow_hook);
+			follow_hook = nullptr;
 			UnhookWinEvent(foreground);
 			event_owner = nullptr;
 			if (IsWindow(child))

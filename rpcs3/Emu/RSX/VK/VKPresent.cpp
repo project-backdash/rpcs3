@@ -68,6 +68,23 @@ namespace
 		}
 	};
 
+#ifdef _WIN32
+	const char* pbd_dpi_awareness(DPI_AWARENESS_CONTEXT context)
+	{
+		if (!context)
+			return "none";
+		if (AreDpiAwarenessContextsEqual(context, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
+			return "per-monitor v2";
+		switch (GetAwarenessFromDpiAwarenessContext(context))
+		{
+		case DPI_AWARENESS_PER_MONITOR_AWARE: return "per-monitor";
+		case DPI_AWARENESS_SYSTEM_AWARE: return "system";
+		case DPI_AWARENESS_UNAWARE: return "unaware";
+		default: return "unknown";
+		}
+	}
+#endif
+
 	u64 pbd_bp_now_ns()
 	{
 		return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
@@ -152,10 +169,87 @@ void VKGSRender::clips_resolve(vk::frame_context_t* ctx)
 	}
 }
 
+uptr VKGSRender::pbd_window_monitor() const
+{
+#ifdef _WIN32
+	return reinterpret_cast<uptr>(MonitorFromWindow(m_frame->handle(), MONITOR_DEFAULTTONEAREST));
+#else
+	return 0;
+#endif
+}
+
+void VKGSRender::pbd_suboptimal()
+{
+	// A report while the window's size or monitor differs from the swapchain's is real and always followed: the size poll in
+	// flip() runs only on drivers without automatic window reports, and none watches the monitor.
+	const bool follow = m_pbd_rebuilds.suboptimal();
+	const bool window_changed = m_swapchain_dims.width != m_frame->client_width() + 0u ||
+		m_swapchain_dims.height != m_frame->client_height() + 0u || m_pbd_monitor != pbd_window_monitor();
+	if (follow || window_changed)
+		should_reinitialize_swapchain = true;
+	else if (m_pbd_rebuilds.report_held())
+		rsx_log.warning("PBD present: the driver calls every new swapchain suboptimal at %ux%u; kept until the window changes.",
+			m_swapchain_dims.width, m_swapchain_dims.height);
+}
+
+void VKGSRender::pbd_log_status(const char* call, VkResult status)
+{
+	// The numbers as the driver returns them: 1000001003 suboptimal, -1000001004 out of date, -1000000000 surface lost.
+	if (pbd::swapchain_rebuild::log_status(++m_pbd_status_count))
+		rsx_log.notice("PBD present: %s returned %d on swapchain %u (%u results other than success so far)", call,
+			static_cast<s32>(status), m_pbd_swapchain_number, m_pbd_status_count);
+}
+
+void VKGSRender::pbd_log_window(std::string_view made_for)
+{
+	// The swapchain takes the surface's current extent, which is the window's client size in physical pixels only when the
+	// window and the thread reading its size are both DPI aware; a mismatch shows here as images unlike the client size.
+	// Called on the thread that made the swapchain, so the thread awareness is the one its sizes were read with.
+	std::string window = fmt::format("shown %s", m_frame->shown() ? "yes" : "no");
+#ifdef _WIN32
+	const HWND handle = m_frame->handle();
+	RECT rect{};
+	GetClientRect(handle, &rect);
+	window += fmt::format(", visible %s, rect %dx%d, dpi %u, window awareness %s, making thread awareness %s", IsWindowVisible(handle) ? "yes" : "no",
+		rect.right - rect.left, rect.bottom - rect.top, GetDpiForWindow(handle), pbd_dpi_awareness(GetWindowDpiAwarenessContext(handle)),
+		pbd_dpi_awareness(GetThreadDpiAwarenessContext()));
+#endif
+	const auto images = m_swapchain->get_image_extent();
+	rsx_log.notice("PBD present: swapchain %u (%s); window client %ux%u, images %ux%u, %s", m_pbd_swapchain_number, made_for,
+		m_swapchain_dims.width, m_swapchain_dims.height, images.width, images.height, window);
+}
+
 bool VKGSRender::reinitialize_swapchain()
 {
+	const sizeu previous = m_swapchain_dims;
 	m_swapchain_dims.width = m_frame->client_width();
 	m_swapchain_dims.height = m_frame->client_height();
+
+	// PBD: a rebuild that only a suboptimal report asked for, for the size and monitor the replaced swapchain was made for,
+	// counts toward keeping the swapchain (Emu/PBD/pbd_swapchain_rebuild.h). The reasons are named in the log line of the
+	// new swapchain.
+	const bool same_size = previous.width == m_swapchain_dims.width && previous.height == m_swapchain_dims.height;
+	const uptr monitor = pbd_window_monitor();
+	const bool same_monitor = monitor == m_pbd_monitor;
+	m_pbd_rebuilds.rebuilding(should_reinitialize_swapchain && !swapchain_unavailable, same_size && same_monitor);
+	std::string pbd_reason;
+	const auto pbd_because = [&pbd_reason](std::string_view part)
+	{
+		pbd_reason += pbd_reason.empty() ? "" : ", ";
+		pbd_reason += part;
+	};
+	if (!same_size)
+		pbd_because(fmt::format("window %ux%u -> %ux%u", previous.width, previous.height, m_swapchain_dims.width, m_swapchain_dims.height));
+	if (!same_monitor)
+		pbd_because("monitor changed");
+	if (m_vsync_mode != g_cfg.video.vsync)
+		pbd_because("vsync setting changed");
+	if (m_pbd_surface_lost)
+		pbd_because("surface lost");
+	if (should_reinitialize_swapchain)
+		pbd_because(same_size && same_monitor ? fmt::format("suboptimal, %u for this window", m_pbd_rebuilds.same_window_rebuilds()) : "suboptimal");
+	if (pbd_reason.empty())
+		pbd_because(swapchain_unavailable ? "unavailable" : "a request");
 
 	// Reject requests to acquire new swapchain if the window is minimized
 	// The NVIDIA driver will spam VK_ERROR_OUT_OF_DATE_KHR if you try to acquire an image from the swapchain and the window is minimized
@@ -209,6 +303,7 @@ bool VKGSRender::reinitialize_swapchain()
 
 	// Reset frame context storage
 	for (auto& slot : m_clip_readbacks) if (slot && std::exchange(slot->pending, false)) g_fxo->get<utils::video_provider>().frame_dropped();
+	for (auto& slot : m_pbd_screen_slots) slot.pending = false;
 	for (auto& ctx : m_frame_context_storage)
 	{
 		ctx.destroy(*m_device);
@@ -218,10 +313,34 @@ bool VKGSRender::reinitialize_swapchain()
 	m_current_queue_index = 0;
 	m_frame_context_storage.clear();
 
+	// PBD: the game host can move the render window into a top-level window of its own (rpcs3qt/pbd_game_host_window.h);
+	// a driver that loses the surface on such a move gets a new surface for the same window instead of ending the game.
+	if (std::exchange(m_pbd_surface_lost, false))
+	{
+		const bool replaced = m_swapchain->replace_surface([this]()
+		{
+			return m_instance.recreate_surface(m_frame->handle());
+		});
+		rsx_log.warning("PBD swapchain: the window surface was lost and %s.", replaced ? "was created again" : "could not be created again");
+		if (!replaced)
+		{
+			swapchain_unavailable = true;
+			return false;
+		}
+	}
+
 	// Rebuild swapchain. Old swapchain destruction is handled by the init_swapchain call
 	if (!m_swapchain->init(m_swapchain_dims.width, m_swapchain_dims.height))
 	{
 		rsx_log.warning("Swapchain initialization failed. Request ignored [%dx%d]", m_swapchain_dims.width, m_swapchain_dims.height);
+		// PBD: no frame context is left, so flip() tries again a bounded number of times and nothing is acquired or
+		// presented meanwhile; a swapchain the driver keeps refusing logs as sparsely as the present results. A surface the
+		// driver called lost while making it is created again before the next try instead of being refused every time.
+		if (m_swapchain->last_create_result() == VK_ERROR_SURFACE_LOST_KHR)
+			m_pbd_surface_lost = true;
+		if (pbd::swapchain_rebuild::log_status(++m_pbd_failed_rebuilds))
+			rsx_log.error("PBD present: no swapchain could be made in place of swapchain %u (rebuilt for %s; %u failures so far)",
+				m_pbd_swapchain_number, pbd_reason, m_pbd_failed_rebuilds);
 		swapchain_unavailable = true;
 		return false;
 	}
@@ -262,7 +381,31 @@ bool VKGSRender::reinitialize_swapchain()
 	swapchain_unavailable = false;
 	should_reinitialize_swapchain = false;
 	m_vsync_mode = g_cfg.video.vsync;
+	m_pbd_monitor = monitor;
+	// A rebuild on every flip logs its swapchains as sparsely as its present results.
+	if (pbd::swapchain_rebuild::log_status(++m_pbd_swapchain_number))
+		pbd_log_window("rebuilt for " + pbd_reason);
 	return true;
+}
+
+bool VKGSRender::pbd_rebuild_swapchain()
+{
+	// PBD: the retries flip() makes at its start, also made when an acquire calls the swapchain out of date or its surface
+	// lost, as after the game host moves the window. A failure that keeps the frame contexts (a window with no size) is not
+	// fatal and needs no retry.
+	const auto attempt = [this]()
+	{
+		return reinitialize_swapchain() || m_current_frame;
+	};
+	const auto stopped = []()
+	{
+		return Emu.IsStopped();
+	};
+	const auto wait = []()
+	{
+		std::this_thread::sleep_for(100ms);
+	};
+	return pbd::swapchain_rebuild::rebuild_with_retries(10, attempt, stopped, wait);
 }
 
 void VKGSRender::present(vk::frame_context_t *ctx)
@@ -276,16 +419,25 @@ void VKGSRender::present(vk::frame_context_t *ctx)
 	{
 		// PBD (record only): the queue-present call itself, inside the "vulkan_flip" scope of the same frame.
 		::pbd::ordinary_metrics::scope measure_present(4, "vulkan_queue_present");
-		switch (VkResult error = m_swapchain->present(ctx->present_wait_semaphore, ctx->present_image))
+		const VkResult error = m_swapchain->present(ctx->present_wait_semaphore, ctx->present_image);
+		if (error != VK_SUCCESS)
+			pbd_log_status("present", error);
+		switch (error)
 		{
 		case VK_SUCCESS:
 			break;
 		case VK_SUBOPTIMAL_KHR:
 #ifndef ANDROID
-			should_reinitialize_swapchain = true;
+			pbd_suboptimal();
 #endif
 			break;
 		case VK_ERROR_OUT_OF_DATE_KHR:
+			swapchain_unavailable = true;
+			break;
+		case VK_ERROR_SURFACE_LOST_KHR:
+			// PBD: made again for the same window by reinitialize_swapchain.
+			rsx_log.warning("VkPresent returned VK_ERROR_SURFACE_LOST_KHR. The window surface is created again.");
+			m_pbd_surface_lost = true;
 			swapchain_unavailable = true;
 			break;
 		default:
@@ -295,6 +447,8 @@ void VKGSRender::present(vk::frame_context_t *ctx)
 			swapchain_unavailable = true;
 			break;
 		}
+		// PBD: only a run of frames whose acquire and present both succeeded lets a later suboptimal report rebuild again.
+		m_pbd_rebuilds.presented(error == VK_SUCCESS);
 	}
 
 	// Presentation image released; reset value
@@ -375,6 +529,7 @@ void VKGSRender::frame_context_cleanup(vk::frame_context_t *ctx)
 	else
 	{
 		pbd_black_probe_resolve(ctx);
+		pbd_screen_check_resolve(ctx);
 		clips_resolve(ctx);
 	}
 
@@ -523,6 +678,91 @@ void VKGSRender::pbd_black_probe_resolve(vk::frame_context_t* ctx)
 	pbd_black_probe_out::get().write(fmt::format("{\"type\":\"frame\",\"t_ns\":%u,\"done_ns\":%u,\"kind\":%u,\"marker\":%u,\"index\":%u,\"flip\":%u,"
 												 "\"src\":%u,\"w\":%u,\"h\":%u,\"fmt\":%u,\"sampled\":true,\"mean\":%.2f,\"sd\":%.2f,\"max\":%.1f,\"black_share\":%.4f}\n",
 		slot.t_ns, pbd_bp_now_ns(), slot.kind, slot.marker, slot.index, slot.flip, slot.src, slot.w, slot.h, slot.fmt, mean, sd, max_y, black / n));
+}
+
+void VKGSRender::pbd_screen_check_record(VkImage target, VkImageLayout& layout, const VkImageSubresourceRange& range)
+{
+	// The swapchain's images take the surface's size, which a driver can fix larger than the window, while the frame is drawn
+	// over the window size the swapchain was made for (m_swapchain_dims) from their top left; the rest is cleared or left
+	// alone. So the points are placed over the drawn part, within the images, as a copy outside them is invalid, and both
+	// sizes go with the colours: the game host reads the screen where the window can show the points
+	// (pbd::screen_check::client_x).
+	const auto images = m_swapchain->get_image_extent();
+	const u32 drawn_width = std::min<u32>(images.width, m_swapchain_dims.width), drawn_height = std::min<u32>(images.height, m_swapchain_dims.height);
+	if (!m_current_frame || m_frame_context_storage.empty() || !m_swapchain->readable() || !drawn_width || !drawn_height)
+		return;
+	const auto index = static_cast<usz>(m_current_frame - m_frame_context_storage.data());
+	if (index >= m_frame_context_storage.size())
+		return;
+	const auto format = m_swapchain->get_surface_format();
+	const bool bgra = format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB;
+	const bool rgba = format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_R8G8B8A8_SRGB;
+	// A surface format this check cannot read leaves the request unanswered; the screen is then judged without the frame.
+	if (!bgra && !rgba)
+		return;
+	auto& frames = pbd::screen_check::frames();
+	const auto request = frames.claim();
+	if (!request)
+		return;
+	if (m_pbd_screen_slots.size() != m_frame_context_storage.size())
+		m_pbd_screen_slots.resize(m_frame_context_storage.size());
+	auto& slot = m_pbd_screen_slots[index];
+	if (!slot.buf)
+	{
+		slot.buf = std::make_unique<vk::buffer>(*m_device, 0x100, m_device->get_memory_mapping().host_visible_coherent,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_BUFFER_USAGE_TRANSFER_DST_BIT, 0, VMM_ALLOCATION_POOL_UNDEFINED);
+	}
+	slot.colours = {};
+	slot.colours.width = drawn_width;
+	slot.colours.height = drawn_height;
+	slot.colours.image_width = images.width;
+	slot.colours.image_height = images.height;
+	slot.colours.request = request;
+	slot.bgra = bgra;
+	// The same places the game host reads from the window's client area (pbd::screen_check::point_x/point_y).
+	std::array<VkBufferImageCopy, pbd::screen_check::points> regions{};
+	for (u32 i = 0; i < pbd::screen_check::points; ++i)
+	{
+		auto& region = regions[i];
+		region.bufferOffset = i * 4;
+		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		region.imageSubresource.layerCount = 1;
+		region.imageOffset.x = static_cast<s32>(pbd::screen_check::point_x(i, slot.colours.width));
+		region.imageOffset.y = static_cast<s32>(pbd::screen_check::point_y(i, slot.colours.height));
+		region.imageExtent = {1, 1, 1};
+	}
+	// The presented image's own layout follows; the caller moves it from here to the present layout.
+	vk::change_image_layout(*m_current_command_buffer, target, layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, range);
+	layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	vkCmdCopyImageToBuffer(*m_current_command_buffer, target, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, slot.buf->value, pbd::screen_check::points, regions.data());
+	vk::insert_buffer_memory_barrier(*m_current_command_buffer, slot.buf->value, 0, pbd::screen_check::points * 4, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
+	slot.pending = true;
+}
+
+void VKGSRender::pbd_screen_check_resolve(vk::frame_context_t* ctx)
+{
+	if (m_pbd_screen_slots.empty() || m_frame_context_storage.empty())
+		return;
+	const auto index = static_cast<usz>(ctx - m_frame_context_storage.data());
+	if (index >= m_pbd_screen_slots.size())
+		return;
+	auto& slot = m_pbd_screen_slots[index];
+	if (!slot.pending)
+		return;
+	slot.pending = false;
+	const auto* px = slot.buf ? static_cast<const u8*>(slot.buf->map(0, pbd::screen_check::points * 4)) : nullptr;
+	if (!px)
+		return;
+	auto colours = slot.colours;
+	for (u32 i = 0; i < pbd::screen_check::points; ++i)
+	{
+		const u8* p = px + i * 4;
+		const u32 r = slot.bgra ? p[2] : p[0], g = p[1], b = slot.bgra ? p[0] : p[2];
+		colours.rgb[i] = (r << 16) | (g << 8) | b;
+	}
+	slot.buf->unmap();
+	pbd::screen_check::frames().answer(colours);
 }
 
 vk::viewable_image* VKGSRender::get_present_source(/* inout */ vk::present_surface_info* info, const rsx::avconf& avconfig)
@@ -683,22 +923,11 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 		// Reinitializing the swapchain is a failable operation. However, not all failures are fatal (e.g minimized window).
 		// In the worst case, we can have the driver refuse to create the swapchain while we already deleted the previous one.
 		// In such scenarios, we have to retry a few times before giving up as we cannot proceed without a swapchain.
-		for (int i = 0; i < 10; ++i)
+		if (!pbd_rebuild_swapchain() && Emu.IsStopped())
 		{
-			if (reinitialize_swapchain() || m_current_frame)
-			{
-				// If m_current_frame exists, then the initialization failure is non-fatal. Proceed as usual.
-				break;
-			}
-
-			if (Emu.IsStopped())
-			{
-				m_frame->flip(m_context, true);
-				rsx::thread::flip(info);
-				return;
-			}
-
-			std::this_thread::sleep_for(100ms);
+			m_frame->flip(m_context, true);
+			rsx::thread::flip(info);
+			return;
 		}
 	}
 
@@ -730,7 +959,8 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 		frame_context_cleanup(m_current_frame);
 	}
 
-	if (info.skip_frame || swapchain_unavailable)
+	// PBD: also ends a flip whose acquire found the window with no size (below).
+	const auto flip_without_present = [&]()
 	{
 		if (info.emu_flip && ::pbd::frame_presentation::queue_tags_enabled())
 			::pbd::frame_presentation::tag_trace::get().token_state(info.skip_frame ? "image_withheld" : "faulted",
@@ -748,6 +978,11 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 
 		m_frame->flip(m_context, true);
 		rsx::thread::flip(info);
+	};
+
+	if (info.skip_frame || swapchain_unavailable)
+	{
+		flip_without_present();
 		return;
 	}
 
@@ -854,22 +1089,48 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 			continue;
 		}
 		case VK_SUBOPTIMAL_KHR:
-			should_reinitialize_swapchain = true;
+			pbd_log_status("acquire", status);
+			pbd_suboptimal();
 			break;
 		case VK_ERROR_OUT_OF_DATE_KHR:
+			pbd_log_status("acquire", status);
 			rsx_log.warning("vkAcquireNextImageKHR failed with VK_ERROR_OUT_OF_DATE_KHR. Flip request ignored until surface is recreated.");
 			swapchain_unavailable = true;
-			reinitialize_swapchain();
-			ensure(m_current_frame, "Could not reinitialize swapchain after VK_ERROR_OUT_OF_DATE_KHR signal!");
-			continue;
+			break;
+		case VK_ERROR_SURFACE_LOST_KHR:
+			// PBD: the game host moved the render window (rpcs3qt/pbd_game_host_window.h) and the driver dropped its surface.
+			pbd_log_status("acquire", status);
+			rsx_log.warning("vkAcquireNextImageKHR failed with VK_ERROR_SURFACE_LOST_KHR. The window surface is created again.");
+			m_pbd_surface_lost = true;
+			swapchain_unavailable = true;
+			break;
 		default:
 			vk::die_with_error(status);
 		}
 
-		if (should_reinitialize_swapchain)
-		{
-			// Image is valid, new swapchain will be generated later
+		// Only an out-of-date or lost swapchain is made again here. A suboptimal acquire has a valid image, which is
+		// presented; a new swapchain, when one is due, is made on the next flip.
+		if (status != VK_ERROR_OUT_OF_DATE_KHR && status != VK_ERROR_SURFACE_LOST_KHR)
 			break;
+
+		// PBD: an out-of-date or lost swapchain gets the same bounded retries as at the start of flip(), since the driver
+		// can refuse a new one for a moment while the window moves.
+		if (!pbd_rebuild_swapchain() && Emu.IsStopped())
+		{
+			m_frame->flip(m_context, true);
+			rsx::thread::flip(info);
+			return;
+		}
+		ensure(m_current_frame, "Could not reinitialize swapchain after VK_ERROR_OUT_OF_DATE_KHR or VK_ERROR_SURFACE_LOST_KHR!");
+
+		// PBD: a window with no size keeps the swapchain, which every acquire would call out of date again until the window
+		// has a size; the frame ends without presenting instead, as at the start of flip(). The failed acquire left the
+		// image index undefined.
+		if (swapchain_unavailable)
+		{
+			m_current_frame->present_image = umax;
+			flip_without_present();
+			return;
 		}
 	}
 
@@ -910,7 +1171,7 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 	const bool pbd_target_capture = info.emu_flip && ::pbd::frame_presentation::target_capture::get().wants_frame(pbd_flip, info.pbd_token);
 	const bool need_media_capture = user_asked_for_screenshot || user_is_recording || pbd_capture || pbd_identity_capture || pbd_target_capture;
 
-	const auto render_overlays = [&](vk::framebuffer_holder* fbo, const areau& area)
+	const auto render_overlays = [&](vk::framebuffer_holder* fbo, const areau& area, bool capture)
 	{
 		if (!has_overlay) return;
 
@@ -921,8 +1182,10 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 		const areau display_area = {0, 0, static_cast<u32>(m_swapchain_dims.width), static_cast<u32>(m_swapchain_dims.height)};
 		for (const auto& view : m_overlay_manager->get_views())
 		{
+			if (capture && view->screen_only)
+				continue;
 			const areau render_area = view->use_window_space ? display_area : area;
-			ui_renderer->run(*m_current_command_buffer, render_area, fbo, single_target_pass, m_texture_upload_buffer_ring_info, *view.get());
+			ui_renderer->run(*m_current_command_buffer, render_area, fbo, single_target_pass, m_texture_upload_buffer_ring_info, *view.get(), capture);
 		}
 	};
 
@@ -988,7 +1251,7 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 
 			vk::framebuffer_holder* sshot_fbo = vk::get_framebuffer(*m_device, buffer_width, buffer_height, VK_FALSE, single_target_pass, { m_overlay_recording_img.get() });
 			sshot_fbo->add_ref();
-			render_overlays(sshot_fbo, areau(rect));
+			render_overlays(sshot_fbo, areau(rect), true);
 			sshot_fbo->release();
 
 			image_to_copy = m_overlay_recording_img.get();
@@ -1191,7 +1454,7 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 
 		direct_fbo->add_ref();
 
-		render_overlays(direct_fbo, areau(aspect_ratio));
+		render_overlays(direct_fbo, areau(aspect_ratio), false);
 
 		if (g_cfg.video.debug_overlay)
 		{
@@ -1248,6 +1511,10 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 
 		direct_fbo->release();
 	}
+
+	// On-screen check: the image as it will be presented, overlays included, where the game host reads the screen (no
+	// stall: read back once the frame has completed).
+	pbd_screen_check_record(target_image, target_layout, subresource_range);
 
 	if (target_layout != present_layout)
 	{

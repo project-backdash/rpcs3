@@ -1270,16 +1270,13 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 			std::optional<pbd::checkpoint_file> replay_boot_identity;
 			const auto replay_record = pbd::env::find("PBD_MATCH_REPLAY_RECORD");
 			const bool record_checkpoint_identity = replay_record && std::string_view(replay_record) == "1";
-			const auto sound_apply = pbd::env::find("PBD_SOUND_OPTIONS_APPLY");
-			const bool sound_checkpoint_identity = sound_apply && std::string_view(sound_apply) == "1";
 			const auto spectator_channel = pbd::env::find("PBD_SPECTATOR_CHANNEL");
 			const bool spectator_checkpoint_identity = spectator_channel && *spectator_channel;
 			const auto set_channel = pbd::env::find("PBD_SET_CHANNEL");
 			const bool lobby_checkpoint_identity = set_channel && *set_channel;
 			// A lobby set (PBD_SET_CHANNEL) admits its first game only with this identity (pbd_rollback_session.cpp lobby clean start),
 			// so it is taken for every lobby set, not only when the match replay recorder is on.
-			if (recursion_count == 0 && (record_checkpoint_identity || sound_checkpoint_identity || spectator_checkpoint_identity ||
-											lobby_checkpoint_identity))
+			if (recursion_count == 0 && (record_checkpoint_identity || spectator_checkpoint_identity || lobby_checkpoint_identity))
 				replay_boot_identity = pbd_checkpoint_identity(m_path);
 			m_ar = make_savestate_reader(m_path);
 			if (m_ar && replay_boot_identity)

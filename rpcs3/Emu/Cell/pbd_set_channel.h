@@ -7,6 +7,14 @@
 
 namespace pbd::set_channel
 {
+	// A decided game as its sealed result names it: the rows both fighters played (left, right) and the winner. The PLAYER DATA
+	// bar counts it once continue_game or next_set confirms it.
+	struct decided_game
+	{
+		std::array<std::uint32_t, 2> rows{};
+		side winner = side::left;
+	};
+
 	/** One emulation owner thread owns this object; a write failure poisons publication so later facts cannot overtake a gap. */
 	class channel
 	{
@@ -19,11 +27,62 @@ namespace pbd::set_channel
 		std::optional<bool> post_winner;
 		// In-game selection: the stage and rows the current game's game_started reported. Its game_result must repeat them.
 		std::optional<std::array<std::uint32_t, 3>> started_picks;
+		// In-game selection: this set's confirmed games by the row each side played. Games before a mid-set manifest start are
+		// not known here and are left out (display only; the records a later set names include them).
+		set_tally tally{};
+		// In-game selection: each row's base character from the game's table once read (hold_characters); until then another
+		// costume of a character the record table does not name counts apart.
+		std::optional<row_characters> characters;
+		const row_characters* known_characters() const
+		{
+			return characters ? &*characters : nullptr;
+		}
 		bool fail(std::string code)
 		{
 			failed = true;
 			failure = std::move(code);
 			return false;
+		}
+		void count_game(const decided_game& game)
+		{
+			for (std::size_t player = 0; player < 2; ++player)
+			{
+				if (game.rows[player] > max_character_row)
+					continue;
+				auto& counted = tally[player][game.rows[player]];
+				const bool won = (player == 0) == (game.winner == side::left);
+				(won ? counted.wins : counted.losses)++;
+			}
+		}
+		// The next set's records: those next_set names, and for a player it names none, the finished set's record with this
+		// set's games added, `last` (the set's deciding game) included. A player without a record keeps none.
+		void carry_records(const command& applied, const std::optional<decided_game>& last)
+		{
+			using pbd::game_profile::shown;
+			const bool chosen = in_game(session);
+			if (last && chosen)
+				count_game(*last);
+			score final_score = session.games;
+			if (last && !chosen)
+				++(last->winner == side::left ? final_score.left : final_score.right);
+			const std::array<std::uint32_t, 2> games{final_score.left, final_score.right};
+			const std::array<fighter*, 2> players{&session.left, &session.right};
+			for (std::size_t player = 0; player < 2; ++player)
+			{
+				auto& kept = *players[player];
+				if (chosen)
+				{
+					if (applied.record_tables[player])
+						kept.records = applied.record_tables[player];
+					else if (kept.records)
+						fold_games(*kept.records, tally[player], known_characters());
+				}
+				else if (applied.records[player])
+					kept.record = applied.records[player];
+				else if (kept.record)
+					kept.record = game_record{shown(kept.record->wins, games[player]), shown(kept.record->losses, games[player ^ 1])};
+			}
+			tally = {};
 		}
 
 		publication_result publish_file(std::uint64_t serial, const std::string& text) const
@@ -235,8 +294,8 @@ namespace pbd::set_channel
 
 		// A confirmed natural VS continuation keeps the same process, event cursor and fixed set values.
 		// The driver verifies its sealed result before requesting this channel transition. A drawn game's replay keeps its
-		// number and score.
-		bool continue_naturally(const command& applied)
+		// number and score. `confirmed` is the game the command follows; an in-game set counts it for the PLAYER DATA bar.
+		bool continue_naturally(const command& applied, const std::optional<decided_game>& confirmed = std::nullopt)
 		{
 			if (!healthy() || applied.kind != command_kind::continue_game || applied.game_number != session.game_number + (applied.replay ? 0u : 1u) ||
 				(applied.replay && (applied.games.left != session.games.left || applied.games.right != session.games.right)) ||
@@ -246,6 +305,8 @@ namespace pbd::set_channel
 			session.games = applied.games;
 			if (!in_game(session) && applied.rematch)
 				session.stage_id = applied.rematch->selected.stage;
+			if (confirmed && !applied.replay && in_game(session))
+				count_game(*confirmed);
 			post_winner.reset();
 			started_picks.reset();
 			return true;
@@ -258,17 +319,48 @@ namespace pbd::set_channel
 			(player == side::left ? session.left : session.right).rank = rank;
 		}
 
+		// The PLAYER DATA records a rank_stakes command names. Each replaces that fixed fighter's record from before this set,
+		// which it also is, so the set's score is still added on top (shown_records). A set that picks in the game's select keeps
+		// its tables: one record cannot say which character it belongs to.
+		void hold_records(const command& applied)
+		{
+			if (applied.kind != command_kind::rank_stakes || in_game(session))
+				return;
+			if (applied.records[0])
+				session.left.record = applied.records[0];
+			if (applied.records[1])
+				session.right.record = applied.records[1];
+		}
+
+		// Each row's base character as the game's table names it, which an in-game set's records group costumes by.
+		void hold_characters(const row_characters& value)
+		{
+			characters = value;
+		}
+		bool knows_characters() const
+		{
+			return characters.has_value();
+		}
+
+		// What the PLAYER DATA bar shows in the current game (pbd::set_channel::shown_records), with the rows the fighters play.
+		std::array<std::optional<game_record>, 2> shown_records(const std::array<std::uint32_t, 2>& rows) const
+		{
+			return pbd::set_channel::shown_records(session, tally, rows, known_characters());
+		}
+
 		// A next set against the same opponent keeps the process, the directory and both cursors. The driver verifies the
-		// completed set's terminal result first. The acknowledgement is written under the completed set's identity, so the
-		// launcher reads it with the identity it wrote the command under; everything after it belongs to the new set, including
-		// the ranks it names (a player it names none for keeps the rank the plates showed).
-		bool next_set(const command& applied)
+		// completed set's terminal result first and gives its deciding game as `last`. The acknowledgement is written under the
+		// completed set's identity, so the launcher reads it with the identity it wrote the command under; everything after it
+		// belongs to the new set, including the ranks and records it names (a player it names no rank for keeps the rank the
+		// plates showed, and one it names no record for keeps the finished set's record with that set's games added).
+		bool next_set(const command& applied, const std::optional<decided_game>& last = std::nullopt)
 		{
 			const bool renamed = !applied.next_set_id.empty() && applied.next_set_id != session.set_id && !applied.next_match_id.empty() &&
 			                     applied.next_match_id != session.match_id;
 			if (!healthy() || applied.kind != command_kind::next_set || !renamed || applied.game_number != 1 || applied.games.left ||
 				applied.games.right || applied.first_to_games < 1 || applied.first_to_games > 10 || !acknowledge(applied))
 				return false;
+			carry_records(applied, last);
 			session.set_id = applied.next_set_id;
 			session.match_id = applied.next_match_id;
 			session.first_to_games = applied.first_to_games;

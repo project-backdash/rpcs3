@@ -2106,10 +2106,10 @@ std::vector<u32> ppu_function_manager::pbd_pin_order()
 		if (std::strtoull(expect, nullptr, 16) != digest)
 		{
 			ppu_log.fatal("PBD checkpoint incompatible: HLE slot digest %016x, checkpoint expects %s", digest, expect);
-			if (const char* dir = pbd::env::find("PBD_ORDINARY_OUTPUT"); dir && *dir)
+			if (const auto dir = pbd::env::utf8_path("PBD_ORDINARY_OUTPUT"); !dir.empty())
 			{
 				const std::string text = fmt::format("{\"schema\":1,\"reason\":\"checkpoint_incompatible\",\"exit_code\":79,\"build_digest\":\"%016x\",\"expected\":\"%s\"}\n", digest, expect);
-				if (fs::file out(std::string(dir) + "/boot-refusal.json", fs::rewrite); out)
+				if (fs::file out(dir + "/boot-refusal.json", fs::rewrite); out)
 				{
 					out.write(text.data(), text.size());
 					out.sync();

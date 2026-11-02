@@ -5,6 +5,8 @@
 
 #include "pbd_rollback_session_common.h"
 #include "Emu/PBD/pbd_session_policy.h"
+#include "Emu/PBD/pbd_host.h"
+#include "Emu/PBD/pbd_host_timing.h"
 #include "pbd_rollback_session_storage_rollback.h"
 #include "pbd_rollback_session_storage_peer.h"
 #include "pbd_rollback_session_storage_lobby.h"
@@ -89,6 +91,7 @@ struct pbd::rollback_session::storage
 	battle_clock_state battle_clock;
 	undo_state undo;
 	fault_state fault;
+	pbd::host_timing::state host_timing{.enabled = pbd::host::wine()}; // host_timing rows, under Wine only
 	peer_state peer;
 	session_state session;
 	lobby_state lobby;

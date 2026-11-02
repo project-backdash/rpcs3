@@ -122,8 +122,8 @@ namespace pbd::settings_menu
 	}
 
 	// The launcher's render sizes: render scale percent and the size it draws a 1920 x 1080 game at.
-	inline constexpr std::array<std::uint32_t, 4> resolution_scales{67, 100, 133, 200};
-	inline constexpr std::array<std::string_view, 4> resolution_labels{"1280 x 720", "1920 x 1080", "2560 x 1440", "3840 x 2160"};
+	inline constexpr std::array<std::uint32_t, 5> resolution_scales{50, 67, 100, 133, 200};
+	inline constexpr std::array<std::string_view, 5> resolution_labels{"960 x 540", "1280 x 720", "1920 x 1080", "2560 x 1440", "3840 x 2160"};
 	inline constexpr int volume_step = 5;
 	// A dropdown fits the panel's list area (pbd::practice::dropdown_top) at 30 units per option.
 	inline constexpr std::size_t max_options = 14;

@@ -5,6 +5,7 @@
 
 #include "pbd_rollback_session_common.h"
 #include "../PBD/pbd_undo_restore.h"
+#include "../PBD/pbd_correction_journal.h"
 
 namespace pbd::session_runtime
 {
@@ -141,7 +142,25 @@ namespace pbd::session_runtime
 		// in peer sessions it is sampled (the first 4 corrections and every 32nd; PBD_RESTORE_READBACK=all|sample|off),
 		// the confirmed-state hashes remain the running check. Rolling / single-emulator test modes still verify every time.
 		u64 rewind_ns = 0, rearm_ns = 0;
-		fs::file file;
+		pbd::correction_journal::sink<> file;
+		// The owner thread formats each journal row here and the journal copies it out, so a row allocates only when it
+		// outgrows every earlier one.
+		std::string row_text;
+		// Creates tick-correction.jsonl (never over an existing one) and starts its writer.
+		bool open_journal(const std::filesystem::path& directory)
+		{
+			const auto path = (directory / "tick-correction.jsonl").u8string();
+			if (!file.open(std::string(path.begin(), path.end())))
+				return false;
+			row_text.reserve(16 * 1024);
+			file.start([]([[maybe_unused]] std::thread& writer)
+				{
+#ifdef _WIN32
+					CancelSynchronousIo(writer.native_handle());
+#endif
+				});
+			return true;
+		}
 		// Exact withhold (see pbd_replay_pacing.h): correction.withhold_flagged counts the re-executed frames the published markers name.
 		bool withhold_exact = false;
 		u32 withhold_flagged = 0;

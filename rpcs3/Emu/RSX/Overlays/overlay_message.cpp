@@ -266,6 +266,16 @@ namespace rsx
 
 		compiled_resource message::get_compiled()
 		{
+			return compile(false);
+		}
+
+		compiled_resource message::get_capture_compiled()
+		{
+			return compile(true);
+		}
+
+		compiled_resource message::compile(bool capture)
+		{
 			if (!visible)
 			{
 				return {};
@@ -275,24 +285,16 @@ namespace rsx
 
 			compiled_resource cr{};
 
-			for (auto& item : m_visible_items_bottom_right)
+			// A capture skips screen-only messages without restacking, so every other message keeps its screen position.
+			for (auto* items : {&m_visible_items_bottom_right, &m_visible_items_bottom_left, &m_visible_items_top_right, &m_visible_items_top_left})
 			{
-				cr.add(item.get_compiled());
-			}
-
-			for (auto& item : m_visible_items_bottom_left)
-			{
-				cr.add(item.get_compiled());
-			}
-
-			for (auto& item : m_visible_items_top_right)
-			{
-				cr.add(item.get_compiled());
-			}
-
-			for (auto& item : m_visible_items_top_left)
-			{
-				cr.add(item.get_compiled());
+				for (auto& item : *items)
+				{
+					if (!capture || !item.screen_only)
+					{
+						cr.add(item.get_compiled());
+					}
+				}
 			}
 
 			return cr;

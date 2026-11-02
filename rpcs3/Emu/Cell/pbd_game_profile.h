@@ -3,9 +3,10 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
-// Each player's name and rank as the game itself draws them: under the life bars in a fight and on the VS screen.
+// Each player's name, rank and PLAYER DATA numbers as the game draws them: under the life bars in a fight and on the VS screen.
 //
 // The port keeps the arcade's player records, one per side (what an inserted card held), at 0x106c9934 + side * 0x1f4 (the
 // address the table-of-contents slot r2 - 0x1870 holds; 0x29dcf0 copies one record of 0x1f4 bytes). The fight's life-bar task
@@ -47,6 +48,22 @@ namespace pbd::game_profile
 		"7th Dan", "Shihan", "Expert", "Warrior", "Master", "Virtuoso", "Champion", "Lone Wolf", "Destroyer", "Berserker", "Sage",
 		"Legend", "Fujin", "Raijin", "Deity", "Lord of War", "Dragon Lord", "Tekken Lord", "Dark Lord", "Kouryu", "Kirin"};
 
+	// The PLAYER DATA bar under each life bar: the games the record has won and lost, two big-endian words at +0x108 and +0x10c,
+	// which the getters 0x2a196c and 0x2a1a34 read (lwz 8 and lwz 0xc after +0x100). In VS only the bar (0x105eec) reads them; it
+	// right-aligns both numbers and works out the percentage itself (W * 10000 / (W + L), cut off at 0x1062c4, and "100.0" for
+	// exactly 100). The end-of-match bookkeeping adds a game only in the arcade modes 0, 1 and 6, the online mode 5 and mode 9,
+	// never in VS, and caps both at record_max (0x29e8c0). The field at +0x11e is never written: the value 5 there hides the bar.
+	inline constexpr u32 wins_offset = 0x108;
+	inline constexpr u32 losses_offset = 0x10c;
+	inline constexpr u32 record_max = 99999;
+
+	// One side's PLAYER DATA numbers.
+	struct record
+	{
+		u32 wins = 0, losses = 0;
+		bool operator==(const record&) const = default;
+	};
+
 	inline constexpr u32 name_address(u32 side) noexcept
 	{
 		return records + side * record_stride + name_offset;
@@ -54,6 +71,59 @@ namespace pbd::game_profile
 	inline constexpr u32 rank_address(u32 side) noexcept
 	{
 		return records + side * record_stride + rank_offset;
+	}
+	inline constexpr u32 wins_address(u32 side) noexcept
+	{
+		return records + side * record_stride + wins_offset;
+	}
+	inline constexpr u32 losses_address(u32 side) noexcept
+	{
+		return records + side * record_stride + losses_offset;
+	}
+
+	// A count from before a set with games added on top, capped where the game caps its own.
+	inline constexpr u32 shown(u32 base, u32 added) noexcept
+	{
+		return base >= record_max || added >= record_max - base ? record_max : base + added;
+	}
+
+	// The 8 bytes at wins_address: the wins, then the losses, each a big-endian word, each capped at record_max.
+	inline std::array<u8, 8> encode_record(const record& value) noexcept
+	{
+		std::array<u8, 8> out{};
+		const std::array<u32, 2> words{shown(value.wins, 0), shown(value.losses, 0)};
+		for (std::size_t word = 0; word < words.size(); ++word)
+			for (std::size_t byte = 0; byte < 4; ++byte)
+				out[word * 4 + byte] = static_cast<u8>(words[word] >> (24 - 8 * byte));
+		return out;
+	}
+
+	// Both sides' PLAYER DATA numbers (left, right; none for a side without a record, which shows zeros) as one word, FNV-1a over
+	// each side's presence and its 8 bytes. Each PC announces the word of the numbers it would write with every scene barrier,
+	// and the bars change only to numbers both announced, since each launcher gives its own PC the records in its own time.
+	inline u32 records_word(const std::array<std::optional<record>, 2>& shown) noexcept
+	{
+		u32 hash = 0x811c9dc5u;
+		const auto mix = [&](u8 byte)
+		{
+			hash = (hash ^ byte) * 0x01000193u;
+		};
+		for (const auto& side : shown)
+		{
+			mix(side ? 1 : 0);
+			for (const u8 byte : encode_record(side.value_or(record{})))
+				mix(byte);
+		}
+		return hash;
+	}
+
+	// Whether a scene barrier may change the PLAYER DATA numbers. The pre-battle stretch runs 8 -> 9 -> 10 -> 11 -> 12 -> 16/17
+	// (pbd::vs_cards): the VS screen, 10, draws the numbers on the portraits, and the game's match initializer, where a replay
+	// records them, runs after it. From the end of the VS screen to the end of the fight they stay as they are, so the VS screen,
+	// the fight and the recording show the same numbers whatever reaches the game meanwhile.
+	inline constexpr bool records_may_change(u32 scene) noexcept
+	{
+		return scene != 11 && scene != 12 && scene != 16 && scene != 17;
 	}
 
 	// Per-side result rows (r2 - 0x1864): battle setup at 0x2a2aac clears VS stakes and sets change to 3 (pending);
@@ -69,7 +139,9 @@ namespace pbd::game_profile
 	// The side the game names as the last game's winner (pbd::replay_memory::previous_game_flow). The next game's random draws
 	// depend on it, so the rank screens read it and never write it.
 	inline constexpr u32 previous_winner = 0x1008f08c;
-	// The winner bytes the game leaves for a decided match: 1, 0, 1 for left and 2, 1, 0 for right.
+	// The winner bytes the round-result handler writes when a match ends (0x45194), from the two round counts alone: 1, 0, 1
+	// when left has more, 2, 1, 0 when right has more, and 3 with a side byte and its inverse when they are equal. A drawn
+	// round that takes one fighter to the rounds to win therefore names that fighter, and one that takes both names neither.
 	inline constexpr u32 winner_bytes = 0x1008ebd5;
 
 	inline constexpr u32 stake_address(u32 side) noexcept

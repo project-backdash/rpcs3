@@ -634,7 +634,7 @@ namespace vk
 	}
 
 	void ui_overlay_renderer::run(vk::command_buffer& cmd, const areau& viewport, vk::framebuffer* target, VkRenderPass render_pass,
-			vk::data_heap& upload_heap, rsx::overlays::overlay& ui)
+		vk::data_heap& upload_heap, rsx::overlays::overlay& ui, bool capture)
 	{
 		ui.set_render_viewport(
 		    static_cast<u16>(std::min<u32>(viewport.width(), std::numeric_limits<u16>::max())),
@@ -655,7 +655,8 @@ namespace vk
 			ui.status_flags.clear(rsx::overlays::status_bits::invalidate_image_cache);
 		}
 
-		for (auto& command : ui.get_compiled().draw_commands)
+		auto compiled = capture ? ui.get_capture_compiled() : ui.get_compiled();
+		for (auto& command : compiled.draw_commands)
 		{
 			num_drawable_elements = static_cast<u32>(command.verts.size());
 

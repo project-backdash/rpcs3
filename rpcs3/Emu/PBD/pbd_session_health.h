@@ -38,6 +38,61 @@ namespace pbd::session_health
 		}
 	};
 
+	// Quiet time counts only while the game is free to run. Paused emulation, a parked standby game and an open in-game
+	// menu each hold it on purpose, and the clock restarts when the hold ends. A parked game stays held even when the
+	// emulator was resumed under it, so its activation restarts the clock, not that resume.
+	class quiet_clock
+	{
+		std::uint64_t m_from = 0;
+		bool m_held = false;
+
+	public:
+		void observe(bool paused, bool parked, bool menu, std::uint64_t now) noexcept
+		{
+			if (paused || parked || menu)
+				m_held = true;
+			else if (m_held)
+			{
+				m_held = false;
+				m_from = now;
+			}
+		}
+		bool held() const noexcept
+		{
+			return m_held;
+		}
+		// The later of the last callback exit and the end of the last hold.
+		std::uint64_t since(std::uint64_t last_callback) const noexcept
+		{
+			return std::max(last_callback, m_from);
+		}
+	};
+
+	// The receiver ends a session whose other PC sent no valid input for this long (peer_silence_timeout).
+	inline constexpr std::uint64_t peer_silence_us = 10'000'000;
+	inline constexpr std::uint64_t stall_ns = 10'000'000'000;
+
+	struct stall_facts
+	{
+		bool idle = false;          // the owner is outside the boundary call
+		bool battle = false;        // the last published boundary was in a battle scene
+		bool held = false;          // paused, parked or in the in-game menu (quiet_clock)
+		bool boundary_seen = false; // the owner has left at least one boundary call
+		std::uint64_t quiet_from_ns = 0, now_ns = 0;
+		std::uint64_t peer_heard_us = 0, now_us = 0; // the other PC's last valid input; 0 when never heard or not watched
+	};
+
+	// A game stopped in its own code: free to run, outside the boundary call and in battle, it published no boundary for
+	// stall_ns while the other PC is still heard. Nothing inside the boundary call can time it out, because the peer and
+	// hold timeouts run only there. Waits inside the call keep their own timeouts, a silent peer is the silence watch's to
+	// end, and loading outside battle keeps the launcher's longer allowance.
+	inline bool stalled(const stall_facts& facts) noexcept
+	{
+		const bool heard = facts.peer_heard_us && (facts.now_us <= facts.peer_heard_us || facts.now_us - facts.peer_heard_us < peer_silence_us);
+		return facts.idle && facts.battle && !facts.held && facts.boundary_seen && heard && facts.now_ns >= facts.quiet_from_ns &&
+		       facts.now_ns - facts.quiet_from_ns >= stall_ns;
+	}
+
 	inline constexpr std::size_t snapshot_bytes = 4096, header_bytes = 31;
 	using page = std::array<char, snapshot_bytes>;
 	struct progress

@@ -41,6 +41,9 @@ void pbd::rollback_session::configure_lobby_channel(const std::filesystem::path&
 	}
 	auto manifest = pbd::set_channel::read_manifest(root, capabilities);
 	require(manifest.value.has_value(), "lobby_manifest_invalid");
+	// An invalid display-only field (a PLAYER DATA record) reads as left out; it is named so a launcher's mistake is found.
+	if (!manifest.value->ignored.empty())
+		pbd_session_log.warning("Lobby manifest: %s read as left out (invalid).", fmt::merge(manifest.value->ignored, ", "));
 	s.lobby.channel = std::make_unique<pbd::set_channel::channel>(root, std::move(*manifest.value), true);
 	pbd::character_rule::configure(s.generation, !s.lobby.channel->identity().allow_jinpachi);
 	s.lobby.set = std::make_unique<pbd::lobby_set::driver>(*s.lobby.channel, [](const std::vector<std::uint8_t>& bytes)
@@ -215,7 +218,7 @@ void pbd::rollback_session::write_undo_policy()
 		"\"gcm_context_addr\":%u,\"rsx_get\":%u,\"rsx_put\":%u,\"rsx_get_ea\":%u,\"rsx_label_addr\":%u,\"rsx_dma_address\":%u,\"rsx_io_mapped_mb\":[%s]}\n",
 		json_bool(m_storage->undo.admit_rsx_io), json_bool(m_storage->undo.admit_library), m_storage->undo.deny.size(),
 		m_storage->checkpoint.checkpoint_pages.size(), json_bool(render_ready), static_mapped, gcm_io, gcm_io_size, gcm_command, gcm_context, rsx_get, rsx_put, rsx_get_ea, rsx_label, rsx_dma, mapped);
-	m_storage->correction.file.write(text.data(), text.size());
+	m_storage->correction.file.write(pbd::correction_journal::kind::undo_policy, text.data(), text.size());
 }
 
 void pbd::rollback_session::prepare_undo_capture()
@@ -437,8 +440,7 @@ void pbd::rollback_session::configure_rolling()
 		require(s.roll_delay >= 1 && s.roll_delay <= 8 && s.roll_delay < s.checkpoint.ring.size() && s.roll_begin > s.checkpoint.tick_hold_index + 1 + s.roll_delay &&
 					s.roll_begin + s.roll_delay <= s.roll_end && s.roll_end + s.roll_delay <= s.extent(),
 			"tick_rolling_window_invalid");
-		const auto path = (s.checkpoint.capture_directory / "tick-correction.jsonl").u8string();
-		require(s.correction.file.open(std::string(path.begin(), path.end()), fs::write_new + fs::isfile), "cannot_create_tick_correction_exclusively");
+		require(s.correction.open_journal(s.checkpoint.capture_directory), "cannot_create_tick_correction_exclusively");
 		s.correction.active = true;
 		s.rolling = true;
 	}
@@ -464,8 +466,7 @@ void pbd::rollback_session::configure_correct_at()
 					m_storage->correction.at > m_storage->checkpoint.tick_hold_index + 1 + m_storage->correction.depth && m_storage->correction.at < m_storage->input_sequence.size() &&
 					(!m_storage->checkpoint.late_index || m_storage->checkpoint.late_index > m_storage->correction.at),
 			"tick_correction_window_invalid");
-		const auto path = (m_storage->checkpoint.capture_directory / "tick-correction.jsonl").u8string();
-		require(m_storage->correction.file.open(std::string(path.begin(), path.end()), fs::write_new + fs::isfile), "cannot_create_tick_correction_exclusively");
+		require(m_storage->correction.open_journal(m_storage->checkpoint.capture_directory), "cannot_create_tick_correction_exclusively");
 		m_storage->correction.active = true;
 	}
 }

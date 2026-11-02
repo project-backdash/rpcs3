@@ -380,8 +380,11 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 			const areau display_area = {0, 0, static_cast<u32>(m_frame->client_width()), static_cast<u32>(m_frame->client_height())};
 			for (const auto& view : m_overlay_manager->get_views())
 			{
+				// An offscreen target is a screenshot or recording frame.
+				if (dst && view->screen_only)
+					continue;
 				const areau render_area = view->use_window_space ? display_area : aspect_ratio;
-				m_ui_renderer.run(cmd, render_area, target, *view.get(), flip_vertically);
+				m_ui_renderer.run(cmd, render_area, target, *view.get(), flip_vertically, dst != nullptr);
 			}
 		}
 	};

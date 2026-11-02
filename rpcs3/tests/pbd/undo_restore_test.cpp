@@ -162,6 +162,56 @@ PBD_TEST(PbdCheckpointMemory, PublicCapturePreservesLiveVoiceHandlesInStaticAndU
 	check_live();
 }
 
+PBD_TEST(PbdCheckpointMemory, PublicCaptureKeepsTheGeometryRequestManagerLive)
+{
+	// The manager spans manager+0 .. +0x70c8: header and request pool, pending lists at +0x4060 with their link nodes,
+	// request lists at +0x5894 with theirs. Page 0x10747000 holds only link nodes and reaches a correction through the
+	// undo journal, so both restore paths must leave every byte of the object as the worker left it.
+	constexpr std::uint32_t begin = 0x10742880, end = 0x10749948;
+	check(pbd::replay_capture::pbd_exclusions.size() == 35);
+	check(std::count(pbd::replay_capture::pbd_exclusions.begin(), pbd::replay_capture::pbd_exclusions.end(),
+			  pbd::replay_capture::pbd_span{begin, end}) == 1);
+	std::vector<std::uint32_t> pages;
+	for (std::uint32_t page = 0x10742000; page < 0x1074a000; page += 4096)
+		pages.push_back(page);
+	pbd::checkpoint_memory::write_plan restore;
+	restore.reset(pages);
+	for (const auto& [from, to] : pbd::checkpoint_memory::default_exclusions)
+		restore.exclude(from, to, pages);
+	for (const auto& [from, to] : pbd::replay_capture::pbd_exclusions)
+		restore.exclude(from, to, pages);
+	restore.prepare(pages);
+	std::vector<std::uint8_t> snapshot(pages.size() * 4096, 0x11), memory(pages.size() * 4096, 0x77);
+	const auto write = [&](std::uint32_t address, std::span<const std::uint8_t> bytes)
+	{
+		check(address >= pages.front() && address + bytes.size() <= pages.back() + 4096);
+		std::copy(bytes.begin(), bytes.end(), memory.begin() + (address - pages.front()));
+		return true;
+	};
+	const auto at = [&](std::uint32_t address)
+	{
+		return memory[address - pages.front()];
+	};
+	const auto check_live = [&]
+	{
+		check(at(begin - 1) == 0x11 && at(end) == 0x11);
+		for (const std::uint32_t address : {begin, begin + 8, begin + 0x50, 0x107468e0u, 0x10746920u, 0x10747000u, 0x10748114u, end - 1})
+			check(at(address) == 0x77);
+		check(std::all_of(memory.begin() + (begin - pages.front()), memory.begin() + (end - pages.front()), [](auto byte)
+			{
+				return byte == 0x77;
+			}));
+	};
+	std::uint64_t written = 0, excluded = 0;
+	check(restore.write_pages_except(pages, snapshot, written, write));
+	check_live();
+	memory.assign(memory.size(), 0x77);
+	for (std::size_t slot = 0; slot < pages.size(); ++slot)
+		check(restore.write_page_except_ranges(pages[slot], snapshot.data() + slot * 4096, excluded, write));
+	check_live();
+	check(excluded >= end - begin);
+}
+
 PBD_TEST(PbdUndoRestore, KeepsTheOldestPreimageAndTheOrderOfFinalWrites)
 {
 	plan restore;

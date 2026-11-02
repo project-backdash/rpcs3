@@ -51,6 +51,7 @@ void pbd::rollback_session::boundary_call::lobby_poll_command()
 	const bool next_set = command.kind == command_kind::next_set;
 	if (command.kind == command_kind::continue_game || next_set)
 	{
+		lobby_ignored_fields(command);
 		lobby_command_steps{*this, command, next_set}.run();
 		return;
 	}
@@ -152,23 +153,40 @@ bool pbd::rollback_session::boundary_call::lobby_wait_end()
 		});
 }
 
-// Apply and acknowledge display-only commands for chat, card visibility, mode, fighter captions, stakes and placement counts.
+// An invalid optional display field reads as left out; the first command with one is named so a launcher's mistake is found.
+// The PLAYER DATA records ("rank_stakes.left.record", "next_set.right.records") are named apart, so another field named first
+// never hides them.
+void pbd::rollback_session::boundary_call::lobby_ignored_fields(const pbd::set_channel::command& command)
+{
+	std::vector<std::string> records, others;
+	for (const auto& name : command.ignored)
+		(name.ends_with(".record") || name.ends_with(".records") ? records : others).push_back(name);
+	const auto name_once = [&](const std::vector<std::string>& names, bool& logged)
+	{
+		if (names.empty() || logged)
+			return;
+		logged = true;
+		pbd_session_log.warning("Lobby command %llu: %s read as left out (invalid).", static_cast<unsigned long long>(command.serial),
+			fmt::merge(names, ", "));
+	};
+	name_once(others, data.lobby.ignored_logged);
+	name_once(records, data.lobby.records_ignored_logged);
+}
+
+// Apply and acknowledge display-only commands for chat, card visibility, mode, fighter captions, stakes, placement counts and
+// the PLAYER DATA records.
 void pbd::rollback_session::boundary_call::lobby_display_command(const pbd::set_channel::command& command)
 {
 	using pbd::set_channel::command_kind;
-	// An invalid optional display field reads as left out; the first one is named so a launcher's mistake is found.
-	if (!command.ignored.empty() && !data.lobby.ignored_logged)
-	{
-		data.lobby.ignored_logged = true;
-		pbd_session_log.warning("Lobby command %llu: %s read as left out (invalid).", static_cast<unsigned long long>(command.serial),
-			fmt::merge(command.ignored, ", "));
-	}
+	lobby_ignored_fields(command);
 	if (command.kind == command_kind::rank_stakes)
 	{
 		// The VS cards tag the stakes, and the notices show each placing side's count, from the next fresh boundary on
-		// (publish_vs_cards, publish_set_notices).
+		// (publish_vs_cards, publish_set_notices). A record named here replaces that side's record from before this set, and
+		// the bar shows it from the next scene barrier both PCs reach with it on (write_game_profiles).
 		data.lobby.rank_stakes = command.stakes;
 		data.lobby.placements = command.placements;
+		data.lobby.channel->hold_records(command);
 		if (!data.lobby.channel->acknowledge(command))
 			session_runtime.finish(output_failed);
 		return;
@@ -329,33 +347,121 @@ bool pbd::rollback_session::boundary_call::store_game_profiles(const std::array<
 	return ok;
 }
 
+// Both players' PLAYER DATA numbers in the game's records (pbd::game_profile::wins_address), from which the game draws the bar
+// under each life bar. Kept apart from the names and ranks, so a failure here never stops those. Only bytes that differ are
+// written. False when a record could not be read or written.
+bool pbd::rollback_session::boundary_call::store_game_records(const std::array<pbd::game_profile::record, 2>& records)
+{
+	bool ok = true;
+	for (u32 side = 0; side < 2; side++)
+	{
+		auto words = pbd::game_profile::encode_record(records[side]);
+		auto held = words;
+		const u32 at = pbd::game_profile::wins_address(side);
+		if (!vm::try_access(at, held.data(), static_cast<u32>(held.size()), false))
+		{
+			ok = false;
+			continue;
+		}
+		if (held != words && !vm::try_access(at, words.data(), static_cast<u32>(words.size()), true))
+			ok = false;
+	}
+	return ok;
+}
+
+// What a lobby set's bar would show at this boundary (pbd::set_channel::shown_records), with the rows the game holds as the
+// fighters' picks; none for a side without a record, and nothing without a bound set. A set that picks in the game's select
+// first takes each row's base character from the game's row table (0x4403c0, 0x24 bytes a row, the character in the first
+// half-word), so all costumes of a character share its record.
+std::array<std::optional<pbd::game_profile::record>, 2> pbd::rollback_session::boundary_call::shown_game_records()
+{
+	if (!data.lobby.channel)
+		return {};
+	if (pbd::set_channel::in_game(data.lobby.channel->identity()) && !data.lobby.channel->knows_characters())
+	{
+		std::array<u8, (pbd::set_channel::max_character_row + 1) * 0x24> table{};
+		if (vm::try_access(0x4403c0, table.data(), static_cast<u32>(table.size()), false))
+		{
+			// A row naming no base character stands for itself alone.
+			pbd::set_channel::row_characters characters{};
+			for (u32 row = 0; row < characters.size(); ++row)
+			{
+				const u32 character = u32{table[row * 0x24]} << 8 | table[row * 0x24 + 1];
+				characters[row] = static_cast<u16>(character <= pbd::character_rule::jinpachi ? character : 0x8000u | row);
+			}
+			data.lobby.channel->hold_characters(characters);
+		}
+	}
+	std::array<u32, 2> rows{~0u, ~0u};
+	if (!read_word(0x10093f50, rows[0]) || !read_word(0x10093f54, rows[1]))
+		rows = {~0u, ~0u};
+	return data.lobby.channel->shown_records(rows);
+}
+
+// The PLAYER DATA numbers the bars change to at this boundary. Each launcher gives its own PC the records in its own time (a
+// Quick Match manifest may go without one, a rank_stakes record may reach one PC after a barrier and the other before it), so
+// at a scene barrier these are the numbers this PC announced (prepare_peer_segment) only when the other PC announced the same,
+// and none otherwise; at the session start, where nothing has been compared yet, none with a peer. Both PCs therefore always
+// write the same bytes.
+std::array<std::optional<pbd::game_profile::record>, 2> pbd::rollback_session::boundary_call::agreed_game_records(std::optional<u32> segment)
+{
+	if (!data.peer.enabled)
+		return shown_game_records();
+	if (!segment)
+		return {};
+	const u32 own = data.session.segments.records, other = data.session.segments.peer_records[*segment % 8];
+	const bool agreed = own == other;
+	if (agreed != data.lobby.records_agreed)
+		pbd_session_log.notice("Lobby set: from segment %u the PLAYER DATA bars show %s (0x%x here, 0x%x on the other PC).", *segment,
+			agreed ? "the numbers both PCs hold" : "zeros", own, other);
+	data.lobby.records_agreed = agreed;
+	return agreed ? data.lobby.records_plan : std::array<std::optional<pbd::game_profile::record>, 2>{};
+}
+
 // A lobby set's players (lobby, Quick Match and Ranked alike) in the game's records, from the set's manifest, which both PCs hold
 // alike. Called only where both PCs stand on the same boundary with nothing before it left to re-execute (the session start and
-// each scene change's barrier), so both games hold the same bytes from the same frame on; the records are display only and
-// outside the hashed regions, so neither rollback nor the sync check depends on them. Without a bound set (Practice, the game's
-// own modes) nothing is written. As a fight's first screen begins, the log says whether the game draws each plate.
-void pbd::rollback_session::boundary_call::write_game_profiles(u32 boundary, u32 scene)
+// each scene change's barrier, `segment`), so both games hold the same bytes from the same frame on; the records are display
+// only and outside the hashed regions, so neither rollback nor the sync check depends on them. The PLAYER DATA numbers are those
+// both PCs agree on (agreed_game_records), written only where they may change (pbd::game_profile::records_may_change). Without
+// a bound set (Practice, the game's own modes) nothing is written. As a fight's first screen begins, the log says whether the
+// game draws each plate and what the PLAYER DATA bars show.
+void pbd::rollback_session::boundary_call::write_game_profiles(u32 boundary, u32 scene, std::optional<u32> segment)
 {
 	if (!data.lobby.channel)
 		return;
 	keep_promoted_ranks(boundary);
 	const auto& set = data.lobby.channel->identity();
-	if (!store_game_profiles({set.left.name, set.right.name}, {set.left.rank, set.right.rank}))
+	const bool named = store_game_profiles({set.left.name, set.right.name}, {set.left.rank, set.right.rank});
+	bool counted = true;
+	if (pbd::game_profile::records_may_change(scene))
+	{
+		data.lobby.records_shown = agreed_game_records(segment);
+		const auto& shown = data.lobby.records_shown;
+		counted = store_game_records({shown[0].value_or(pbd::game_profile::record{}), shown[1].value_or(pbd::game_profile::record{})});
+	}
+	if (!named)
 	{
 		pbd_session_log.error("Lobby set: the players' names could not be written into the game's records at boundary %u.", boundary);
 		return;
 	}
+	if (!counted)
+		pbd_session_log.warning("Lobby set: the PLAYER DATA numbers could not be written into the game's records at boundary %u.", boundary);
 	if (scene != 16u && scene != 17u)
 		return;
+	const auto& shown = data.lobby.records_shown;
 	u32 mode = 0, players = 0, humans = 0;
 	const bool words_read = read_word(pbd::t5dr::game_mode_address, mode) && read_word(0x1008f080, players) && read_word(0x1008f0b0, humans);
 	const auto plate = [&](u32 side)
 	{
 		return words_read && pbd::game_profile::plate_drawn(mode, players, humans, side) ? "drawn" : "not drawn";
 	};
-	pbd_session_log.notice("Lobby set: game %u shows %s (%s, plate %s) and %s (%s, plate %s) under the life bars from boundary %u.",
-		set.game_number, set.left.name, pbd::game_profile::rank_names[pbd::game_profile::rank_byte(set.left.rank)], plate(0),
-		set.right.name, pbd::game_profile::rank_names[pbd::game_profile::rank_byte(set.right.rank)], plate(1), boundary);
+	const auto numbers = [&](u32 side)
+	{
+		return shown[side] ? fmt::format("%u W %u L", shown[side]->wins, shown[side]->losses) : std::string("no record");
+	};
+	pbd_session_log.notice("Lobby set: game %u shows %s (%s, %s, plate %s) and %s (%s, %s, plate %s) under the life bars from boundary %u.",
+		set.game_number, set.left.name, pbd::game_profile::rank_names[pbd::game_profile::rank_byte(set.left.rank)], numbers(0), plate(0),
+		set.right.name, pbd::game_profile::rank_names[pbd::game_profile::rank_byte(set.right.rank)], numbers(1), plate(1), boundary);
 }
 
 // Plan from stakes agreed at the preceding barrier (local launcher stakes without a peer), before game_preparing records

@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "swapchain.h"
 #include "Emu/PBD/pbd_presentation_journal.h"
+#include "Emu/PBD/pbd_swapchain_rebuild.h"
 
 namespace vk
 {
@@ -147,10 +148,28 @@ namespace vk
 		}
 	}
 
+	bool swapchain_WSI::replace_surface(const std::function<VkSurfaceKHR()>& make)
+	{
+		if (m_vk_swapchain)
+		{
+			swapchain_images.clear();
+			_vkDestroySwapchainKHR(dev, m_vk_swapchain, nullptr);
+			m_vk_swapchain = VK_NULL_HANDLE;
+		}
+		m_surface = make();
+		if (!m_surface)
+			return false;
+		VkBool32 supported = VK_FALSE;
+		vkGetPhysicalDeviceSurfaceSupportKHR(dev.gpu(), dev.get_present_queue_family(), m_surface, &supported);
+		return supported != VK_FALSE;
+	}
+
 	std::pair<VkSurfaceCapabilitiesKHR, bool> swapchain_WSI::init_surface_capabilities()
 	{
 #ifdef _WIN32
-		if (g_cfg.video.vk.exclusive_fullscreen_mode != vk_exclusive_fs_mode::unspecified && dev.get_surface_capabilities_2_support())
+		// PBD: the full-screen exclusive structures are valid only with VK_EXT_full_screen_exclusive enabled, which the device
+		// does when it supports it and the setting is not Automatic (device.cpp).
+		if (dev.get_full_screen_exclusive_support())
 		{
 			HMONITOR hmonitor = MonitorFromWindow(window_handle, MONITOR_DEFAULTTOPRIMARY);
 			if (hmonitor)
@@ -194,6 +213,7 @@ namespace vk
 
 	bool swapchain_WSI::init()
 	{
+		m_last_create_result = VK_SUCCESS;
 		if (dev.get_present_queue() == VK_NULL_HANDLE)
 		{
 			rsx_log.error("Cannot create WSI swapchain without a present queue");
@@ -284,17 +304,6 @@ namespace vk
 			}
 		}
 
-		// PBD (log only): the VSync queue diagnostic needs the requested setting, every mode the surface offers and the
-		// image count negotiated (the latency VSync adds differs by a factor of two or more between GPUs and drivers).
-		{
-			std::string pbd_modes;
-			for (VkPresentModeKHR mode : present_modes)
-				pbd_modes += fmt::format("%s%d", pbd_modes.empty() ? "" : ",", static_cast<int>(mode));
-			rsx_log.notice("PBD swapchain: vsync setting %d, supported modes [%s], mode %d, images %u (surface min %u max %u)",
-				static_cast<int>(g_cfg.video.vsync.get()), pbd_modes, static_cast<int>(swapchain_present_mode), nb_swap_images,
-				surface_descriptors.minImageCount, surface_descriptors.maxImageCount);
-		}
-
 		VkSurfaceTransformFlagBitsKHR pre_transform = surface_descriptors.currentTransform;
 		if (surface_descriptors.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
 			pre_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
@@ -307,6 +316,11 @@ namespace vk
 		swap_info.imageColorSpace = m_color_space;
 
 		swap_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		// PBD: the game host's on-screen check copies a few points of each presented image, overlays included
+		// (VKPresent.cpp); a surface that cannot be copied from presents as before and the check judges the screen alone.
+		m_readable = (surface_descriptors.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
+		if (m_readable)
+			swap_info.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 		swap_info.preTransform = pre_transform;
 		swap_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 		swap_info.imageArrayLayers = 1;
@@ -317,6 +331,8 @@ namespace vk
 
 		swap_info.imageExtent.width = std::max(m_width, surface_descriptors.minImageExtent.width);
 		swap_info.imageExtent.height = std::max(m_height, surface_descriptors.minImageExtent.height);
+		m_width = swap_info.imageExtent.width;
+		m_height = swap_info.imageExtent.height;
 
 #ifdef _WIN32
 		VkSurfaceFullScreenExclusiveInfoEXT full_screen_exclusive_info = {};
@@ -335,20 +351,57 @@ namespace vk
 		rsx_log.notice("Swapchain: requesting full screen exclusive mode %d.", static_cast<int>(full_screen_exclusive_info.fullScreenExclusive));
 #endif
 
-		// Vulkan's own presentation, not a DXGI flip-model swap chain, in the mode chosen above (the run summary).
-		if (_vkCreateSwapchainKHR(dev, &swap_info, nullptr, &m_vk_swapchain) == VK_SUCCESS)
-			pbd::presentation::journal::get().swapchain(false, static_cast<s32>(swapchain_present_mode));
-
-		if (old_swapchain)
+		// PBD (log only): the VSync queue diagnostic needs the requested setting, every mode the surface offers and the
+		// image count negotiated (the latency VSync adds differs by a factor of two or more between GPUs and drivers). The
+		// extents, transform and usage show what the surface offered when a driver keeps calling new swapchains suboptimal.
 		{
-			if (!swapchain_images.empty())
-			{
-				swapchain_images.clear();
-			}
-
-			_vkDestroySwapchainKHR(dev, old_swapchain, nullptr);
+			std::string pbd_modes;
+			for (VkPresentModeKHR mode : present_modes)
+				pbd_modes += fmt::format("%s%d", pbd_modes.empty() ? "" : ",", static_cast<int>(mode));
+			const char* pbd_exclusive = !dev.get_full_screen_exclusive_support() ? "not enabled" :
+			                            should_specify_exclusive_full_screen_mode ? "enabled, surface supports it" :
+			                                                                         "enabled, surface does not support it";
+			rsx_log.notice("PBD swapchain: vsync setting %d, supported modes [%s], mode %d, images %u (surface min %u max %u), "
+				"extent %ux%u (current %ux%u, min %ux%u, max %ux%u), transform 0x%x (current 0x%x), usage 0x%x (supported 0x%x), "
+				"window size reports %s, full screen exclusive %s",
+				static_cast<int>(g_cfg.video.vsync.get()), pbd_modes, static_cast<int>(swapchain_present_mode), nb_swap_images,
+				surface_descriptors.minImageCount, surface_descriptors.maxImageCount, swap_info.imageExtent.width, swap_info.imageExtent.height,
+				surface_descriptors.currentExtent.width, surface_descriptors.currentExtent.height, surface_descriptors.minImageExtent.width,
+				surface_descriptors.minImageExtent.height, surface_descriptors.maxImageExtent.width, surface_descriptors.maxImageExtent.height,
+				static_cast<u32>(pre_transform), static_cast<u32>(surface_descriptors.currentTransform), static_cast<u32>(swap_info.imageUsage),
+				static_cast<u32>(surface_descriptors.supportedUsageFlags), m_wm_reports_flag ? "on" : "off", pbd_exclusive);
 		}
 
+		// Vulkan's own presentation, not a DXGI flip-model swap chain, in the mode chosen above (the run summary).
+		// PBD: a driver that refuses the full-screen exclusive request still gets the swapchain it makes without one, and the
+		// old swapchain is destroyed whatever the outcome (Emu/PBD/pbd_swapchain_rebuild.h). The new handle is written to a
+		// local first, since a failed call leaves its output undefined; a failure leaves no swapchain and returns false.
+		const void* const exclusive_request = swap_info.pNext;
+		VkSwapchainKHR made = VK_NULL_HANDLE;
+		const auto create = [&](bool exclusive, VkSwapchainKHR old)
+		{
+			swap_info.pNext = exclusive ? exclusive_request : nullptr;
+			swap_info.oldSwapchain = old;
+			const VkResult created = _vkCreateSwapchainKHR(dev, &swap_info, nullptr, &made);
+			m_last_create_result = created;
+			if (created == VK_SUCCESS)
+				return true;
+			made = VK_NULL_HANDLE;
+			rsx_log.error("Swapchain: creation %sfailed with %d.", exclusive ? "with the full screen exclusive request " : "", static_cast<int>(created));
+			return false;
+		};
+		const auto destroy = [this](VkSwapchainKHR swapchain)
+		{
+			swapchain_images.clear();
+			_vkDestroySwapchainKHR(dev, swapchain, nullptr);
+		};
+
+		m_vk_swapchain = VK_NULL_HANDLE;
+		if (!pbd::swapchain_rebuild::create_replacing(old_swapchain, exclusive_request != nullptr, create, destroy))
+			return false;
+
+		m_vk_swapchain = made;
+		pbd::presentation::journal::get().swapchain(false, static_cast<s32>(swapchain_present_mode));
 		init_swapchain_images(dev);
 		return true;
 	}

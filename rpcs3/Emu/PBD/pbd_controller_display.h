@@ -12,6 +12,8 @@ namespace pbd::controllers
 		std::string device;
 		std::array<std::string, count> keys{};
 		std::string button_type;
+		// This controller's clip button as the prompts name it ("Share", "{l3}"; pbd::clips::prompt_name), empty without one.
+		std::string clip_button;
 	};
 	inline std::mutex display_mutex;
 	inline display current_display;

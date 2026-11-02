@@ -51,6 +51,8 @@ void pbd::rollback_session::tick_dispatch::capture_tick_checkpoint(tick_sample& 
 		tick.ring_context_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(ring_context_done - ring_context_begin).count();
 		tick.ring_calls = calls;
 		tick.ring_bytes = data.checkpoint.checkpoint_pages.size() * 4096ull;
+		if (data.host_timing.enabled)
+			data.host_timing.ring_ns += tick.ring_capture_ns;
 		arm_tick_checkpoint(tick, entry);
 	}
 }
@@ -97,7 +99,7 @@ void pbd::rollback_session::tick_dispatch::arm_tick_checkpoint(tick_sample& tick
 				rows.swap(data.fault.log);
 			}
 			for (const auto& text : rows)
-				data.correction.file.write(text.data(), text.size());
+				data.correction.file.write(pbd::correction_journal::kind::fault, text.data(), text.size());
 		}
 	}
 }

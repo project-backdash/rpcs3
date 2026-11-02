@@ -1,10 +1,14 @@
 #pragma once
 
 // Punishment practice: once the player blocks one of the dummy's attacks that leaves the dummy at punishable or worse,
-// the player's next attack to connect says whether it punished. It did when it landed before the dummy's first free frame,
-// the frame from which a guarding dummy blocks it (an i12 attack started on the player's first free frame lands on the
-// frame before that one at -12). A throw has no contact frame to judge and ends the gap without a verdict. Both fighters'
-// frames come from the frame data calculator, so the reading takes host values only and changes nothing in the game.
+// the player's next attack to connect says whether it punished. It did when it landed no later than the dummy's first
+// free frame. A first free frame (pbd::move_list::readiness) is the frame on which the game takes a fighter's next input,
+// and what that input starts shows from the frame after. The player's attack taken on the player's first free frame,
+// pressed then or pressed earlier and held by the game until then, starts on the next frame, so an i10 attack lands on
+// the dummy's first free frame at -10. The guard the dummy takes on that frame holds from the next one, standing or
+// crouching alike: a dummy free crouching (FC) that stands to guard a mid is no slower than one that guards in the stance
+// it is in. A throw has no contact frame to judge and ends the gap without a verdict. Both fighters' frames come from the
+// frame data calculator, so the reading takes host values only and changes nothing in the game.
 
 #include "pbd_practice_frames.h"
 
@@ -30,8 +34,10 @@ namespace pbd::practice::punish
 	struct result
 	{
 		verdict outcome = verdict::punished;
-		// The dummy's attack on block, and the startup of the player's attack when the frame data has it.
+		// The dummy's attack on block, whether the dummy is free crouching then (the panel's "FC"), and the startup of the
+		// player's attack when the frame data has it.
 		std::int32_t advantage = 0;
+		bool crouching = false;
 		std::optional<std::uint32_t> startup;
 		// Punished: the frames left before the dummy could block. Late: how many frames after that the attack landed.
 		std::uint32_t frames = 0;
@@ -41,14 +47,14 @@ namespace pbd::practice::punish
 
 	// The pop-up's text, a title and a detail after a tab: "PUNISHED" over "i10 on -12, 2 frames to spare"; "TOO LATE" over
 	// "i10 on -12, 1 frame late" for a fast enough attack pressed late; "TOO SLOW" over "i15 can't punish -12: use i12 or
-	// faster" for an attack that could not have made it.
+	// faster" for an attack that could not have made it. A dummy free crouching shows its gap as the panel does, "-12 FC".
 	inline std::string text(const result& value)
 	{
 		const auto count = [](std::uint32_t frames, const char* one, const char* many)
 		{
 			return std::to_string(frames) + (frames == 1 ? one : many);
 		};
-		const std::string gap = frames::signed_frames(value.advantage);
+		const std::string gap = frames::signed_frames(value.advantage) + (value.crouching ? " FC" : "");
 		const std::string attack = value.startup ? "i" + std::to_string(*value.startup) : std::string("Your attack");
 		if (value.outcome == verdict::punished)
 			return "PUNISHED\t" + attack + " on " + gap + ", " + (value.frames ? count(value.frames, " frame to spare", " frames to spare") : std::string("with no frame to spare"));
@@ -74,6 +80,8 @@ namespace pbd::practice::punish
 			contact_id blocked;
 			std::int32_t advantage = 0;
 			std::int64_t dummy_ready = 0;
+			// The dummy is free crouching, as the panel's "FC" shows.
+			bool crouching = false;
 			// The player's result when the gap opened, when that was a throw, and whether an attack of the player's has started
 			// since: a throw shown after either is the player's answer to the gap.
 			std::optional<std::uint32_t> old_throw;
@@ -124,9 +132,10 @@ namespace pbd::practice::punish
 						if (*dummy.advantage <= punishable)
 						{
 							if (!open_here)
-								m_open = window{id, 0, 0, thrown(player) ? std::optional<std::uint32_t>(player.move) : std::nullopt};
+								m_open = window{id, 0, 0, false, thrown(player) ? std::optional<std::uint32_t>(player.move) : std::nullopt};
 							m_open->advantage = *dummy.advantage;
 							m_open->dummy_ready = *dummy.attacker_ready;
+							m_open->crouching = dummy.attacker_state == frames::ready_state::crouch;
 						}
 						else
 						{
@@ -164,17 +173,18 @@ namespace pbd::practice::punish
 			{
 				close();
 				const bool hit = player.outcome == frames::contact::hit, blocked = player.outcome == frames::contact::block;
-				const bool in_time = *player.impact < gap.dummy_ready;
+				const bool in_time = *player.impact <= gap.dummy_ready;
 				// An attack the game blocked while the readings say the dummy could not guard yet, or a contact of no known
 				// kind, gives no verdict rather than a wrong one.
 				if ((!hit && !blocked) || (in_time && blocked))
 					return std::nullopt;
 				result out;
 				out.advantage = gap.advantage;
+				out.crouching = gap.crouching;
 				out.startup = player.startup;
 				out.blocked = blocked;
 				out.outcome = in_time ? verdict::punished : verdict::late;
-				out.frames = static_cast<std::uint32_t>(in_time ? gap.dummy_ready - 1 - *player.impact : *player.impact - gap.dummy_ready + 1);
+				out.frames = static_cast<std::uint32_t>(in_time ? gap.dummy_ready - *player.impact : *player.impact - gap.dummy_ready);
 				return out;
 			}
 			if (now > gap.dummy_ready + expiry_frames)

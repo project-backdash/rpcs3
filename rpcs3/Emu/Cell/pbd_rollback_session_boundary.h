@@ -83,6 +83,7 @@ struct pbd::rollback_session::boundary_call
 	// The lobby: commands, VS cards, the players' names and ranks in the game's records, the session wait, selection sound and
 	// timer, the set start (pbd_rollback_session_lobby.cpp).
 	void lobby_poll_command();
+	void lobby_ignored_fields(const pbd::set_channel::command& command);
 	void lobby_display_command(const pbd::set_channel::command& command);
 	void lobby_menu_command(const pbd::set_channel::command& command);
 	bool lobby_wait_end();
@@ -90,7 +91,10 @@ struct pbd::rollback_session::boundary_call
 	void publish_set_notices(u32 scene);
 	void publish_game_overlay();
 	bool store_game_profiles(const std::array<std::string_view, 2>& names, const std::array<u32, 2>& ranks);
-	void write_game_profiles(u32 boundary, u32 scene);
+	bool store_game_records(const std::array<pbd::game_profile::record, 2>& records);
+	std::array<std::optional<pbd::game_profile::record>, 2> shown_game_records();
+	std::array<std::optional<pbd::game_profile::record>, 2> agreed_game_records(std::optional<u32> segment);
+	void write_game_profiles(u32 boundary, u32 scene, std::optional<u32> segment = std::nullopt);
 	pbd::rank_stakes::game_values plan_rank_screens(const pbd::set_channel::command& command, bool next_set);
 	void arm_rank_screens(const pbd::rank_stakes::game_values& values);
 	void settle_rank_stakes(u32 segment);

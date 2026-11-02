@@ -77,6 +77,44 @@ PBD_TEST(PbdLobbySetDriver, ConfirmedRefusalRetainsTheRejectedObservationRatherT
 	}
 }
 
+// Game 3 of a first-to-two set at one game each. The rounds stand 1-2 when a double K.O. gives both fighters a round in the
+// same update (2-3, read while the game shows the round result). The right side alone has the three rounds to win, so it
+// takes the game 3-2 and the set 2-1.
+PBD_TEST(PbdLobbySetDriver, ADrawnRoundAtMatchPointGivesTheGameToTheSideThatReachesTheRoundsToWin)
+{
+	sample_document test(430, 2, false, false, {}, [](manifest& m)
+		{
+			m.game_number = 3;
+			m.games = {1, 1};
+		});
+	check(test.begin());
+	check(test.record(0, phase::vs) && test.record(1, phase::character_intro));
+	const std::array<std::pair<std::uint32_t, std::uint32_t>, 3> traded{{{0, 1}, {1, 1}, {1, 2}}};
+	std::uint32_t boundary = 2;
+	for (const auto& [left, right] : traded)
+	{
+		check(test.record(boundary++, phase::round_intro) && test.record(boundary++, phase::fight));
+		check(test.record(boundary++, phase::round_result, left, right));
+	}
+	check(test.record(boundary++, phase::round_intro) && test.record(boundary++, phase::fight));
+	auto shown = applied(17, 12, 32);
+	shown.pending_phase = 6;
+	check(test.record(boundary++, phase::round_result, 2, 3, winner::none, shown));
+	check(test.publish(boundary) && !test.driver.last_refusal(), "a round that both fighters won was refused");
+	check(test.driver.healthy() && !test.driver.confirmed_progress(), "the deciding round must clear unfinished progress");
+	check(boundary == 14 && test.record(14, phase::match_end, 2, 3, winner::right));
+	check(test.publish(14) && test.driver.complete() && test.events.last_event() == 4);
+	const auto result = test.read(3), ended = test.read(4);
+	check(detail::is(result.find("type"), "game_result") && detail::is(result.find("winner"), "right") && !result.find("outcome"));
+	check(result.find("roundWins")->find("left")->text == "2" && result.find("roundWins")->find("right")->text == "3");
+	check(detail::is(ended.find("type"), "set_ended") && detail::is(ended.find("winner"), "right") &&
+		  detail::is(ended.find("reason"), "completed"));
+	check(ended.find("score")->find("left")->text == "1" && ended.find("score")->find("right")->text == "2");
+	const auto sealed = test.driver.sealed_game();
+	check(sealed && sealed->terminal && sealed->outcome == winner::right && sealed->round_left == 2 && sealed->round_right == 3 &&
+		  sealed->games.left == 1 && sealed->games.right == 2);
+}
+
 PBD_TEST(PbdLobbySetDriver, AsymmetricTerminalLossDrainsBothResultsBeforeKeyRetirement)
 {
 	namespace auth = pbd::peer_auth;
@@ -1716,4 +1754,44 @@ PBD_TEST(PbdLobbySetDriver, RankStakesAgreeBeforeTheGameStarts)
 	for (const auto own : {both, resent, 0u})
 		for (const auto other : {both, resent, 0u})
 			check(agreed_stakes(own, other) == agreed_stakes(other, own));
+}
+
+// A set that picks in the game's select counts each game for the PLAYER DATA bar once its continuation confirms it, by the rows
+// its result reported.
+PBD_TEST(PbdLobbySetDriver, ConfirmedGamesCountForTheCharactersPlayed)
+{
+	sample_document test(250, 2, true, false, {}, [](manifest& m)
+		{
+			m.left.records = std::vector<record_group>{record_group{{12}, {4, 1}}};
+			m.right.records = std::vector<record_group>{};
+		});
+	check(test.begin());
+	// The left player wins on row 12 against row 32; nothing counts before the lobby confirms it.
+	test.won_game();
+	auto shown = test.events.shown_records({12, 32});
+	check(shown[0] == game_record{4, 1} && shown[1] == game_record{0, 0});
+	command next;
+	next.kind = command_kind::continue_game;
+	next.serial = 1;
+	next.game_number = 2;
+	next.games = {1, 0};
+	check(test.driver.continue_game(next, 11, 0x8000008c));
+	shown = test.events.shown_records({12, 32});
+	check(shown[0] == game_record{5, 1} && shown[1] == game_record{0, 1});
+}
+
+// A fixed set's next set carries each PLAYER DATA record with the finished set's games, the deciding one included.
+PBD_TEST(PbdLobbySetDriver, NextSetCarriesTheGameRecordsWithTheDecidingGame)
+{
+	completed_set test(251);
+	command named;
+	named.kind = command_kind::rank_stakes;
+	named.records = {game_record{41, 30}, game_record{0, 0}};
+	test.events.hold_records(named);
+	// The deciding game is in no score yet.
+	auto shown = test.events.shown_records({12, 32});
+	check(shown[0] == game_record{41, 30} && shown[1] == game_record{0, 0});
+	check(test.driver.next_set(next_set_command(), 11, 0x8000008c));
+	shown = test.events.shown_records({12, 32});
+	check(shown[0] == game_record{42, 30} && shown[1] == game_record{0, 1});
 }

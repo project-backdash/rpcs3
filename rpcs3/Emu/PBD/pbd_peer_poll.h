@@ -198,10 +198,11 @@ struct pbd::rollback_session::peer_poll_steps : boundary_call
 			else
 				data.session.gate.peer_through[sender_seg % 8] = std::max(data.session.gate.peer_through[sender_seg % 8], through);
 		}
-		// The other peer's session segment and the one before it (first index, scene, counter, rank plan), kept by segment number.
+		// The other peer's session segment and the one before it (first index, scene, counter, rank stakes, PLAYER DATA numbers),
+		// kept by segment number.
 		if (const u32 segment = m.segment.number; segment)
 		{
-			const auto keep = [&](u32 n, u32 first, u32 scene, u32 counter, u32 rank_stakes)
+			const auto keep = [&](u32 n, u32 first, u32 scene, u32 counter, u32 rank_stakes, u32 records)
 			{
 				auto& slot_n = data.session.segments.peer_number[n % 8];
 				if (slot_n == n)
@@ -211,10 +212,12 @@ struct pbd::rollback_session::peer_poll_steps : boundary_call
 				data.session.segments.peer_scene[n % 8] = scene;
 				data.session.segments.peer_counter[n % 8] = counter;
 				data.session.segments.peer_rank_stakes[n % 8] = rank_stakes;
+				data.session.segments.peer_records[n % 8] = records;
 			};
-			keep(segment, m.segment.first_index, m.segment.scene, m.segment.counter, m.segment.rank_stakes);
+			keep(segment, m.segment.first_index, m.segment.scene, m.segment.counter, m.segment.rank_stakes, m.segment.records);
 			if (segment > 1)
-				keep(segment - 1, m.segment.prev_first_index, m.segment.prev_scene, m.segment.prev_counter, m.segment.prev_rank_stakes);
+				keep(segment - 1, m.segment.prev_first_index, m.segment.prev_scene, m.segment.prev_counter, m.segment.prev_rank_stakes,
+					m.segment.prev_records);
 			data.session.segments.peer_newest = std::max(data.session.segments.peer_newest, segment);
 		}
 	}

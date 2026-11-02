@@ -37,7 +37,7 @@ namespace pbd::peer_message
 	}
 
 	// The input message's layout. A receiver refuses any other version, so both PCs must send this one.
-	inline constexpr std::uint32_t input_version = 11;
+	inline constexpr std::uint32_t input_version = 12;
 	// An input message carries at most this many of the sender's own inputs: one window of ticks, so a lost datagram's
 	// inputs arrive in the next ones.
 	inline constexpr std::uint32_t max_inputs = 16;
@@ -87,12 +87,14 @@ namespace pbd::peer_message
 		inline constexpr std::size_t state_digest = 136;
 		inline constexpr std::size_t rank_stakes = 140; // the Ranked stakes the sender held as the segment began, then the one before
 		inline constexpr std::size_t prev_rank_stakes = 144;
-		inline constexpr std::size_t size = 148;
+		inline constexpr std::size_t records = 148; // the PLAYER DATA numbers the sender would write as the segment began, then the one before
+		inline constexpr std::size_t prev_records = 152;
+		inline constexpr std::size_t size = 156;
 	} // namespace input_tail
 
 	inline constexpr std::size_t input_fixed_bytes = input_head::entries + input_tail::size;
 	inline constexpr std::size_t max_input_bytes = input_fixed_bytes + entry_bytes * max_inputs;
-	static_assert(input_fixed_bytes == 196 && max_input_bytes == 324);
+	static_assert(input_fixed_bytes == 204 && max_input_bytes == 332);
 
 	// The size of an input message with `count` entries.
 	constexpr std::size_t input_bytes(std::uint32_t count) noexcept
@@ -131,12 +133,14 @@ namespace pbd::peer_message
 	};
 
 	// The sender's session segment and the one before it: a peer can pass a one-boundary segment unseen. The rank stakes are
-	// the Ranked set's stakes the sender's launcher had given it as each segment began (pbd::rank_stakes::stakes_word).
+	// the Ranked set's stakes the sender's launcher had given it as each segment began (pbd::rank_stakes::stakes_word), and the
+	// records the PLAYER DATA numbers the sender would write then (pbd::game_profile::records_word).
 	struct segment_fields
 	{
 		std::uint32_t number = 0, first_index = 0, scene = 0;
 		std::uint32_t prev_first_index = 0, prev_scene = 0, counter = 0, prev_counter = 0;
 		std::uint32_t rank_stakes = 0, prev_rank_stakes = 0;
+		std::uint32_t records = 0, prev_records = 0;
 		bool operator==(const segment_fields&) const = default;
 	};
 
@@ -228,6 +232,8 @@ namespace pbd::peer_message
 			put32(at::state_digest, m.digests.state);
 			put32(at::rank_stakes, m.segment.rank_stakes);
 			put32(at::prev_rank_stakes, m.segment.prev_rank_stakes);
+			put32(at::records, m.segment.records);
+			put32(at::prev_records, m.segment.prev_records);
 		}
 
 		inline void load_tail(std::span<const std::uint8_t> in, std::size_t tail, input_message& m) noexcept
@@ -241,7 +247,8 @@ namespace pbd::peer_message
 				get32(at::echo_held_us), get32(at::boundary), get32(at::delay_announce), static_cast<std::int32_t>(get32(at::advantage)),
 				get32(at::advantage_valid)};
 			m.segment = {get32(at::segment), get32(at::segment_first), get32(at::segment_scene), get32(at::prev_first),
-				get32(at::prev_scene), get32(at::segment_counter), get32(at::prev_counter), get32(at::rank_stakes), get32(at::prev_rank_stakes)};
+				get32(at::prev_scene), get32(at::segment_counter), get32(at::prev_counter), get32(at::rank_stakes), get32(at::prev_rank_stakes),
+				get32(at::records), get32(at::prev_records)};
 			m.gate = {get32(at::gate_segment), get32(at::gate_ready), get32(at::gate_through)};
 			m.digests = {get32(at::stage_match), get32(at::stage_digest), get32(at::options_seq), get32(at::options_digest),
 				get32(at::map_valid), {}, get32(at::state_segment), get32(at::state_digest)};

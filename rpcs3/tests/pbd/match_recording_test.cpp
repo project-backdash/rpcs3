@@ -6,10 +6,10 @@ using pbd::test::check;
 
 using namespace pbd::match_recording;
 
-static events at(lifecycle& capture, u32 boundary, phase p, u32 left = 0, u32 right = 0,
-	bool result = false, bool draw = false, winner outcome = winner::none)
+static events at(lifecycle& capture, u32 boundary, phase p, u32 left = 0, u32 right = 0, bool result = false,
+	winner outcome = winner::none)
 {
-	return capture.observe({boundary, p, true, false, result, draw, left, right, outcome});
+	return capture.observe({boundary, p, true, false, result, left, right, outcome});
 }
 
 static void round_lifecycle_recording()
@@ -39,9 +39,38 @@ static void round_lifecycle_recording()
 			check(ended.count == 1 && ended.values[0].boundary == fight + 1 && ended.values[0].type == kind::round_end);
 			boundary = fight + 100;
 		}
-		const auto end = at(capture, boundary, phase::match_end, 3, 1, true, false, winner::left);
+		const auto end = at(capture, boundary, phase::match_end, 3, 1, true, winner::left);
 		check(end.count == 1 && end.values[0].type == kind::match_end && capture.complete());
 		check(end.values[0].score_left == 3 && end.values[0].score_right == 1);
+	}
+}
+
+// Rounds stand 1-2 when a double K.O. raises both counts in one update, to 2-3 (the score a lobby set refused at boundary
+// 22327 with outcome none while the game showed the round result). The right side alone has the three rounds to win: an end
+// naming it is the result, and the same end read as a draw, a left win or no winner is refused.
+static void drawn_round_at_match_point()
+{
+	for (const winner claimed : {winner::right, winner::draw, winner::left, winner::none})
+	{
+		lifecycle capture;
+		check(capture.begin(3, 14725, 0, 3, true).refused == refusal::none);
+		check(at(capture, 14725, phase::vs).count == 1 && at(capture, 14800, phase::character_intro).count == 1);
+		const std::array<std::array<u32, 2>, 4> scores{{{0, 1}, {1, 1}, {1, 2}, {2, 3}}};
+		const std::array<u32, 4> results{16000, 18000, 20000, 22327};
+		for (u32 round = 0; round < scores.size(); ++round)
+		{
+			check(at(capture, results[round] - 300, phase::round_intro).values[0].type == kind::round_start);
+			check(at(capture, results[round] - 200, phase::fight).values[0].type == kind::round_fight);
+			const auto ended = at(capture, results[round], phase::round_result, scores[round][0], scores[round][1], true);
+			check(ended.refused == refusal::none && ended.count == 1 && ended.values[0].type == kind::round_end);
+		}
+		check(capture.match_decided() && !capture.round_wins());
+		const auto end = at(capture, 22500, phase::match_end, 2, 3, true, claimed);
+		if (claimed == winner::right)
+			check(end.count == 1 && end.values[0].outcome == winner::right && end.values[0].score_left == 2 &&
+				  end.values[0].score_right == 3 && capture.complete());
+		else
+			check(end.refused == refusal::outcome_invalid && !capture.complete());
 	}
 }
 
@@ -79,7 +108,7 @@ PBD_TEST(PbdMatchRecording, Checks)
 		at(capture, 2, phase::round_intro);
 		at(capture, 3, phase::fight);
 		at(capture, 4, phase::round_result, 1, 0, true);
-		check(at(capture, max_ticks, phase::match_end, 1, 0, true, false, winner::left).count == 1);
+		check(at(capture, max_ticks, phase::match_end, 1, 0, true, winner::left).count == 1);
 		check(capture.complete());
 	}
 	{
@@ -91,9 +120,10 @@ PBD_TEST(PbdMatchRecording, Checks)
 		at(capture, 3, phase::fight);
 		const auto ignored = capture.observe({1, phase::vs, true, true});
 		check(ignored.count == 0 && capture.active());
-		const auto result = at(capture, 4, phase::round_result, 1, 1, true, true);
+		// A drawn round raises both counts in one update; both at the rounds to win is a drawn match.
+		const auto result = at(capture, 4, phase::round_result, 1, 1, true);
 		check(result.count == 1 && result.refused == refusal::none);
-		check(at(capture, 5, phase::match_end, 1, 1, true, true, winner::draw).count == 1);
+		check(at(capture, 5, phase::match_end, 1, 1, true, winner::draw).count == 1);
 		check(capture.complete());
 	}
 	{
@@ -103,7 +133,9 @@ PBD_TEST(PbdMatchRecording, Checks)
 		at(capture, 1, phase::character_intro);
 		at(capture, 2, phase::round_intro);
 		at(capture, 3, phase::fight);
-		check(at(capture, 4, phase::round_result, 1, 1, true, false).refused == refusal::outcome_invalid);
+		// A closed round that raised neither count has no result.
+		check(at(capture, 4, phase::round_result, 0, 0, true).refused == refusal::outcome_invalid);
 		check(!capture.complete());
 	}
+	drawn_round_at_match_point();
 }

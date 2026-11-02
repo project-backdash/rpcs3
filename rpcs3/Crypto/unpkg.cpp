@@ -10,6 +10,7 @@
 #include "Emu/system_utils.hpp"
 #include "Emu/VFS.h"
 #include "unpkg.h"
+#include "package_path.h"
 #include "util/sysinfo.hpp"
 #include "Loader/PSF.h"
 
@@ -878,11 +879,11 @@ bool package_reader::fill_data(std::map<std::string, install_entry*>& all_instal
 	}
 
 	std::error_code path_ec;
-	auto install_path = std::filesystem::weakly_canonical(m_install_path, path_ec);
+	auto install_path = std::filesystem::weakly_canonical(pkg_path::from_utf8(m_install_path), path_ec);
 	if (path_ec)
 	{
 		pkg_log.warning("Failed to canonicalize installation path '%s' (%s); falling back to lexical normalization.", m_install_path, path_ec.message());
-		install_path = std::filesystem::path(m_install_path).lexically_normal();
+		install_path = pkg_path::from_utf8(m_install_path).lexically_normal();
 	}
 
 	if (install_path.empty())
@@ -890,11 +891,6 @@ bool package_reader::fill_data(std::map<std::string, install_entry*>& all_instal
 		pkg_log.error("Failed to normalize installation path for '%s'", m_install_path);
 		return false;
 	}
-
-	const auto is_inside_install_path = [&install_path](const std::filesystem::path& path)
-	{
-		return std::mismatch(install_path.begin(), install_path.end(), path.begin(), path.end()).first == install_path.end();
-	};
 
 	m_install_entries.clear();
 	m_bootable_file_path.clear();
@@ -933,7 +929,7 @@ bool package_reader::fill_data(std::map<std::string, install_entry*>& all_instal
 
 		std::string_view name = fmt::trim_back_sv(name_buf, "\0"sv);
 
-		const std::filesystem::path entry_path{name};
+		const auto entry_path = pkg_path::from_utf8(name);
 		if (entry_path.is_absolute())
 		{
 			num_failures++;
@@ -963,21 +959,21 @@ bool package_reader::fill_data(std::map<std::string, install_entry*>& all_instal
 
 		std::string path = m_install_path + vfs::escape(name);
 		path_ec.clear();
-		auto canonical_path = std::filesystem::weakly_canonical(path, path_ec);
+		auto canonical_path = std::filesystem::weakly_canonical(pkg_path::from_utf8(path), path_ec);
 		if (path_ec)
 		{
 			pkg_log.warning("Failed to canonicalize package path '%s' (%s); falling back to lexical normalization.", path, path_ec.message());
-			canonical_path = std::filesystem::path(path).lexically_normal();
+			canonical_path = pkg_path::from_utf8(path).lexically_normal();
 		}
 
-		if (canonical_path.empty() || !is_inside_install_path(canonical_path))
+		if (canonical_path.empty() || !pkg_path::inside(install_path, canonical_path))
 		{
 			num_failures++;
 			pkg_log.error("PKG entry path escapes installation directory: '%s'", name);
 			break;
 		}
 
-		path = canonical_path.string();
+		path = pkg_path::to_utf8(canonical_path);
 
 		if (entry.pad || (entry.type & ~PKG_FILE_ENTRY_KNOWN_BITS))
 		{

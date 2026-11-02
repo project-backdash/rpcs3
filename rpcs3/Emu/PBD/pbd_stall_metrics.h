@@ -147,6 +147,46 @@ namespace pbd::stall_metrics
 			return count;
 		}
 	};
+	struct counts
+	{
+		std::uint64_t scopes = 0, cpu_scopes = 0, points = 0;
+	};
+	// Under Wine (pbd_host.h) scopes and points are only counted, never timed: each thread clock read there is a request to
+	// Wine's server process, and timed scopes open on every draw and every wait. requested() stays true under Wine, because
+	// when it is false the startup export reads the main thread's clocks every frame instead.
+	class host_counter
+	{
+		std::atomic<std::uint64_t> cpu{0}, elapsed{0}, marks{0};
+		const bool counting;
+
+	public:
+		explicit host_counter(bool count_only) noexcept
+			: counting(count_only)
+		{
+		}
+		// True when the scope was counted and must return before it reads any clock.
+		bool counted(sampling samples) noexcept
+		{
+			if (!counting)
+				return false;
+			(samples == sampling::cpu ? cpu : elapsed).fetch_add(1, std::memory_order_relaxed);
+			return true;
+		}
+		bool counted_point() noexcept
+		{
+			if (!counting)
+				return false;
+			marks.fetch_add(1, std::memory_order_relaxed);
+			return true;
+		}
+		counts read() const noexcept
+		{
+			const auto cpu_scopes = cpu.load(std::memory_order_relaxed);
+			return {cpu_scopes + elapsed.load(std::memory_order_relaxed), cpu_scopes, marks.load(std::memory_order_relaxed)};
+		}
+	};
+	// The process's counter; counting only under Wine.
+	host_counter& host_counts() noexcept;
 	bool requested() noexcept;
 	void boundary(std::uint32_t index) noexcept;
 	void point(const char* site, std::uint32_t represented_boundary, std::uint64_t bytes = 0, std::uint64_t detail = 0) noexcept;

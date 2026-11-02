@@ -25,6 +25,7 @@
 #include <thread>
 #ifdef _WIN32
 #include <Windows.h>
+#include <shellapi.h>
 #endif
 #ifdef HAVE_SDL3
 #include <SDL3/SDL.h>
@@ -90,6 +91,18 @@ namespace pbd::controllers
 			DWORD foreground = 0;
 			GetWindowThreadProcessId(GetForegroundWindow(), &foreground);
 			return foreground == pid;
+		}
+		// The stream's settings file as UTF-8, from Windows' UTF-16 command line: argv holds it in the system code page,
+		// which loses the letters of a non-English user folder.
+		std::string stream_settings_path(const char* fallback)
+		{
+			int count = 0;
+			wchar_t** words = CommandLineToArgvW(GetCommandLineW(), &count);
+			if (!words)
+				return fallback;
+			const std::string path = count == 4 ? QString::fromWCharArray(words[2]).toStdString() : std::string(fallback);
+			LocalFree(words);
+			return path;
 		}
 #endif
 		// The left stick also as the directions, so an analog stick moves the fighter and the menus.
@@ -281,6 +294,7 @@ namespace pbd::controllers
 			{
 				d.family = pad.toObject().value("family").toString().toStdString();
 				d.button_type = pad.toObject().value("buttonType").toString().toStdString();
+				d.clip_button = pad.toObject().value("clipButton").toString().toStdString();
 			}
 		for (unsigned i = 0; i < count; ++i)
 			if (!m->keys[i].empty())
@@ -367,7 +381,7 @@ namespace pbd::controllers
 		HANDLE parent = OpenProcess(SYNCHRONIZE, FALSE, pid);
 		if (!parent)
 			return 2;
-		backend input(argv[2], true);
+		backend input(stream_settings_path(argv[2]), true);
 		if (!input.available())
 		{
 			CloseHandle(parent);

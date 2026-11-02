@@ -90,7 +90,7 @@ namespace gl
 
 		void emit_geometry(gl::command_context& cmd) override;
 
-		void run(gl::command_context& cmd, const areau& viewport, GLuint target, rsx::overlays::overlay& ui, bool flip_vertically);
+		void run(gl::command_context& cmd, const areau& viewport, GLuint target, rsx::overlays::overlay& ui, bool flip_vertically, bool capture);
 	};
 
 	struct video_out_calibration_pass final : public overlay_pass
