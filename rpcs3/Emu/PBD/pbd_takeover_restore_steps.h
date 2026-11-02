@@ -192,6 +192,9 @@ struct pbd::rollback_session::takeover_restore_steps : boundary_call
 			if (!data.lobby.direct_match.pbd_restore_cursor(a.host.pbd_cursor) ||
 				(side && !data.lobby.direct_match.set_continuation(data.generation, static_cast<pbd_replay_continuation>(side))))
 				return refuse("direct_replay_cursor_restore_failed");
+			// A round jump at or after the restored point has not happened in the timeline that runs again from it.
+			if (data.throw_break.restart && *data.throw_break.restart >= a.index)
+				data.throw_break.restart.reset();
 		}
 		load_takeover_host(a.host);
 		// These three values belong to the production checkpoint point inside the tick, after the entry preamble and

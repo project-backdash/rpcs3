@@ -2,6 +2,7 @@
 #include "pbd_set_channel.h"
 #include "pbd_lobby_set_driver.h"
 #include "Emu/PBD/pbd_replay_carry_codec.h"
+#include "Emu/PBD/pbd_throw_break_record.h"
 #include <algorithm>
 #include <array>
 #include <optional>
@@ -35,6 +36,8 @@ namespace pbd::replay_game_file
 		std::uint32_t number = 0;
 		round_point ready;
 		std::optional<round_point> cleanup;
+		// The throw break rule from this round's first input on (pbd_throw_break_record.h); none in a round without it.
+		pbd::throw_break::lookahead_setting throw_break;
 	};
 	struct game
 	{
@@ -146,7 +149,7 @@ namespace pbd::replay_game_file
 		const auto& build = field(root, "build");
 		if (!is(root, "format", "pbd-replay-v2") || integer(root, "version") != 2 || integer(root, "draftRevision") != 2 ||
 			!is(build, "gameExecutableSha256", "b56e25e9210ed3c4fc19f3dfae686b7246aef386cdd4f88c80e0b89141ff887d") ||
-			!is(build, "capsuleSchema", "pbd-game-start-capsule-draft-2"))
+			!(is(build, "capsuleSchema", pbd::throw_break::capsule_schema_stock) || is(build, "capsuleSchema", pbd::throw_break::capsule_schema_rule)))
 			return std::nullopt;
 		const auto& emulator = field(build, "emulatorSha256");
 		hex<32>(emulator); // 64 lower-case hex digits, or the file is refused.
@@ -267,6 +270,12 @@ namespace pbd::replay_game_file
 				!is(cap, "anchor", "before-native-round-initializer") || !unqualified(cap, "qualified"))
 				return "private_round_capsule";
 			saved.ready = point(field(cap, "ready"), saved.number == 1 ? 4 : 5, saved.number - 1, wins, out.inputs, complete);
+			if (pbd::throw_break::retired_record(cap.find(pbd::throw_break::record_key)))
+				return pbd::throw_break::retired_refusal;
+			const auto throw_break = pbd::throw_break::read_record(cap.find(pbd::throw_break::record_key));
+			if (!throw_break)
+				return "private_round_throw_break";
+			saved.throw_break = *throw_break;
 			const auto& cleanup = field(cap, "cleanup");
 			if (saved.number == 1)
 			{

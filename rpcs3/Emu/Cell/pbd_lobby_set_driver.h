@@ -2,6 +2,7 @@
 
 #include "../PBD/pbd_lobby_set_model.h"
 #include "../PBD/pbd_session_health.h"
+#include "../PBD/pbd_throw_break_record.h"
 
 namespace pbd::lobby_set
 {
@@ -91,6 +92,10 @@ namespace pbd::lobby_set
 												  {"battleClockVersion", json_value::number(clean.battle_clock_version)}, {"menuHashMask", json_value::number(clean.menu_hash_mask)}})}})}});
 			if (clean.direct_start)
 				payload.fields.back().second.fields.back().second.fields.emplace_back("directStart", json_value::boolean(true));
+			// Watchers run the rule as the players' games do; a start before the delay is applied names none yet.
+			if (clean.throw_break.any())
+				payload.fields.back().second.fields.back().second.fields.emplace_back(std::string(pbd::throw_break::record_key),
+					pbd::throw_break::record_json(clean.throw_break));
 			if (clean.publish_from_start)
 				payload.fields.back().second.fields.emplace_back("roundWitnessRequired", json_value::boolean(true));
 			if (current_load)
@@ -168,7 +173,8 @@ namespace pbd::lobby_set
 							detail::number32(parsed.value->find("game"), 1, 65535, source_game) &&
 							detail::number32(parsed.value->find("boundary"), game_origin, observed_boundary, boundary) &&
 							detail::number32(cap->find("sessionSeed"), 1, 0xffffffffu, seed) && seed == clean.seed &&
-							detail::is(cap->find("schema"), "pbd-game-start-capsule-draft-2"))
+							(detail::is(cap->find("schema"), pbd::throw_break::capsule_schema_stock) ||
+								detail::is(cap->find("schema"), pbd::throw_break::capsule_schema_rule)))
 						{
 							payload.fields.emplace_back("gameStartCapsule", std::move(*parsed.value));
 							if (pbd_source_emulator.size() == 64 && std::all_of(pbd_source_emulator.begin(), pbd_source_emulator.end(),
@@ -472,6 +478,11 @@ namespace pbd::lobby_set
 		void rank_screens(std::optional<pbd::rank_stakes::game_values> values)
 		{
 			next_rank_values = values;
+		}
+		// The throw break rule from the next start record on, once the session applies the agreed delay.
+		void throw_break(const pbd::throw_break::lookahead_setting& value)
+		{
+			clean.throw_break = value;
 		}
 		bool apply_stream_status(const command& value)
 		{

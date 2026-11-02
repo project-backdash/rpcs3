@@ -115,6 +115,9 @@ struct pbd::rollback_session::boundary_call
 	bool remote_left(u32 t);
 	bool peer_usable(u32 t, u32 now);
 	u16 peer_remote_for(u32 t, u32 now);
+	u32 peer_first_unconfirmed(u32 now);
+	bool peer_lookahead_wrong(u32 t, u32 now);
+	bool peer_lookahead_arrived(u32 index);
 	u16 filter_local_sample(u16 raw, u32 source);
 	u32 match_frame(u32 index);
 	u16 scripted_local(u32 t, u32 boundary);
@@ -326,6 +329,7 @@ struct pbd::rollback_session::tick_dispatch : boundary_call
 	bool lobby_set_observation(bool scene_read, const std::array<be_t<u32>, 2>& scene_now);
 	void match_replay_observation(bool scene_read, const std::array<be_t<u32>, 2>& scene_now);
 	bool tick_record(bool round_reset, const std::array<be_t<u32>, 2>& scene_now, bool soft_mode);
+	void begin_throw_break_tick();
 	bool correction();
 	void close_replayed_interval();
 	bool peer_boundary(bool& roll_trigger);

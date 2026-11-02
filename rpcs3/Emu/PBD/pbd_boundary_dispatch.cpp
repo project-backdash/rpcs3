@@ -233,6 +233,9 @@ bool pbd::rollback_session::boundary_call::restore_direct_round(u32 index)
 		}
 		if (reconstructed)
 		{
+			// The round's first tick takes nothing from the rows before: the recording keeps a round start only where the throw
+			// break rule tracked no press (pbd_live_replay).
+			data.throw_break.restart = index;
 			data.replay.round_reconstructed = true;
 			data.last_fight_index = ~0u;
 			data.replay.was_fighting = false;

@@ -453,7 +453,8 @@ void pbd::rollback_session::write_records() noexcept
 			[&data](u64 quiet_ms)
 			{
 				if (write_peer_stop(data, "game_stall_timeout", ~0u, ~0u, data.peer.link.last_valid_us.load(std::memory_order_acquire)))
-					pbd_session_log.error("Game stall: no tick boundary for %u ms outside the boundary call while the other PC is still heard; host fail-stop requested.", quiet_ms);
+					pbd_session_log.error("Game stall: no tick boundary for %u ms outside the boundary call while the other PC is still heard; host fail-stop requested. %s",
+						quiet_ms, pbd::shader_build::describe(pbd::shader_build::renderer().read(), pbd::shader_build::steady_ns()));
 				return data.peer.link.stop_recorded.load(std::memory_order_acquire);
 			}}
 			.run();

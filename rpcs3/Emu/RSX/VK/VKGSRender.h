@@ -301,6 +301,7 @@ private:
 	rsx::simple_array<u8> m_scratch_mem;
 
 	bool load_program();
+	bool wait_for_program(const vk::shader_interpreter::variant_request& request);
 	void load_program_env();
 	void update_vertex_env(u32 id, const vk::vertex_upload_info& vertex_info);
 	void upload_transform_constants(const rsx::io_buffer& buffer);

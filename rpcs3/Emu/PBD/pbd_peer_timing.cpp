@@ -90,6 +90,15 @@ bool pbd::rollback_session::tick_dispatch::auto_input_delay()
 			data.peer.delay_applied = true;
 			const auto text = fmt::format("{\"type\":\"input_delay_applied\",\"boundary\":%u,\"input_delay\":%u}\n", index, data.peer.input_delay);
 			data.peer.file.write(text.data(), text.size());
+			data.throw_break.apply_delay(data.peer.input_delay);
+			if (data.lobby.set)
+				data.lobby.set->throw_break(data.throw_break.recorded());
+			if (data.throw_break.on)
+			{
+				const auto lookahead = fmt::format("{\"type\":\"throw_break_lookahead\",\"boundary\":%u,\"lookahead\":[%u,%u]}\n", index,
+					data.throw_break.peer_lookahead[0], data.throw_break.peer_lookahead[1]);
+				data.peer.file.write(lookahead.data(), lookahead.size());
+			}
 		}
 		else if (index >= (data.session.enabled ? data.start_index + 600 : data.roll_begin))
 		{

@@ -157,12 +157,13 @@ namespace pbd::practice
 									   count = 6;
 	}
 
-	// Display Settings rows: each side's command history, the Attack Info and Frame Data panels (one switch
-	// each), the in-game control bar and the movement streak pop-up (pbd::practice::streak).
+	// Display Settings rows: Training Overlay, which hides every display below at once so the game's own input display and
+	// attack data show alone, then each side's command history, the Attack Info and Frame Data panels (one switch each), the
+	// in-game control bar and the movement streak pop-up (pbd::practice::streak).
 	namespace display_rows
 	{
-		inline constexpr std::uint32_t p1_history = 0, p2_history = 1, attack_info = 2, frame_data = 3, control_hints = 4, movement_streaks = 5,
-									   restore = 6, count = 7;
+		inline constexpr std::uint32_t training_overlay = 0, p1_history = 1, p2_history = 2, attack_info = 3, frame_data = 4, control_hints = 5,
+									   movement_streaks = 6, restore = 7, count = 8;
 	}
 	enum class contact : std::uint8_t
 	{

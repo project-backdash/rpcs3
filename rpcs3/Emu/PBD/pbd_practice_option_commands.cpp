@@ -191,6 +191,7 @@ bool pbd::rollback_session::practice_steps::choose_display_setting(u32 row, u32 
 		auto& view = data.practice.view;
 		switch (row)
 		{
+		case display_rows::training_overlay: view.training_overlay = display; break;
 		case display_rows::p1_history: view.command_history[0] = display; break;
 		case display_rows::p2_history: view.command_history[1] = display; break;
 		case display_rows::attack_info: view.attack_info = display; break;

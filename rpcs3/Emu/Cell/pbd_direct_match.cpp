@@ -102,6 +102,36 @@ std::optional<pbd::rank_stakes::game_values> pbd_direct_match::pbd_rank_screens(
 {
 	return data ? data->rank_screens : std::nullopt;
 }
+pbd::throw_break::lookahead_setting pbd_direct_match::pbd_throw_break(u32 boundary) const noexcept
+{
+	if (!data || data->pbd_external_inputs || data->anchor == ~0u || boundary < data->anchor)
+		return {};
+	auto value = data->throw_break.at(data->input_base + boundary - data->anchor);
+	const auto continuation = data->continuation.load(std::memory_order_acquire);
+	if (continuation != pbd_replay_continuation::recorded)
+		value.lookahead[continuation == pbd_replay_continuation::take_left ? 0 : 1] = 0;
+	return value;
+}
+std::optional<u16> pbd_direct_match::pbd_recorded_word(u32 boundary, u32 port) const noexcept
+{
+	if (!data || data->pbd_external_inputs || data->anchor == ~0u || boundary < data->anchor || port > 1)
+		return std::nullopt;
+	const usz offset = data->input_base + boundary - data->anchor;
+	if (offset < data->inputs.size())
+		return data->inputs[offset].words[port];
+	// Past the file's end a taken game goes on, and its recorded side stands still (sample).
+	if (data->continuation.load(std::memory_order_acquire) != pbd_replay_continuation::recorded)
+		return u16{0};
+	return std::nullopt;
+}
+bool pbd_direct_match::pbd_throw_break_recorded() const noexcept
+{
+	return data && data->throw_break.any();
+}
+bool pbd_direct_match::pbd_follows_recording() const noexcept
+{
+	return !data || data->continuation.load(std::memory_order_acquire) == pbd_replay_continuation::recorded;
+}
 bool pbd_direct_match::begun() const noexcept
 {
 	return data && data->redirected;

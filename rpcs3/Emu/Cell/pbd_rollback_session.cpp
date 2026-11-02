@@ -431,4 +431,8 @@ void pbd::rollback_session::configure_live_recording()
 		{
 			return s.lobby.records_shown;
 		});
+	s.match_replay.live.pbd_throw_break([this](bool round)
+		{
+			return throw_break_round_start(round);
+		});
 }

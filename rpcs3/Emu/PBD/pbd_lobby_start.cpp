@@ -20,6 +20,7 @@ void pbd::rollback_session::boundary_call::prepare_lobby_clean_start(pbd::lobby_
 	clean.ban_jinpachi = pbd::character_rule::banned(data.generation);
 	clean.battle_clock_version = data.battle_clock.version;
 	clean.menu_hash_mask = data.session.menu_hash_mask;
+	clean.throw_break = data.throw_break.recorded();
 	if (identity)
 		clean.checkpoint_sha256 = identity->sha256;
 	if (const auto* recipe = pbd::env::find("PBD_MATCH_REPLAY_RECIPE_SHA256"))

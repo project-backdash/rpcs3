@@ -6,6 +6,7 @@
 #include "pbd_replay_restore.h"
 #include "pbd_replay_notices.h"
 #include "pbd_stage_rule.h"
+#include "pbd_throw_break_record.h"
 
 #include <memory>
 
@@ -25,6 +26,8 @@ namespace pbd::replay_start
 		std::array<std::uint8_t, 44> rules{};
 		replay_carry::game_values carry;
 		std::optional<replay_notices::placements> placements;
+		// The throw break rule as the game started with it (pbd_throw_break_record.h); none in a recording without the rule.
+		pbd::throw_break::lookahead_setting throw_break;
 		std::unique_ptr<replay_restore::generators> before_styles, before_match;
 	};
 
@@ -54,7 +57,8 @@ namespace pbd::replay_start
 		try
 		{
 			if (!seed || integer(cap, "sessionSeed") != seed || integer(cap, "initializer") != 2 ||
-				!is(cap, "schema", "pbd-game-start-capsule-draft-2") || !is(cap, "anchor", "before-native-match-initializer"))
+				!(is(cap, "schema", pbd::throw_break::capsule_schema_stock) || is(cap, "schema", pbd::throw_break::capsule_schema_rule)) ||
+				!is(cap, "anchor", "before-native-match-initializer"))
 				return {{}, "capsule_start_identity"};
 			pbd_capsule_start out;
 			if (const auto* players = cap.find("players"))
@@ -76,6 +80,14 @@ namespace pbd::replay_start
 			out.placements = replay_notices::read(cap.find("placements"));
 			if (cap.find("placements") && !out.placements)
 				return {{}, "capsule_start_placements"};
+			// The schema says whether the game ran the rule, so a build without the rule refuses such a game, and the record's
+			// version which rule ran.
+			if (pbd::throw_break::retired_record(cap.find(pbd::throw_break::record_key)))
+				return {{}, pbd::throw_break::retired_refusal};
+			const auto throw_break = pbd::throw_break::read_record(cap.find(pbd::throw_break::record_key));
+			if (!throw_break || !is(cap, "schema", pbd::throw_break::capsule_schema(*throw_break)))
+				return {{}, "capsule_start_throw_break"};
+			out.throw_break = *throw_break;
 			const auto& choice = field(cap, "selection");
 			if (const auto* allow = choice.find("allowJinpachi"); allow &&
 																  !pbd::set_channel::detail::boolean(allow, out.allow_jinpachi))

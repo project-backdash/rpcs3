@@ -1,5 +1,6 @@
 #pragma once
 #include "Emu/PBD/pbd_match_pad.h"
+#include "Emu/PBD/pbd_shader_build.h"
 
 struct pbd::rollback_session::match_standby_steps : boundary_call
 {
@@ -180,7 +181,8 @@ struct pbd::rollback_session::match_standby_steps : boundary_call
 		pbd::held_presentation::output().park(false);
 		Emu.Resume();
 		watch_match_return(root, checkpoint);
-		pbd_session_log.notice("Warm game: activated set %s at boundary 0.", bound.value->set_id);
+		pbd_session_log.notice("Warm game: activated set %s at boundary 0; %s.", bound.value->set_id,
+			pbd::shader_build::prebuild_text(pbd::shader_build::renderer().read()));
 		return false;
 	}
 

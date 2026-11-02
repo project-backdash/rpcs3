@@ -6,6 +6,7 @@
 #include "../Cell/pbd_match_recording.h"
 #include "pbd_fight_timing.h"
 #include "pbd_game_overlay_model.h"
+#include "pbd_throw_break.h"
 #include <array>
 #include <functional>
 #include <map>
@@ -58,6 +59,8 @@ namespace pbd::lobby_set
 		bool start_skip = false, exit_gate = false, phase_delay = false, keyed_draws = false;
 		bool ban_jinpachi = false, direct_start = false;
 		u32 battle_clock_version = 0, menu_hash_mask = 0;
+		// The throw break rule the games run with once the agreed delay is applied (session_state::recorded).
+		pbd::throw_break::lookahead_setting throw_break;
 		bool require_round_state = false;
 		bool publish_from_start = false;
 	};

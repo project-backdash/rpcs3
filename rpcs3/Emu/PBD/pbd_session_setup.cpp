@@ -156,6 +156,15 @@ void pbd::rollback_session::configure_tick_trace()
 		}
 		configure_rolling();
 		configure_peer();
+		if (m_storage->practice.rewind && !m_storage->peer.enabled)
+		{
+			// Practice with Input Delay Frames: the throw break rule shifts the player's break presses back by the delay.
+			const auto value = pbd::throw_break::read_setting(pbd::env::find("PBD_THROW_BREAK"));
+			require(value != pbd::throw_break::setting::invalid, "throw_break_switch_invalid");
+			const auto tech = pbd::throw_break::read_setting(pbd::env::find("PBD_THROW_BREAK_TECH_ROLLS"));
+			require(tech != pbd::throw_break::setting::invalid, "throw_break_switch_invalid");
+			m_storage->throw_break.configure_practice(value, tech);
+		}
 		configure_correct_at();
 	}
 }
@@ -257,6 +266,11 @@ void pbd::rollback_session::configure_local_modes()
 					m_storage->start_index == 0,
 				m_storage->session.seed),
 		"direct_match_configuration_invalid");
+	if (m_storage->lobby.direct_match.enabled() && !m_storage->lobby.direct_match.pbd_live_inputs())
+	{
+		const char* refusal = configure_throw_break_playback();
+		require(!refusal, refusal);
+	}
 	if (const auto enabled = pbd::env::find_wide("PBD_PRACTICE_ROLLING"); enabled && std::wstring_view(enabled) == L"1")
 	{
 		const auto& s = *m_storage;

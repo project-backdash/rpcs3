@@ -64,6 +64,55 @@ u16 pbd::rollback_session::boundary_call::peer_remote_for(u32 t, u32 now)
 	return 0;
 }
 
+// The throw break rule (pbd_throw_break.h): a row whose remote fighter read ahead also ran the other PC's words its use
+// names, so it is confirmed only once those are usable too: the first row from scan_from that is not. A word read ahead
+// counts only once it has arrived, also past the other PC's exit from the segment, where its own words count as neutral:
+// the other PC ran that row with its real word, which it resends after the barrier. Rows record nothing with the rule off.
+u32 pbd::rollback_session::boundary_call::peer_first_unconfirmed(u32 now)
+{
+	const u32 unusable = peer_first_unusable(now);
+	if (!data.throw_break.on)
+		return unusable;
+	const u32 remote = 1 - data.peer.role;
+	return pbd::throw_break::first_unconfirmed(data.peer.scan_from, unusable, [&](u32 t) -> const pbd::throw_break::lookahead_use&
+		{
+			return data.sample_at(t).throw_break[remote].use;
+		},
+		[&](u32 source)
+		{
+			return source < data.extent() && data.history.peer_remote_arrival[source] >= 0 && peer_usable(source, now);
+		});
+}
+
+// Whether a word the remote fighter read ahead at row t has arrived, is usable now and differs from the one the row ran.
+bool pbd::rollback_session::boundary_call::peer_lookahead_wrong(u32 t, u32 now)
+{
+	if (!data.throw_break.on)
+		return false;
+	return pbd::throw_break::known_misprediction(data.sample_at(t).throw_break[1 - data.peer.role].use, [&](u32 source) -> std::optional<u16>
+		{
+			if (source >= data.extent() || data.history.peer_remote_arrival[source] < 0 || !peer_usable(source, now))
+				return std::nullopt;
+			return static_cast<u16>(mapped_mask(data.history.peer_remote_value[source]));
+		});
+}
+
+// Lockstep runs row `index` only on final words: when the other PC's fighter may read ahead there (its record at the row
+// before), the words L ticks past the row and past its previous step must have arrived too. The other PC fixes and sends
+// them by its boundary `index`, before it waits, so neither PC waits for the other's wait. A word beyond the history is
+// left to the word load, which refuses.
+bool pbd::rollback_session::boundary_call::peer_lookahead_arrived(u32 index)
+{
+	if (!data.throw_break.on || !index || !data.history_contains(index - 1))
+		return true;
+	const u32 remote = 1 - data.peer.role;
+	return pbd::throw_break::lookahead_arrived(data.sample_at(index - 1).throw_break[remote], index, data.throw_break.peer_lookahead[remote],
+		[&](u32 source)
+		{
+			return source >= data.extent() || data.history.peer_remote_arrival[source] >= 0;
+		});
+}
+
 // One local admission point. Its result is frozen before queuing/sending/recording; the remote value is never rewritten.
 #include "../PBD/pbd_local_input.h"
 

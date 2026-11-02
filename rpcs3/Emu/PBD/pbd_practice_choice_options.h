@@ -383,7 +383,17 @@ struct pbd::rollback_session::practice_choice_steps : practice_steps
 		}
 		else if (data.practice.menu.page == category::display_settings)
 		{
-			out = pbd::practice::menu::display_choices(row, data.practice.view);
+			// Only Training Overlay's help depends on the game's Game Input Display; an unreadable value keeps the plain help.
+			bool input_display_off = false;
+			if (row == pbd::practice::display_rows::training_overlay)
+			{
+				const auto native = pbd::practice::native::inspect(true);
+				u32 value = umax;
+				input_display_off = native.practice &&
+				                    read_word(native.practice + practice_option_offsets[static_cast<u32>(pbd::practice::native::option::command_capture)], value) &&
+				                    value == 0;
+			}
+			out = pbd::practice::menu::display_choices(row, data.practice.view, input_display_off);
 			return;
 		}
 		return;

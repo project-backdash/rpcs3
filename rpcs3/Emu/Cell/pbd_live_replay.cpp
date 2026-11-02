@@ -11,6 +11,7 @@
 #include "Emu/PBD/pbd_rank_screens.h"
 #include "Emu/PBD/pbd_replay_notices.h"
 #include "Emu/PBD/pbd_replay_capsule_start.h"
+#include "Emu/PBD/pbd_throw_break_record.h"
 #include "pbd_set_channel.h"
 #include "pbd_lobby_set_driver.h"
 #include "PPUThread.h"
@@ -32,7 +33,6 @@ namespace
 {
 	using json = pbd::set_channel::json_value;
 	std::atomic<pbd_live_replay*> active{nullptr};
-	constexpr const char* capsule_schema = "pbd-game-start-capsule-draft-2";
 	constexpr const char* elf_sha = "b56e25e9210ed3c4fc19f3dfae686b7246aef386cdd4f88c80e0b89141ff887d";
 	bool word(u32 address, u32& value) noexcept
 	{
@@ -106,6 +106,7 @@ struct pbd_live_replay::state
 	std::filesystem::path directory;
 	std::array<player, 2> players;
 	records_source records;
+	throw_break_source throw_break;
 	pbd::replay::journal journal;
 	std::atomic<bool> failed{false};
 	std::atomic<bool> closed{false};
@@ -208,6 +209,11 @@ struct pbd_live_replay::state
 		carry.fields.insert(carry.fields.end(), rules_carry.begin(), rules_carry.end());
 		if (!read || style_producer.kind == pbd::set_channel::json_kind::null)
 			return false;
+		// The rule as this game starts with it. No press is tracked before a game, so nothing here means the delay is not yet
+		// applied, and the game would not play back as played.
+		const auto lookahead = throw_break ? throw_break(false) : std::optional<pbd::throw_break::lookahead_setting>{pbd::throw_break::lookahead_setting{}};
+		if (!lookahead)
+			return false;
 		if (!open_game_journal())
 			return false;
 		auto record = json::object({{"type", json::string("game_start")}, {"draftRevision", json::number(2)},
@@ -216,7 +222,7 @@ struct pbd_live_replay::state
 			{"syncEncoding", json::string("pbd-sync-facts-v1")}, {"syncDefinition", json::string("pbd-peer-sync-v3")},
 			{"game", json::number(game)}, {"generation", json::number(generation)}, {"boundary", json::number(anchor)},
 			{"gameExecutableSha256", json::string(elf_sha)},
-			{"capsule", json::object({{"schema", json::string(capsule_schema)},
+			{"capsule", json::object({{"schema", json::string(std::string(pbd::throw_break::capsule_schema(*lookahead)))},
 							{"anchor", json::string("before-native-match-initializer")}, {"initializer", json::number(kind)},
 							{"sessionSeed", json::number(seed)}, {"players", json::array(std::move(selected))},
 							{"selection", json::object({{"leftRow", json::number(left)}, {"rightRow", json::number(right)},
@@ -236,6 +242,10 @@ struct pbd_live_replay::state
 			for (auto& [name, value] : record.fields)
 				if (name == "capsule")
 					value.fields.emplace_back("placements", *placements);
+		if (lookahead->any())
+			for (auto& [name, value] : record.fields)
+				if (name == "capsule")
+					value.fields.emplace_back(std::string(pbd::throw_break::record_key), pbd::throw_break::record_json(*lookahead));
 		pbd_start_record.reset();
 		if (!append(record, true))
 			return false;
@@ -290,9 +300,20 @@ struct pbd_live_replay::state
 		}
 		if ((kind == 4 && ordinal != 0) || (kind == 5 && (ordinal == 0 || round_cleanup[ordinal].kind == pbd::set_channel::json_kind::null)))
 			return true;
+		// A replay jumping to this round starts it with nothing carried from the rounds before, so a round where the throw
+		// break rule still tracks a press it moved gets no start: playback reaches it only by playing through.
+		const auto lookahead = throw_break ? throw_break(true) : std::optional<pbd::throw_break::lookahead_setting>{pbd::throw_break::lookahead_setting{}};
+		if (!lookahead)
+		{
+			pbd_record_log.warning("Round %u starts while the throw break rule tracks a press; the recording keeps no start for it.", ordinal + 1);
+			return true;
+		}
 		const bool complete = carry && (kind == 4 || round_cleanup[ordinal].find("carryOver"));
+		auto capsule = json::object({{"schema", json::string(complete ? "pbd-round-start-capsule-draft-2" : "pbd-round-start-capsule-draft-1")}, {"anchor", json::string("before-native-round-initializer")}, {"round", json::number(ordinal + 1)}, {"cleanup", kind == 4 ? json{} : round_cleanup[ordinal]}, {"ready", std::move(point)}, {"qualified", json::boolean(false)}});
+		if (lookahead->any())
+			capsule.fields.emplace_back(std::string(pbd::throw_break::record_key), pbd::throw_break::record_json(*lookahead));
 		if (!append(json::object({{"type", json::string("round_start")}, {"game", json::number(game)},
-						{"boundary", json::number(boundary)}, {"capsule", json::object({{"schema", json::string(complete ? "pbd-round-start-capsule-draft-2" : "pbd-round-start-capsule-draft-1")}, {"anchor", json::string("before-native-round-initializer")}, {"round", json::number(ordinal + 1)}, {"cleanup", kind == 4 ? json{} : round_cleanup[ordinal]}, {"ready", std::move(point)}, {"qualified", json::boolean(false)}})}}),
+						{"boundary", json::number(boundary)}, {"capsule", std::move(capsule)}}),
 				true))
 			return false;
 		round_written |= u32{1} << ordinal;
@@ -325,6 +346,19 @@ std::shared_ptr<const std::string> pbd_live_replay::pbd_game_start_record(u64 ge
 	catch (...)
 	{
 		return {};
+	}
+}
+void pbd_live_replay::pbd_throw_break(throw_break_source source) noexcept
+{
+	try
+	{
+		if (!data)
+			return;
+		std::lock_guard lock(data->mutex);
+		data->throw_break = std::move(source);
+	}
+	catch (...)
+	{
 	}
 }
 void pbd_live_replay::pbd_records(records_source source) noexcept

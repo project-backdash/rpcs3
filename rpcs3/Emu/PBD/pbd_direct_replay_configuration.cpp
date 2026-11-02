@@ -94,6 +94,9 @@ bool pbd_direct_match::pbd_configure_file(u64 generation, bool isolated, u32 see
 			if (cap.cleanup)
 				slot.cleanup = s->restore_point(*cap.cleanup);
 			s->captured_round_mask.fetch_or(u32{1} << (cap.number - 1));
+			// Each recorded round names the rule's setting from its first input on; rounds come in input order.
+			if (!s->throw_break.add(cap.ready.input_offset, cap.throw_break))
+				return false;
 		}
 		auto* empty = static_cast<pbd_direct_match*>(nullptr);
 		data = std::move(s);

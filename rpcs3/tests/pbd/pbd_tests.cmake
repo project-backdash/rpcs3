@@ -78,6 +78,7 @@ set(PBD_TESTS
     ${CMAKE_CURRENT_LIST_DIR}/set_notices_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/settings_menu_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/setup_digest_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/shader_build_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/skip_guard_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/sound_options_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/spectator_channel_test.cpp
@@ -102,6 +103,7 @@ set(PBD_TESTS
     ${CMAKE_CURRENT_LIST_DIR}/practice_punish_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_restart_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_input_delay_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/throw_break_test.cpp
 )
 
 # The peer address test uses Winsock; the clip encoder frame test uses Direct3D 11 and Media Foundation.

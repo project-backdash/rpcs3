@@ -2,6 +2,7 @@
 #include "pbd_function_hook_event.h"
 #include "../Cell/pbd_versus_native.h"
 #include "pbd_practice_paint.h"
+#include "pbd_throw_break.h"
 
 namespace pbd::fn_hook::detail
 {
@@ -221,6 +222,8 @@ namespace pbd::fn_hook::detail
 			return *action;
 		if (const auto action = owner_entry())
 			return *action;
+		if (pbd::throw_break::probed(address) && g_fxo->is_init<pbd::rollback_session>())
+			g_fxo->get<pbd::rollback_session>().throw_break_probe(ppu, address);
 		if (address == pbd::t5dr::gpu_load_probe && g_fxo->is_init<pbd::rollback_session>())
 			ppu.gpr[3] = g_fxo->get<pbd::rollback_session>().gpu_elapsed_time(ppu, ppu.gpr[3]);
 		player_draw_gate();

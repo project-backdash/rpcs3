@@ -11,13 +11,40 @@
 #include "Emu/RSX/Program/ShaderInterpreter.h"
 #include "Emu/RSX/rsx_methods.h"
 #include "Emu/localized_string.h"
+#include "Emu/PBD/pbd_shader_build.h"
 
+#include "Utilities/File.h"
+
+#include <chrono>
 #include <thread>
 
 namespace vk
 {
 	using enum program_common::interpreter::compiler_option;
 	using enum program_common::interpreter::cached_pipeline_flags;
+
+	// Built ahead of play from a record; the first draw that uses it refreshes the record so it stays among the newest.
+	constexpr u32 CACHED_PIPE_PREBUILT = (1u << 8);
+
+	static u64 elapsed_ms(std::chrono::steady_clock::time_point from, std::chrono::steady_clock::time_point to)
+	{
+		return static_cast<u64>(std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count());
+	}
+
+	// The pipeline state as recorded and hashed: chained structures and the attachment pointer cleared, since they
+	// differ between processes and every build points them at its own copy.
+	static vk::pipeline_props portable_state(const vk::pipeline_props& properties)
+	{
+		vk::pipeline_props result = properties;
+		result.state.ia.pNext = nullptr;
+		result.state.ds.pNext = nullptr;
+		result.state.cs.pNext = nullptr;
+		result.state.cs.pAttachments = nullptr;
+		result.state.rs.pNext = nullptr;
+		result.state.ms.pNext = nullptr;
+		result.state.ms.pSampleMask = nullptr;
+		return result;
+	}
 
 	class async_pipe_compiler_context
 	{
@@ -269,9 +296,10 @@ namespace vk
 
 		vk_prog->SetInputs(vs_inputs);
 
+		// The builder thread and the RSX thread can build the same options at once. The first one stays: a deferred link
+		// holds only its module handle, so a cached shader is never replaced.
 		std::lock_guard lock(m_vs_shader_cache_lock);
-		m_vs_shader_cache[compiler_options] = vk_prog;
-		return vk_prog;
+		return m_vs_shader_cache.try_emplace(compiler_options, vk_prog).first->second;
 	}
 
 	std::shared_ptr<VKFragmentProgram> shader_interpreter::build_fs(u64 compiler_options)
@@ -454,9 +482,9 @@ namespace vk
 
 		vk_prog->SetInputs(inputs);
 
+		// The first one built stays, as in build_vs.
 		std::lock_guard lock(m_fs_shader_cache_lock);
-		m_fs_shader_cache[compiler_options] = vk_prog;
-		return vk_prog;
+		return m_fs_shader_cache.try_emplace(compiler_options, vk_prog).first->second;
 	}
 
 	void shader_interpreter::init(const vk::render_device& dev)
@@ -465,12 +493,20 @@ namespace vk
 
 		VkPipelineCacheCreateInfo drv_cache_info{ VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
 		vkCreatePipelineCache(m_device, &drv_cache_info, nullptr, &m_driver_pipeline_cache);
+
+		VkPhysicalDeviceProperties gpu_properties{};
+		vkGetPhysicalDeviceProperties(dev.gpu(), &gpu_properties);
+		m_vendor_id = gpu_properties.vendorID;
+		m_device_id = gpu_properties.deviceID;
 	}
 
 	void shader_interpreter::destroy()
 	{
+		stop_builder();
+
 		m_current_interpreter.reset();
 		m_program_cache.clear();
+		m_pending.clear();
 		m_vs_shader_cache.clear();
 		m_fs_shader_cache.clear();
 
@@ -554,7 +590,8 @@ namespace vk
 		const program_hash_util::fragment_program_utils::fragment_program_metadata& fp_metadata,
 		const program_hash_util::vertex_program_utils::vertex_program_metadata& vp_metadata,
 		u32 vp_ctrl,
-		u32 fp_ctrl)
+		u32 fp_ctrl,
+		variant_request* request)
 	{
 		pipeline_key key;
 		key.compiler_opt = 0;
@@ -600,23 +637,22 @@ namespace vk
 		if (vp_ctrl & RSX_SHADER_CONTROL_INSTANCED_CONSTANTS) key.compiler_opt |= COMPILER_OPT_ENABLE_INSTANCING;
 		if (vp_metadata.referenced_textures_mask) key.compiler_opt |= COMPILER_OPT_ENABLE_VTX_TEXTURES;
 
-		if (m_current_key == key) [[likely]]
+		// The current key changes only together with the program it names, so a miss never leaves a stale program behind.
+		if (m_current_interpreter && m_current_key == key) [[likely]]
 		{
 			return m_current_interpreter.get();
 		}
-		else
-		{
-			m_current_pipeline_info_ex = *get_pipeline_info_ex(key.compiler_opt);
-			m_current_key = key;
-		}
 
+		bool found_program = false;
+		bool first_use = false;
 		{
 			reader_lock lock(m_program_cache_lock);
 
 			auto found = m_program_cache.find(key);
 			if (found != m_program_cache.end()) [[likely]]
 			{
-				m_current_interpreter = found->second.program;
+				set_current(key, found->second.program);
+				found_program = true;
 
 				if ((found->second.flags & (CACHED_PIPE_UNOPTIMIZED | CACHED_PIPE_RECOMPILING)) == CACHED_PIPE_UNOPTIMIZED)
 				{
@@ -624,31 +660,379 @@ namespace vk
 					link(properties, key.compiler_opt, true, {});
 				}
 
-				return m_current_interpreter.get();
+				if (found->second.flags & CACHED_PIPE_PREBUILT)
+				{
+					found->second.flags &= ~CACHED_PIPE_PREBUILT;
+					first_use = true;
+				}
 			}
 		}
 
+		if (found_program)
+		{
+			if (first_use && m_builder_thread)
+			{
+				m_builder_jobs.push(builder_job{key, true});
+			}
+
+			return m_current_interpreter.get();
+		}
+
+		if (request && m_builder_thread)
+		{
+			// Built on the builder thread. Building it here held this thread, and the game waiting on it, for a whole driver
+			// compile of the interpreter: seconds on slow drivers, many times the compiled program it stands in for. It is not
+			// built on the compile workers either, where it would hold back the compiled programs queued behind it.
+			request->pending = true;
+			request->options = key.compiler_opt;
+			request->state_hash = state_hash(properties);
+
+			std::lock_guard lock(m_program_cache_lock);
+			m_waiting_key = key;
+			m_waiting = true;
+
+			if (m_program_cache.contains(key))
+			{
+				// Finished since the lookup above; the caller's next call finds it.
+				return nullptr;
+			}
+
+			auto [pending, inserted] = m_pending.try_emplace(key, true);
+			if (inserted || !pending->second)
+			{
+				// New, or still waiting in the prebuild list: built next, ahead of that list.
+				pending->second = true;
+				m_builder_jobs.push(builder_job{key, false});
+			}
+
+			return nullptr;
+		}
+
+		const u64 hash = state_hash(properties);
+		rsx_log.warning("Interpreter variant build start on the RSX thread: options 0x%04x, state %016llx", key.compiler_opt, hash);
+
 		const auto start = std::chrono::steady_clock::now();
+		std::chrono::steady_clock::time_point shaders_done, end;
+		std::shared_ptr<glsl::program> program;
+		{
+			pbd::shader_build::scope build(pbd::shader_build::renderer(), pbd::shader_build::kind::variant, key.compiler_opt, hash);
+			build_vs(key.compiler_opt);
+			build_fs(key.compiler_opt);
+			shaders_done = std::chrono::steady_clock::now();
+			program = link(properties, key.compiler_opt);
+			end = std::chrono::steady_clock::now();
+		}
 
-		m_current_interpreter = link(properties, key.compiler_opt);
+		rsx_log.warning("Interpreter variant build end on the RSX thread after %u ms: shaders %u ms, pipeline %u ms (options 0x%04x, state %016llx)",
+			elapsed_ms(start, end), elapsed_ms(start, shaders_done), elapsed_ms(shaders_done, end), key.compiler_opt, hash);
 
-		const auto end = std::chrono::steady_clock::now();
-
-		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-		if (duration > std::chrono::milliseconds(1000))
+		if (end - start > std::chrono::milliseconds(1000))
 		{
 			rsx_log.error("Cache miss");
 		}
 
-		pipeline_cache_entry_t cache_entry
-		{
+		pipeline_cache_entry_t cache_entry{
 			.flags = 0,
-			.program = m_current_interpreter
-		};
+			.program = program};
 
-		std::lock_guard lock(m_program_cache_lock);
-		m_program_cache[key] = cache_entry;
+		{
+			std::lock_guard lock(m_program_cache_lock);
+			m_program_cache[key] = cache_entry;
+		}
+
+		set_current(key, program);
 		return m_current_interpreter.get();
+	}
+
+	void shader_interpreter::end_wait()
+	{
+		std::lock_guard lock(m_program_cache_lock);
+		m_waiting = false;
+	}
+
+	void shader_interpreter::set_current(const pipeline_key& key, const std::shared_ptr<glsl::program>& program)
+	{
+		m_current_pipeline_info_ex = *get_pipeline_info_ex(key.compiler_opt);
+		m_current_key = key;
+		m_current_interpreter = program;
+	}
+
+	u64 shader_interpreter::state_hash(const vk::pipeline_props& properties)
+	{
+		const vk::pipeline_props state = portable_state(properties);
+		return pbd::shader_build::fnv1a64(&state, sizeof(state));
+	}
+
+	// Runs on the builder thread. Reads no guest memory and no RSX registers: the key holds all of it.
+	void shader_interpreter::build_off_thread(const pipeline_key& key, bool prebuild, std::string_view label)
+	{
+		const auto start = std::chrono::steady_clock::now();
+		const auto vs = build_vs(key.compiler_opt);
+		const auto fs = build_fs(key.compiler_opt);
+		const auto shaders_done = std::chrono::steady_clock::now();
+
+		async_pipe_compiler_context context{key.properties, m_device, m_driver_pipeline_cache, vs->shader.get_handle(), fs->shader.get_handle()};
+		const VkGraphicsPipelineCreateInfo info = context.compile();
+		auto compiled = std::make_unique<glsl::program>(m_device, info, vs->uniforms, fs->uniforms);
+		compiled->link(true);
+		std::shared_ptr<glsl::program> program = std::move(compiled);
+		const auto end = std::chrono::steady_clock::now();
+
+		{
+			std::lock_guard lock(m_program_cache_lock);
+			m_program_cache[key] = pipeline_cache_entry_t{.flags = prebuild ? CACHED_PIPE_PREBUILT : 0u, .program = program};
+			m_pending.erase(key);
+		}
+
+		rsx_log.warning("Interpreter variant built %s off the RSX thread: options 0x%04x, state %016llx, shaders %u ms, pipeline %u ms",
+			label, key.compiler_opt, state_hash(key.properties), elapsed_ms(start, shaders_done), elapsed_ms(shaders_done, end));
+
+		if (!prebuild)
+		{
+			write_record(key);
+		}
+	}
+
+	void shader_interpreter::write_record(const pipeline_key& key) const
+	{
+		if (m_record_dir.empty())
+		{
+			return;
+		}
+
+		const vk::pipeline_props state = portable_state(key.properties);
+		const pbd::shader_build::record_header header{
+			.magic = pbd::shader_build::record_magic,
+			.version = pbd::shader_build::record_version,
+			.vendor_id = m_vendor_id,
+			.device_id = m_device_id,
+			.options = key.compiler_opt,
+			.state_bytes = sizeof(state),
+			.reserved = 0};
+
+		std::array<u8, sizeof(header) + sizeof(state)> bytes{};
+		std::memcpy(bytes.data(), &header, sizeof(header));
+		std::memcpy(bytes.data() + sizeof(header), static_cast<const void*>(&state), sizeof(state));
+
+		// Rewriting an existing record only renews its time, which keeps the variants in use among the newest.
+		const std::string name = pbd::shader_build::record_name(key.compiler_opt, pbd::shader_build::fnv1a64(&state, sizeof(state)));
+		if (!fs::write_file(m_record_dir + name, fs::rewrite, bytes.data(), bytes.size()))
+		{
+			rsx_log.warning("Interpreter record %s could not be written: %s", name, fs::g_tls_error);
+		}
+	}
+
+	bool shader_interpreter::read_record(const std::string& name, pipeline_key& key) const
+	{
+		constexpr u32 state_bytes = sizeof(vk::pipeline_props);
+		std::array<u8, sizeof(pbd::shader_build::record_header) + state_bytes> bytes{};
+
+		fs::file file(m_record_dir + name);
+		if (!file || file.size() != bytes.size() || file.read(bytes.data(), bytes.size()) != bytes.size())
+		{
+			return false;
+		}
+
+		pbd::shader_build::record_header header{};
+		std::memcpy(&header, bytes.data(), sizeof(header));
+		const u8* state = bytes.data() + sizeof(header);
+		if (!pbd::shader_build::record_valid(name, header, bytes.size(), m_vendor_id, m_device_id, state, state_bytes))
+		{
+			return false;
+		}
+
+		vk::pipeline_props properties{};
+		std::memcpy(static_cast<void*>(&properties), state, state_bytes);
+
+		// Skipped, never asserted: anything write_record would not have written, a sample count the build would reject
+		// against its render pass, or depth bounds the device does not have.
+		const auto& s = properties.state;
+		if (s.ia.pNext || s.ds.pNext || s.cs.pNext || s.cs.pAttachments || s.rs.pNext || s.ms.pNext || s.ms.pSampleMask ||
+			s.ia.sType != VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO ||
+			s.ds.sType != VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO ||
+			s.cs.sType != VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO ||
+			s.rs.sType != VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO ||
+			s.ms.sType != VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO ||
+			s.cs.attachmentCount > std::size(s.att_state) ||
+			s.ms.rasterizationSamples != VkSampleCountFlagBits((properties.renderpass_key >> 16) & 0xF) ||
+			(s.ds.depthBoundsTestEnable && !vk::get_current_renderer()->get_depth_bounds_support()))
+		{
+			return false;
+		}
+
+		properties.state.cs.pAttachments = properties.state.att_state;
+		key.compiler_opt = header.options;
+		key.properties = properties;
+		return true;
+	}
+
+	void shader_interpreter::start_builder(std::string record_dir)
+	{
+		m_record_dir = std::move(record_dir);
+
+		// Below the emulation threads. While the RSX thread waits for a variant the game waits with it and leaves the CPU
+		// free; any other build only has to finish before a later draw or the fight.
+		m_builder_thread = std::make_unique<named_thread<std::function<void()>>>("RSX Interpreter Builder", [this]()
+			{
+				thread_ctrl::scoped_priority low_priority(-1);
+				run_builder();
+			});
+	}
+
+	void shader_interpreter::stop_builder()
+	{
+		// Finishes the build in progress, then stops. Nothing waits for the builds still queued once the renderer stops.
+		m_builder_thread.reset();
+	}
+
+	void shader_interpreter::run_builder()
+	{
+		const auto start = std::chrono::steady_clock::now();
+		const std::vector<pipeline_key> records = load_records();
+		usz next = 0;
+		u32 built = 0;
+		bool prebuilding = !records.empty();
+
+		while (thread_ctrl::state() != thread_state::aborting)
+		{
+			if (m_builder_jobs)
+			{
+				// Draws first: the RSX thread may be waiting for one of these.
+				for (auto&& job : m_builder_jobs.pop_all())
+				{
+					if (thread_ctrl::state() == thread_state::aborting)
+					{
+						break;
+					}
+
+					bool build = !job.record_only;
+					if (build)
+					{
+						// A draw whose compiled program was ready first no longer waits. Building its variant anyway would
+						// queue seconds of driver work per new state at the fight start for nothing; the record still
+						// lets the next process prebuild it.
+						std::lock_guard lock(m_program_cache_lock);
+						if (!m_waiting || !(m_waiting_key == job.key))
+						{
+							build = false;
+							if (const auto pending = m_pending.find(job.key); pending != m_pending.end())
+							{
+								pending->second = false;
+							}
+						}
+					}
+
+					if (build)
+					{
+						build_off_thread(job.key, false, "for a draw");
+					}
+					else
+					{
+						write_record(job.key);
+					}
+				}
+
+				continue;
+			}
+
+			// Prebuilding stops when the fight begins: from then on it would only take CPU time and driver work from play.
+			// What is left is built when a draw first needs it.
+			if (prebuilding && (next == records.size() || pbd::shader_build::renderer().fight_started()))
+			{
+				prebuilding = false;
+				rsx_log.warning("Interpreter prebuild: built %u of %u in %u ms%s", built, records.size(), elapsed_ms(start, std::chrono::steady_clock::now()),
+					next < records.size() ? ", stopped when the fight began" : "");
+			}
+
+			if (prebuilding)
+			{
+				const pipeline_key& key = records[next++];
+				{
+					std::lock_guard lock(m_program_cache_lock);
+					const auto pending = m_pending.find(key);
+					if (pending == m_pending.end() || pending->second)
+					{
+						// Built already, or a draw took it over.
+						continue;
+					}
+
+					pending->second = true;
+				}
+
+				built++;
+				build_off_thread(key, true, fmt::format("ahead of play (%u of %u)", built, records.size()));
+				pbd::shader_build::renderer().prebuilt();
+				continue;
+			}
+
+			thread_ctrl::wait_on(m_builder_jobs);
+		}
+
+		if (prebuilding)
+		{
+			rsx_log.warning("Interpreter prebuild: stopped with the renderer after %u of %u in %u ms", built, records.size(), elapsed_ms(start, std::chrono::steady_clock::now()));
+		}
+	}
+
+	// The newest valid records for this GPU, marked as waiting in m_pending, in the order the last process first used them.
+	std::vector<shader_interpreter::pipeline_key> shader_interpreter::load_records()
+	{
+		if (m_record_dir.empty())
+		{
+			return {};
+		}
+
+		fs::dir root(m_record_dir);
+		if (!root)
+		{
+			fs::create_path(m_record_dir);
+			rsx_log.warning("Interpreter prebuild: no records yet in %s", m_record_dir);
+			return {};
+		}
+
+		std::vector<pbd::shader_build::record_file> files;
+		for (auto&& entry : root)
+		{
+			if (!entry.is_directory)
+			{
+				files.push_back({entry.name, entry.mtime, entry.size});
+			}
+		}
+
+		const usz on_disk = files.size();
+		std::vector<pipeline_key> keys;
+		pbd::shader_build::take_newest(std::move(files), sizeof(pbd::shader_build::record_header) + sizeof(vk::pipeline_props), pbd::shader_build::prebuild_limit,
+			[&](const std::string& name)
+			{
+				pipeline_key key{};
+				if (!read_record(name, key))
+				{
+					return false;
+				}
+
+				keys.push_back(key);
+				return true;
+			});
+
+		// A record is rewritten when a process first uses its variant, so among the newest the oldest were needed first. Built
+		// in that order, the variants the fight start needs are not left behind those of the screens after it.
+		std::reverse(keys.begin(), keys.end());
+
+		std::vector<pipeline_key> queued;
+		{
+			std::lock_guard lock(m_program_cache_lock);
+			for (const auto& key : keys)
+			{
+				if (!m_program_cache.contains(key) && m_pending.try_emplace(key, false).second)
+				{
+					queued.push_back(key);
+				}
+			}
+		}
+
+		pbd::shader_build::renderer().prebuild_queued(::size32(queued));
+		rsx_log.warning("Interpreter prebuild: %u variants queued from %u valid of %u records in %s", queued.size(), keys.size(), on_disk, m_record_dir);
+		return queued;
 	}
 
 	bool shader_interpreter::is_interpreter(const glsl::program* prog) const

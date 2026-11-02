@@ -3,6 +3,7 @@
 #include "PPUInterpreter.h"
 #include "../PBD/pbd_input_taps.h"
 #include "../PBD/pbd_t5dr_memory.h"
+#include "../PBD/pbd_throw_break.h"
 
 #include <array>
 #include <atomic>
@@ -121,6 +122,15 @@ namespace pbd
 		// Write-fault capture: a write faulted on an armed page (page = address >> 12).
 		bool tick_write_fault(u32 page) noexcept;
 		void replay_syscall_time(u64 code, u64 ns) noexcept; // syscall wall time inside a replayed tick
+		// The throw break rule's probes (pbd_throw_break.h): the input step's word load and its latch entry, and the cancel
+		// scan's entry and exit.
+		void throw_break_probe(ppu_thread& ppu, u32 pc) noexcept;
+		// A replay or a watched game runs the rule as its recording or stream names it; the refusal, or null.
+		const char* configure_throw_break_playback() noexcept;
+		// For the live recording, at a game start (`round` false) or a round start: the rule's setting from there on, or nothing
+		// before the agreed delay is applied, and at a round start while the rule still tracks a press it moved on the owner's
+		// tick, which a round jump could not start from.
+		std::optional<pbd::throw_break::lookahead_setting> throw_break_round_start(bool round) noexcept;
 		void tick_pages_remapped(u32 addr, u32 size, bool writable) noexcept;
 		void invalidate() noexcept;
 		void operator=(thread_state state) noexcept;

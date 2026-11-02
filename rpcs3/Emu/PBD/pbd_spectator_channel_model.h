@@ -5,6 +5,7 @@
 #include "../Cell/pbd_corner_chat.h"
 #include "../Cell/pbd_spectator_ui.h"
 #include "pbd_t5dr_memory.h"
+#include "pbd_throw_break_record.h"
 #include <array>
 #include <chrono>
 #include <deque>
@@ -138,6 +139,9 @@ namespace pbd::spectator
 		u32 pbd_capsule_game = 0, pbd_source_game = 0, pbd_first_frame = 0, pbd_source_origin = 0, pbd_source_segment = 0, pbd_game_origin = 0;
 		std::string pbd_capsule;
 		u32 battle_clock_version = 2, menu_hash_mask = 0;
+		// The throw break rule the capsule's game started with (pbd_throw_break_record.h): none in a capsule without it. Every
+		// other game names its own as it begins (local_channel::begin_game).
+		pbd::throw_break::lookahead_setting pbd_capsule_throw_break;
 		picks fixed() const
 		{
 			return {stage, left, right};
@@ -223,6 +227,12 @@ namespace pbd::spectator
 				!selection || (selection->find("allowJinpachi") && !pbd::set_channel::detail::boolean(selection->find("allowJinpachi"), allow)) ||
 				allow == out.ban_jinpachi)
 				return "spectator_capsule_identity_mismatch";
+			if (pbd::throw_break::retired_record(payload->find(pbd::throw_break::record_key)))
+				return pbd::throw_break::retired_refusal;
+			const auto throw_break = pbd::throw_break::read_record(payload->find(pbd::throw_break::record_key));
+			if (!throw_break)
+				return "spectator_capsule_invalid";
+			out.pbd_capsule_throw_break = *throw_break;
 			out.pbd_capsule = pbd::set_channel::detail::serialize(*payload);
 		}
 		return {};

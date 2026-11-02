@@ -113,6 +113,32 @@ namespace pbd::controllers
 		return defaults;
 	}
 
+	// The left stick also as the directions, so an analog stick moves the fighter and the menus.
+	inline void fold_left_stick(state& value)
+	{
+		if (value.sticks[0] < -.5f)
+			value.buttons |= bit(left);
+		if (value.sticks[0] > .5f)
+			value.buttons |= bit(right);
+		if (value.sticks[1] < -.5f)
+			value.buttons |= bit(up);
+		if (value.sticks[1] > .5f)
+			value.buttons |= bit(down);
+	}
+
+	// Analog sticks off (the launcher's gameSettings.controls.analogSticks): a controller's report with both sticks at rest, so
+	// the game reads them centred, the left stick folds into no direction and a stick never claims the controller. The buttons
+	// stay, the d-pad among them, whether SDL reads it from buttons, a hat or axes, and directions taught to a lever's axes.
+	// A pad SDL maps with no d-pad reports its lever or d-pad as the left stick (`left_stick_is_dpad`): that stick keeps its
+	// four directions as presses and loses only its analog values.
+	inline state without_sticks(state value, bool left_stick_is_dpad = false)
+	{
+		if (left_stick_is_dpad)
+			fold_left_stick(value);
+		value.sticks = {};
+		return value;
+	}
+
 	inline bool neutral(const raw_state& rest, const raw_state& now)
 	{
 		if (std::any_of(now.buttons.begin(), now.buttons.end(), [](bool down)

@@ -1,6 +1,7 @@
 #pragma once
 #include "util/types.hpp"
 #include "../PBD/pbd_rank_stakes.h"
+#include "../PBD/pbd_throw_break.h"
 #include <array>
 #include <filesystem>
 #include <memory>
@@ -88,6 +89,15 @@ public:
 	// The values the recorded game's own Ranked screens were written with (pbd::rank_stakes::game_values), from its start;
 	// none without a file or when the recording names none.
 	std::optional<pbd::rank_stakes::game_values> pbd_rank_screens() const noexcept;
+	// The throw break rule as the recording ran it (pbd_throw_break.h). The setting at native boundary `boundary`, with L 0 for
+	// a side Take Control gave this PC, and the word a port runs at `boundary`; neither before the first recorded input, and
+	// no word past the recording's end while it plays as recorded.
+	pbd::throw_break::lookahead_setting pbd_throw_break(u32 boundary) const noexcept;
+	std::optional<u16> pbd_recorded_word(u32 boundary, u32 port) const noexcept;
+	// Whether the replay plays its recording: no side is taken.
+	bool pbd_follows_recording() const noexcept;
+	// Whether the recording reads ahead anywhere.
+	bool pbd_throw_break_recorded() const noexcept;
 	// The stock match initializer has entered the recorded game (direct_match_requested, where the launcher shows the
 	// game). Read on the owner thread, which sets it in function_event.
 	bool begun() const noexcept;

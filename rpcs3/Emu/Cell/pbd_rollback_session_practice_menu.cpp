@@ -137,9 +137,10 @@ void pbd::rollback_session::practice_steps::practice_move_list_input(u16 pressed
 void pbd::rollback_session::practice_steps::log_display()
 {
 	const auto& view = data.practice.view;
-	practice_dummy_log(fmt::format("{\"type\":\"practice_display\",\"history\":%s,\"history_p1\":%s,\"history_p2\":%s,\"attack_info\":%s,\"frame_data\":%s,\"hints\":%s,\"streaks\":%s}\n",
-		json_bool(view.command_history[0] || view.command_history[1]), json_bool(view.command_history[0]), json_bool(view.command_history[1]),
-		json_bool(view.attack_info), json_bool(view.frame_data), json_bool(view.control_hints), json_bool(view.movement_streaks)));
+	practice_dummy_log(fmt::format("{\"type\":\"practice_display\",\"overlay\":%s,\"history\":%s,\"history_p1\":%s,\"history_p2\":%s,\"attack_info\":%s,\"frame_data\":%s,\"hints\":%s,\"streaks\":%s}\n",
+		json_bool(view.training_overlay), json_bool(view.command_history[0] || view.command_history[1]), json_bool(view.command_history[0]),
+		json_bool(view.command_history[1]), json_bool(view.attack_info), json_bool(view.frame_data), json_bool(view.control_hints),
+		json_bool(view.movement_streaks)));
 }
 
 // Stop playback before switching the dummy to the chosen mode's movement or stock Dummy Action.
@@ -266,6 +267,7 @@ void pbd::rollback_session::practice_steps::restore_defaults()
 	else if (page == category::display_settings)
 	{
 		auto& view = data.practice.view;
+		view.training_overlay = true;
 		view.command_history = {true, true};
 		view.attack_info = true;
 		view.frame_data = true;

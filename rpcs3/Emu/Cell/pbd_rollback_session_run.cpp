@@ -78,6 +78,9 @@ bool pbd::rollback_session::boundary_call::apply_sound_options()
 
 void pbd::rollback_session::boundary_call::run()
 {
+	// A new frame: no battle update runs for the last tick any more, whatever this boundary does next.
+	if (pc == pcs[0])
+		data.throw_break.executing.reset();
 	if (check_checkpoint_compatibility())
 		return;
 	if (wait_for_replay_boot() || !open_original_stages() || !apply_sound_options() || local_standby() || match_standby() ||

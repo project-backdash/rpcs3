@@ -87,10 +87,10 @@ void training_modes_and_navigation()
 			  defense_row(training_mode::defense, 17) == dummy_rows::restore && !defense_row(training_mode::defense, 18) &&
 			  !defense_row(training_mode::offense, 1) && !defense_row(training_mode::defense, ~0u),
 		"Defense rows follow Training Mode, and only in Defense");
-	check(display_rows::p1_history == 0 && display_rows::p2_history == 1 && display_rows::attack_info == 2 &&
-			  display_rows::frame_data == 3 && display_rows::control_hints == 4 && display_rows::movement_streaks == 5 && display_rows::restore == 6 &&
-			  display_rows::count == 7,
-		"Display Settings lists P1 and P2 Command History, Attack Info, Frame Data, Control Hints, Movement Streaks, Restore Defaults");
+	check(display_rows::training_overlay == 0 && display_rows::p1_history == 1 && display_rows::p2_history == 2 && display_rows::attack_info == 3 &&
+			  display_rows::frame_data == 4 && display_rows::control_hints == 5 && display_rows::movement_streaks == 6 && display_rows::restore == 7 &&
+			  display_rows::count == 8,
+		"Display Settings lists Training Overlay, P1 and P2 Command History, Attack Info, Frame Data, Control Hints, Movement Streaks, Restore Defaults");
 	for (const auto count : {practice_row_count(training_mode::offense), practice_row_count(training_mode::defense), restart_rows::count,
 			 display_rows::count})
 	{
@@ -115,8 +115,8 @@ void training_modes_and_navigation()
 		"Down passes over a skipped row");
 	check(wrap_step_over(display_rows::control_hints, display_rows::count, false, skip) == display_rows::attack_info,
 		"Up passes over a skipped row");
-	check(wrap_step_over(display_rows::restore, display_rows::count, true, skip) == display_rows::p1_history &&
-			  wrap_step_over(display_rows::p1_history, display_rows::count, false, skip) == display_rows::restore,
+	check(wrap_step_over(display_rows::restore, display_rows::count, true, skip) == display_rows::training_overlay &&
+			  wrap_step_over(display_rows::training_overlay, display_rows::count, false, skip) == display_rows::restore,
 		"the list still wraps at both ends");
 	check(wrap_step_over(display_rows::frame_data, display_rows::count, true, skip) == display_rows::control_hints,
 		"a highlight left on a skipped row (by the pointer) still moves on");
@@ -131,11 +131,45 @@ void display_defaults_and_confirmation()
 	namespace category = pbd::practice::categories;
 	// Display defaults: both histories, Attack Info, Frame Data and the control hints are shown.
 	const snapshot fresh{};
-	check(fresh.command_history[0] && fresh.command_history[1] && fresh.attack_info && fresh.frame_data && fresh.control_hints &&
-			  fresh.movement_streaks,
+	check(fresh.training_overlay && fresh.command_history[0] && fresh.command_history[1] && fresh.attack_info && fresh.frame_data &&
+			  fresh.control_hints && fresh.movement_streaks,
 		"Display Settings must default to Display for every row");
 	check(!fresh.confirm.open && fresh.confirm.focus == answer_no && fresh.list_legend.count == 0,
 		"a fresh view has no question and no legend");
+
+	// Training Overlay: Display shows each display as its own row says; Hide shows none and keeps every row's choice.
+	snapshot view{};
+	view.command_history = {true, false};
+	view.frame_data = false;
+	view.movement_streaks = false;
+	const fight_displays chosen{{true, false}, true, false, true, false};
+	check(shown_displays(view) == chosen, "with the overlay shown, each display follows its own row");
+	view.training_overlay = false;
+	check(shown_displays(view) == fight_displays{}, "Hide turns off both histories, both panels, the control bar and the streak pop-up");
+	check(view.command_history[0] && !view.command_history[1] && view.attack_info && !view.frame_data && view.control_hints &&
+			  !view.movement_streaks,
+		"Hide leaves each display's own choice as it was");
+	view.training_overlay = true;
+	check(shown_displays(view) == chosen, "Display brings back exactly the displays chosen before");
+	check(shown_displays(fresh) == fight_displays{{true, true}, true, true, true, true}, "a fresh view shows every display");
+
+	// The row's two choices: Display (the default) first, then Hide.
+	const auto overlay = menu::display_choices(display_rows::training_overlay, fresh);
+	check(overlay.options.size() == 2 && overlay.options[0].text == "Display" && overlay.options[0].is_default &&
+			  overlay.options[1].text == "Hide" && !overlay.options[1].is_default && overlay.current == 0,
+		"Training Overlay offers Display, the default, and Hide");
+	snapshot hidden = view;
+	hidden.training_overlay = false;
+	check(menu::display_choices(display_rows::training_overlay, view).current == 0 &&
+			  menu::display_choices(display_rows::training_overlay, hidden).current == 1,
+		"the row shows the overlay's state");
+	// With the game's Game Input Display off, Hide's help says where to turn it on; otherwise the plain help stays.
+	const auto guided = menu::display_choices(display_rows::training_overlay, fresh, true);
+	check(guided.options[1].help.find("turn on Game Input Display in Offense") != std::string::npos &&
+			  overlay.options[1].help.find("Game Input Display") == std::string::npos && guided.options[0].help == overlay.options[0].help,
+		"Hide names Game Input Display only while the game's input display is off");
+	check(menu::display_choices(display_rows::p1_history, fresh).options.size() == 2 && menu::display_choices(display_rows::restore, fresh).options.empty(),
+		"the rows below keep their own choices and Restore Defaults has none");
 
 	check(answer_yes == 0 && answer_no == 1 && answer_count == 2, "confirmation action indices");
 }

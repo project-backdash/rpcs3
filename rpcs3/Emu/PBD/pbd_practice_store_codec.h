@@ -109,6 +109,7 @@ namespace pbd::practice_store
 		out.frame_data = detail::flag(value->find("frameData"), true);
 		out.control_hints = detail::flag(value->find("controlHints"), true);
 		out.movement_streaks = detail::flag(value->find("movementStreaks"), true);
+		out.training_overlay = detail::flag(value->find("trainingOverlay"), true);
 		return out;
 	}
 
@@ -373,6 +374,7 @@ namespace pbd::practice_store
 		detail::put(out, "frameData", json_value::boolean(view.frame_data));
 		detail::put(out, "controlHints", json_value::boolean(view.control_hints));
 		detail::put(out, "movementStreaks", json_value::boolean(view.movement_streaks));
+		detail::put(out, "trainingOverlay", json_value::boolean(view.training_overlay));
 		return out;
 	}
 

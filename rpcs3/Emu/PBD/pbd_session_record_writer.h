@@ -3,6 +3,7 @@
 #include "pbd_freeze_probe.h"
 #include "pbd_held_presentation.h"
 #include "pbd_session_health.h"
+#include "pbd_shader_build.h"
 #include "Emu/Cell/lv2/sys_semaphore.h"
 
 struct pbd::rollback_session::record_writer
@@ -397,6 +398,8 @@ struct pbd::rollback_session::record_writer
 		freeze_quiet.observe(Emu.IsPaused(), pbd::held_presentation::output().parked(),
 			!idle && pbd::game_overlay::hold_live(data.now_ns(), menu_poll), data.now_ns());
 		const bool battle = data.published_battle();
+		if (battle)
+			pbd::shader_build::renderer().mark_fight();
 		const auto network_sequence = data.network.traffic().sequence;
 		if (const u64 now = data.now_ns(); (health || health_snapshot) && (now >= health_next_ns || network_sequence != health_network_sequence))
 		{
@@ -427,11 +430,21 @@ struct pbd::rollback_session::record_writer
 			if (!freeze_dumped && !freeze_quiet.held() && now_ns > quiet_from + 4'000'000'000ull)
 				dump_freeze(now_ns, last);
 			// The stall watch acts where the probe only records: a battle with no boundary for 10 s outside the callback,
-			// while the other PC is still heard, asks the host to end the game as frozen. A held game never stalls.
+			// while the other PC is still heard, asks the host to end the game as frozen. A held game never stalls, and a
+			// renderer shader build has its own longer bound for the whole quiet stretch.
 			const auto now_us = static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(session_clock::now().time_since_epoch()).count());
-			if (!stall_stopped && pbd::session_health::stalled({.idle = true, .battle = battle, .held = freeze_quiet.held(), .boundary_seen = true, .quiet_from_ns = quiet_from, .now_ns = now_ns, .peer_heard_us = data.peer_heard_us.load(std::memory_order_acquire), .now_us = now_us}))
+			const auto build = pbd::shader_build::renderer().read();
+			const u64 built_ns = session_ns(build.ended_ns);
+			if (!stall_stopped && pbd::session_health::stalled({.idle = true, .battle = battle, .held = freeze_quiet.held(), .boundary_seen = true, .quiet_from_ns = quiet_from, .now_ns = now_ns, .peer_heard_us = data.peer_heard_us.load(std::memory_order_acquire), .now_us = now_us, .renderer_building = build.current != pbd::shader_build::kind::none, .renderer_built_ns = built_ns}))
 				stall_stopped = stall_stop((now_ns - quiet_from) / 1'000'000);
 		}
+	}
+
+	// A steady clock stamp on the session's axis (data.now_ns); 0 for none or before the session began.
+	u64 session_ns(u64 steady_ns) const
+	{
+		const auto origin = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(data.origin.time_since_epoch()).count());
+		return steady_ns > origin ? steady_ns - origin : 0;
 	}
 
 	void dump_freeze(u64 now_ns, u64 last)
@@ -449,6 +462,7 @@ struct pbd::rollback_session::record_writer
 				pbd::replay_pacing::marker_write.load(), pbd::replay_pacing::markers_missed.load(), static_cast<u32>(pbd::replay_pacing::frames_ended.load()),
 				static_cast<u32>(pbd::replay_pacing::credits.load()), static_cast<u32>(pbd::replay_pacing::granted.load()), static_cast<u32>(pbd::replay_pacing::posted.load()),
 				static_cast<u32>(pbd::replay_pacing::skip_draws.load()), static_cast<u32>(pbd::replay_pacing::exact.load()));
+		text += pbd::shader_build::describe(pbd::shader_build::renderer().read(), pbd::shader_build::steady_ns()) + "\n";
 		text += geometry_probe();
 		const auto path = (data.directory / "freeze-probe.txt").u8string();
 		if (fs::file out(std::string(path.begin(), path.end()), fs::rewrite); out)

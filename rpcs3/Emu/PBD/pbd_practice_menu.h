@@ -126,7 +126,9 @@ namespace pbd::practice::menu
 		out.current = movement::is_technique(current) ? static_cast<std::uint32_t>(current) : 0u;
 		return out;
 	}
-	inline choice_list display_choices(std::uint32_t row, const pbd::practice::snapshot& view)
+	// Display Settings' choices. `game_input_display_off`: the game's Game Input Display reads Off, so Hide would leave no
+	// input guide at all; Hide's help then names the Offense row that turns the game's own display on.
+	inline choice_list display_choices(std::uint32_t row, const pbd::practice::snapshot& view, bool game_input_display_off = false)
 	{
 		choice_list out;
 		namespace display_rows = pbd::practice::display_rows;
@@ -135,6 +137,12 @@ namespace pbd::practice::menu
 		const char* hidden = "";
 		switch (row)
 		{
+		case display_rows::training_overlay:
+			on = view.training_overlay;
+			shown = "Show the displays set below during the fight.";
+			hidden = game_input_display_off ? "Hide every display below. To see the game's inputs, turn on Game Input Display in Offense." :
+			                                  "Hide every display below. The game's own displays still show.";
+			break;
 		case display_rows::p1_history:
 			on = view.command_history[0];
 			shown = "Show P1's inputs at the left edge of the screen.";

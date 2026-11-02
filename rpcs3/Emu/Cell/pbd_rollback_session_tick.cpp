@@ -155,6 +155,8 @@ void pbd::rollback_session::tick_dispatch::session_scenes(bool scene_read, const
 			if (battle)
 				record_match_stage_digest();
 			record_match_transition(battle, scene_now);
+			if (const char* refusal = data.throw_break.match_changed(battle))
+				fail(refusal);
 		}
 	}
 }
@@ -295,6 +297,37 @@ void pbd::rollback_session::tick_dispatch::match_replay_observation(bool scene_r
 	}
 }
 
+// The battle update after this tick's input update runs its latch: the throw break probes record into this tick's row, and
+// each port's previous step comes from the row before.
+void pbd::rollback_session::tick_dispatch::begin_throw_break_tick()
+{
+	auto& state = data.throw_break;
+	if (!state.on)
+		return;
+	// A replay's round jump starts its round with nothing from the rows before, which belong to another point of the game.
+	const bool restart = state.restart == index;
+	const update_sample* const before = index && !restart && data.history_contains(index - 1) ? &data.sample_at(index - 1) : nullptr;
+	for (u32 port = 0; port < 2; ++port)
+		pbd::throw_break::carry(row.throw_break[port], before ? &before->throw_break[port] : nullptr, index);
+	state.executing = index;
+	state.side_row = &row == &data.roundtrip.repeat_row;
+	state.now = data.roundtrip.repeat_active ? data.correction.at : index;
+	if (state.playback)
+	{
+		// A replay or a watched game runs each tick with the setting its recording or its game's controls name there.
+		const bool watched = data.spectator.channel && (!data.lobby.direct_match.enabled() || data.lobby.direct_match.pbd_live_inputs());
+		const auto value = watched ? data.spectator.channel->pbd_throw_break() : data.lobby.direct_match.pbd_throw_break(index);
+		state.tech_rolls = value.tech_rolls;
+		const bool following = watched || data.lobby.direct_match.pbd_follows_recording();
+		if (const char* refusal = pbd::throw_break::take_recorded(row.throw_break, before ? &before->throw_break : nullptr, index, value, following))
+		{
+			pbd_session_log.error("Throw break rule refused at tick %u: L %u/%u from here, %u/%u before.", index, value.lookahead[0],
+				value.lookahead[1], before ? u32{before->throw_break[0].lookahead} : 0u, before ? u32{before->throw_break[1].lookahead} : 0u);
+			fail(refusal);
+		}
+	}
+}
+
 void pbd::rollback_session::tick_dispatch::input_stages(bool soft_mode)
 {
 	if (!row.entry_seen || ppu.gpr[1] != row.entry_r1 - 0x110)
@@ -317,6 +350,7 @@ void pbd::rollback_session::tick_dispatch::input_stages(bool soft_mode)
 		}
 		row.completed = true;
 		data.stage = 0;
+		begin_throw_break_tick();
 		return;
 	}
 	const u32 port = data.stage < 3 ? 0 : 1;
@@ -335,6 +369,9 @@ void pbd::rollback_session::tick_dispatch::input_stages(bool soft_mode)
 	}
 	if (data.session.enabled && data.session.start_skip && index < data.extent())
 	{
+		// Applied after the word is frozen, so it must touch only START and SELECT, which the throw break rule keeps from the
+		// stock word (pbd_throw_break.h).
+		static_assert(pbd::throw_break::keeps_fight_buttons(pbd::session_start::start_button));
 		const u8 bit = static_cast<u8>(1u << port);
 		const auto input = pbd::session_start::filter(static_cast<u16>(raw), row.start_phase,
 			index > 0 && (data.history.session_start_suppressed[index - 1] & bit));

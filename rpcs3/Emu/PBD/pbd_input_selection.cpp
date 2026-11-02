@@ -8,6 +8,7 @@ bool pbd::rollback_session::boundary_call::choose_inputs(u32 index, update_sampl
 		pbd::stall_metrics::boundary(index);
 		pbd::stall_metrics::scope measure_entry("update_entry");
 		data.update_active = true;
+		row.throw_break = {};
 		if (data.session.enabled && !data.roundtrip.repeat_active)
 		{
 			// Session mode: this tick's phase, from the scene selectors at its first dispatch (before its inputs are chosen). A
@@ -138,6 +139,10 @@ void pbd::rollback_session::boundary_call::choose_session_replay_input(u32 index
 			// replay's own buttons); the other side keeps the recording.
 			if (!data.takeover.null_input)
 			{
+				// Replay rows carry the injected words and the throw break rule reads them ahead, so a mask here touches only
+				// START and SELECT, which are no fighter's input. CROSS / CIRCLE go only on the side this PC took, which plays
+				// without the rule.
+				static_assert(pbd::throw_break::keeps_fight_buttons(session_start_bit | session_select_bit));
 				u32 word = (data.replay.test.word_set ? data.replay.test.word : data.replay.pad) & ~u32{session_start_bit | session_select_bit};
 				if (data.replay.takeover && (data.replay.pad & session_select_bit))
 					word &= ~u32{0x0040 | 0x0020}; // SELECT + CROSS / CIRCLE are the takeover's

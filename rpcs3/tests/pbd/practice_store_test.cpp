@@ -274,6 +274,7 @@ namespace
 		value.view.command_history = {false, true};
 		value.view.frame_data = false;
 		value.view.movement_streaks = false;
+		value.view.training_overlay = false;
 		value.restart = restart_position::right_wall;
 		value.options = game_options{10, 1, 0, 2, 1};
 		auto& kazuya = value.dummies[13];
@@ -442,6 +443,17 @@ PBD_TEST(PbdPracticeStore, OlderProfileKeepsSettings)
 		check(rejected.value && !rejected.value->pick && rejected.value->options == expected.options,
 			"an invalid remembered selection cannot discard the remaining settings");
 	}
+}
+
+PBD_TEST(PbdPracticeStore, ProfileWithoutTrainingOverlayShowsIt)
+{
+	// A profile saved before Training Overlay existed shows the overlay and keeps each display's own choice.
+	auto expected = full_profile();
+	const auto text = changed(serialize(expected, "x"), ",\"trainingOverlay\":false", "");
+	expected.view.training_overlay = true;
+	const auto parsed = parse_profile(text);
+	check(parsed.value && *parsed.value == expected);
+	check(parsed.value && !parsed.value->view.command_history[0] && !parsed.value->view.frame_data && !parsed.value->view.movement_streaks);
 }
 
 PBD_TEST(PbdPracticeStore, ProfileClamping)
@@ -801,10 +813,10 @@ namespace
 		}
 		object.fields.emplace_back(std::move(name), std::move(value));
 	}
-	std::array<bool, 6> display_flags(const display& value)
+	std::array<bool, 7> display_flags(const display& value)
 	{
 		return {value.command_history[0], value.command_history[1], value.attack_info,
-			value.frame_data, value.control_hints, value.movement_streaks};
+			value.frame_data, value.control_hints, value.movement_streaks, value.training_overlay};
 	}
 	recordings recording_fields(json_value playback, json_value slots)
 	{
@@ -826,7 +838,7 @@ namespace
 
 PBD_TEST(PbdPracticeStore, EveryDisplayFlagAcceptsOnlyBooleans)
 {
-	constexpr std::array names{"p1History", "p2History", "attackInfo", "frameData", "controlHints", "movementStreaks"};
+	constexpr std::array names{"p1History", "p2History", "attackInfo", "frameData", "controlHints", "movementStreaks", "trainingOverlay"};
 	for (std::size_t i = 0; i < names.size(); ++i)
 	{
 		const auto disabled = display_flags(profile_field("display", json_value::object({{names[i], json_value::boolean(false)}})).view);

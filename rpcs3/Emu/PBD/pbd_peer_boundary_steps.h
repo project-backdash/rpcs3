@@ -66,7 +66,9 @@ struct pbd::rollback_session::peer_boundary_steps : tick_dispatch
 			peer_poll(index);
 			if (data.peer.fault)
 				break;
-			const u32 u = peer_first_unusable(index);
+			// A row whose remote fighter read ahead waits for those words too, in lockstep and under backpressure alike; a
+			// lockstep row, which is final once it runs, also for the word its own remote fighter may read ahead.
+			const u32 u = peer_first_unconfirmed(index);
 			observe_prediction(u);
 			const bool want_current = wait_for_fresh_input();
 			const bool stalling = session_clock::now() < stall_until;
@@ -74,7 +76,10 @@ struct pbd::rollback_session::peer_boundary_steps : tick_dispatch
 			// The segment barrier drained earlier player inputs. Loading phases inject zero on both ports, so
 			// their physical button words cannot change execution and need not stall the guest before arriving.
 			const bool neutral = data.session.enabled && data.neutral_at(index);
-			const bool blocked = lockstep ? ((!neutral && !(u >= index && (data.history.peer_remote_arrival[index] >= 0 || remote_left(index)))) || aligning) : (index - u >= data.peer.max_prediction || want_current || stalling);
+			const bool blocked = lockstep ? ((!neutral && !(u >= index && (data.history.peer_remote_arrival[index] >= 0 || remote_left(index)) &&
+															  peer_lookahead_arrived(index))) ||
+												aligning) :
+			                                (index - u >= data.peer.max_prediction || want_current || stalling);
 			if (!blocked)
 				break;
 			if (hold_and_poll(waiting))
@@ -124,7 +129,8 @@ struct pbd::rollback_session::peer_boundary_steps : tick_dispatch
 			// Reserve frame time for a pending correction and skip a second wait after it re-executes this boundary.
 			bool pending = index == data.peer.wait_corrected_at;
 			for (u32 t = data.peer.scan_from; t < index && !pending; t++)
-				pending = peer_usable(t, index) && data.sample_at(t).raw[1 - data.peer.role] != data.history.peer_remote_value[t];
+				pending = (peer_usable(t, index) && data.sample_at(t).raw[1 - data.peer.role] != data.history.peer_remote_value[t]) ||
+				          peer_lookahead_wrong(t, index);
 			if (pending)
 			{
 				want_current = false;
@@ -231,10 +237,16 @@ struct pbd::rollback_session::peer_boundary_steps : tick_dispatch
 
 	bool resolve_peer_inputs()
 	{
-		const u32 u = peer_first_unusable(index);
+		const u32 u = peer_first_unconfirmed(index);
 		u32 m = index;
 		for (u32 t = data.peer.scan_from; t < index; t++)
 		{
+			// A word the remote fighter read ahead is checked whether or not the row's own word has arrived.
+			if (peer_lookahead_wrong(t, index))
+			{
+				m = t;
+				break;
+			}
 			if (!peer_usable(t, index))
 				continue;
 			if (data.session.enabled && data.neutral_at(t))
@@ -264,7 +276,9 @@ struct pbd::rollback_session::peer_boundary_steps : tick_dispatch
 			data.correction.clock.mismatches = 0;
 			data.peer.corrections++;
 			data.peer.wait_corrected_at = index;
-			publish_through(m);
+			// A row below m kept its words, but it is final only where it is confirmed: its own word or a word read ahead may
+			// still be predicted.
+			publish_through(std::min(m, u));
 		}
 		else
 		{

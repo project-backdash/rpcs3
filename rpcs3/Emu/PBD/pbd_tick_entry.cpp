@@ -316,6 +316,13 @@ void pbd::rollback_session::tick_dispatch::record_match_options_digest()
 			add(player ? player + 0x6ac : 0, 8);
 		}
 		add(0x100500cc, 64);
+		// The throw break rule's L, while some port has one: both PCs must put the same words ahead into the slots.
+		if (const u32 with_rule = data.throw_break.options_digest(od); with_rule != od)
+		{
+			od = with_rule;
+			fmt::append(listing, " throw_break_lookahead:%u,%u%s", data.throw_break.peer_lookahead[0], data.throw_break.peer_lookahead[1],
+				data.throw_break.tech_rolls ? " throw_break_tech_rolls" : "");
+		}
 		data.session.digests.options_seq = data.session.matches;
 		data.session.digests.options = od;
 		const u32 oslot = data.session.matches % 8;

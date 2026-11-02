@@ -19,8 +19,15 @@ void pbd::rollback_session::boundary_call::complete_corrected_row(update_sample&
 		g_pbd_replay_timing.store(false, std::memory_order_relaxed);
 		pbd::replay_pacing::skip_draws.store(0u, std::memory_order_relaxed);
 		data.correction.phase = 2;
+		// The window's first row ran again with every word usable at the correction's boundary, but a peer row is final only
+		// once it is confirmed: its own word, or a word its remote fighter read ahead, may still be predicted.
 		if (row.completed)
-			publish_through(data.rolling || data.peer.enabled ? data.correction.at - data.correction.depth + 1 : data.correction.at);
+		{
+			const u32 window_start = data.correction.at - data.correction.depth;
+			publish_through(data.peer.enabled ? std::min(window_start + 1, peer_first_unconfirmed(data.correction.at)) :
+							data.rolling      ? window_start + 1 :
+												data.correction.at);
+		}
 		if (data.rolling || data.peer.enabled)
 			data.correction.phase = 0; // Ready for the next learned mismatch.
 		complete_takeover_bridge(row);

@@ -65,6 +65,8 @@ namespace pbd::practice_store
 	{
 		std::array<bool, 2> command_history{true, true};
 		bool attack_info = true, frame_data = true, control_hints = true, movement_streaks = true;
+		// Training Overlay: Hide keeps the choices above and shows none of them.
+		bool training_overlay = true;
 		bool operator==(const display&) const = default;
 	};
 	// Offense's own dummy rows. reaction is Action After a Hit or Block; a Moves reaction's moves are dummy_rows::reactions.

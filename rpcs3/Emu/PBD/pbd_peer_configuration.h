@@ -24,11 +24,27 @@ struct pbd::rollback_session::peer_configuration
 			configure_route();
 			configure_delay();
 			configure_input_policy();
+			configure_throw_break();
 			configure_socket();
 			open_transport_records();
 			s.correction.active = true;
 			s.peer.enabled = true;
 		}
+	}
+
+	// The throw break rule (pbd_throw_break.h). Each local word is fixed D ticks ahead only with the phase delay, which needs
+	// the live controller and the entry sample. An armed tick t also reads the other PC's word t + L, which the delay-based
+	// schedule counts only from boundary t + L + PBD_PEER_DELAY on, however early it arrives: a lockstep boundary, which waits
+	// until every earlier row is confirmed, would wait for itself. So the rule needs a received word to count once it arrives
+	// (PBD_PEER_USE_ARRIVED, which the launcher sets). A delay announced at start + 40 sets L when it is applied.
+	void configure_throw_break()
+	{
+		const auto value = pbd::throw_break::read_setting(pbd::env::find("PBD_THROW_BREAK"));
+		require(value != pbd::throw_break::setting::invalid, "throw_break_switch_invalid");
+		const auto tech = pbd::throw_break::read_setting(pbd::env::find("PBD_THROW_BREAK_TECH_ROLLS"));
+		require(tech != pbd::throw_break::setting::invalid, "throw_break_switch_invalid");
+		s.throw_break.configure_peer(value, tech, s.peer.phase_delay && s.peer.use_arrived,
+			s.peer.delay_auto ? std::nullopt : std::optional<u32>{s.peer.input_delay});
 	}
 
 	bool configure_standby()

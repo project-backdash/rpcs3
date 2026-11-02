@@ -220,9 +220,14 @@ bool pbd::rollback_session::boundary_call::peer_segment_ready(u32 n, u32 k, u32&
 		bool mispredicted = false;
 		for (u32 t = data.peer.scan_from; t < check_end && !mispredicted; t++)
 		{
-			if (!peer_usable(t, k) || remote_left(t))
+			if (remote_left(t))
 				continue;
-			if (data.session.enabled && data.neutral_at(t))
+			// A word the remote fighter read ahead counts as the row's own does, whether or not that has arrived.
+			if (peer_lookahead_wrong(t, k))
+				mispredicted = true;
+			else if (!peer_usable(t, k))
+				continue;
+			else if (data.session.enabled && data.neutral_at(t))
 				data.sample_at(t).raw[1 - data.peer.role] = data.history.peer_remote_value[t];
 			else
 				mispredicted = data.sample_at(t).raw[1 - data.peer.role] != data.history.peer_remote_value[t];
@@ -232,7 +237,7 @@ bool pbd::rollback_session::boundary_call::peer_segment_ready(u32 n, u32 k, u32&
 			data.peer.fault = "session_barrier_after_misprediction";
 			return true;
 		}
-		if (peer_first_unusable(k) >= check_end)
+		if (peer_first_unconfirmed(k) >= check_end)
 		{
 			target = std::max(k, data.session.segments.peer_index[n % 8]);
 			return true;

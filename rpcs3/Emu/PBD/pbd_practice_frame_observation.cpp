@@ -67,7 +67,7 @@ void pbd::rollback_session::practice_steps::update_movement_streak()
 			u32 p1_row = umax;
 			const bool has_move = ended->what != pbd::practice::streak::kind::wavedash || !read_word(0x10093f50, p1_row) || p1_row > 0xff ||
 			                      pbd::practice::movement::wavedash_character(p1_row);
-			const bool shown = data.practice.view.movement_streaks && has_move;
+			const bool shown = pbd::practice::shown_displays(data.practice.view).movement_streaks && has_move;
 			const char* kind = ended->what == pbd::practice::streak::kind::wavedash      ? "wavedash" :
 			                   ended->what == pbd::practice::streak::kind::single_cancel ? "single_cancel" :
 			                                                                               "backdash_cancel";
@@ -281,7 +281,7 @@ void pbd::rollback_session::practice_steps::judge_punishment(const practice_paus
 	                        std::nullopt;
 	if (judged)
 	{
-		const bool shown = data.practice.view.frame_data;
+		const bool shown = pbd::practice::shown_displays(data.practice.view).frame_data;
 		practice_dummy_log(fmt::format("{\"type\":\"practice_punish\",\"boundary\":%u,\"counter\":%u,\"punished\":%s,\"advantage\":%d,\"crouching\":%s,\"startup\":%s,\"frames\":%u,\"blocked\":%s,\"shown\":%s}\n",
 			index, pause.counter, json_bool(judged->outcome == pbd::practice::punish::verdict::punished), judged->advantage, json_bool(judged->crouching),
 			number(judged->startup), judged->frames, json_bool(judged->blocked), json_bool(shown)));

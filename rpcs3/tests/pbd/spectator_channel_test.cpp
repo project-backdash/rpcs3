@@ -158,6 +158,148 @@ namespace
 	};
 } // namespace
 
+PBD_TEST(PbdSpectatorChannel, TheThrowBreakRuleHoldsFramesAheadAndKeepsEachPacketsReport)
+{
+	// A watched game that reads ahead (its begin_game's throwBreakLookahead) runs a tick only once the stream holds the frames
+	// L past it, so the next packet is read before the current one is consumed; each packet still gets its own consumed
+	// report when its last frame runs. The game's last frames run without frames after them.
+	sample_document f(330);
+	f.prepare();
+	f.begin(1, 0, nullptr, true, fixed_picks + R"("throwBreakLookahead":{"version":2,"left":3,"right":2},)");
+	check(f.input.pbd_throw_break() == pbd::throw_break::lookahead_setting{{3, 2}});
+	f.packet(1, 1, 0, 0, 2);
+	check(f.input.poll_input(test_hash));
+	check(!f.input.reserve(), "two frames are not enough to run the first with L 3");
+	f.packet(2, 1, 2, 2, 2);
+	check(f.input.poll_input(test_hash));
+	check(!f.input.pbd_queued_pad(0, 0), "nothing is read before a frame is reserved");
+	const auto first = f.input.reserve();
+	check(first && first->boundary == 0, "the first frame, with three more held");
+	check(f.input.pbd_queued_pad(3, 0) == std::uint16_t{0x40} && f.input.pbd_queued_pad(2, 1) == std::uint16_t{0x20} && !f.input.pbd_queued_pad(4, 0),
+		"the pads of the frames held, and none past them");
+	check(f.input.verify_state(0, 1, 17, 0x8000004d, 7, {11, 22, 33}) && f.input.commit(0x01000000, 0x12efc, 0, f.completed(), {0x40, 0x20}));
+	check(!f.input.reserve(), "the second frame waits for the frame L past it");
+	f.packet(3, 1, 4, 4, 3);
+	check(f.input.poll_input(test_hash));
+	f.play(1);
+	// The consumed report of packet `chunk`, as many as there are.
+	const auto consumed = [&](u32 chunk, u32 through)
+	{
+		u32 found = 0;
+		for (u32 serial = 1; std::filesystem::exists(f.directory / ("spectator-native-" + std::to_string(serial) + ".json")); ++serial)
+		{
+			const auto text = f.report(serial);
+			found += text.find("\"consumed\"") != std::string::npos && text.find("\"chunkSerial\":" + std::to_string(chunk) + ",") != std::string::npos &&
+			         text.find("\"through\":" + std::to_string(through) + ",") != std::string::npos;
+		}
+		return found;
+	};
+	check(consumed(1, 2) == 1 && !consumed(2, 4), "packet 1's report when its last frame runs, and not yet packet 2's");
+	f.play(2);
+	f.play(3);
+	check(consumed(2, 4) == 1, "packet 2's report");
+	f.control("\"type\":\"end_game\",\"gameNumber\":1,\"finalFrame\":7");
+	f.play(4);
+	f.play(5);
+	f.play(6);
+	check(consumed(3, 7) == 1 && consumed(1, 2) == 1 && f.input.consumed() == 7, "the last frames run once the game's end is known");
+	// Without the rule, a packet is read only once the one before is consumed, as before.
+	sample_document plain(331);
+	plain.prepare();
+	plain.begin();
+	plain.packet(1, 1, 0, 0, 2);
+	plain.packet(2, 1, 2, 2, 2);
+	check(plain.input.poll_input(test_hash) && plain.input.poll_input(test_hash));
+	plain.play(0);
+	plain.play(1);
+	check(!plain.input.reserve(), "the second packet waits until the first is consumed");
+	check(plain.input.poll_input(test_hash));
+	plain.play(2);
+}
+
+PBD_TEST(PbdSpectatorChannel, EachGameNamesItsThrowBreakRule)
+{
+	// The rule a game runs with comes with that game, as the players' game_started names it: an automatic delay is applied
+	// after the stream's first game_preparing, so the stream's policy cannot name it. Absent, the game runs without it.
+	const auto rule = [](const std::string& record)
+	{
+		return fixed_picks + "\"throwBreakLookahead\":" + record + ",";
+	};
+	{
+		sample_document f(332);
+		f.prepare();
+		f.begin();
+		check(!f.input.pbd_throw_break().any(), "a game from before the rule plays without it");
+		sample_document g(337);
+		g.prepare();
+		g.begin(1, 0, nullptr, true, rule(R"({"version":2,"left":3,"right":2})"));
+		check(g.input.pbd_throw_break() == pbd::throw_break::lookahead_setting{{3, 2}}, "L per side");
+		sample_document h(338);
+		h.prepare();
+		h.begin(1, 0, nullptr, true, rule(R"({"version":2,"left":2,"right":4,"techRolls":true})"));
+		check(h.input.pbd_throw_break() == pbd::throw_break::lookahead_setting{{2, 4}, true}, "the developer's tech-roll switch");
+	}
+	for (const char* bad : {R"({"version":2,"left":0,"right":0})", R"({"version":2,"left":7,"right":3})", R"({"version":2,"left":3})",
+			 R"({"version":2,"left":3,"right":3,"techRolls":false})", R"({"version":2,"left":3,"right":3,"other":1})", R"({"left":3,"right":3})",
+			 R"({"version":3,"left":3,"right":3})", "3"})
+	{
+		sample_document f(333);
+		f.prepare();
+		f.begin(1, 0, nullptr, false, rule(bad));
+		check(f.input.reason() == "game_control_unverified", std::string("refused: ") + bad);
+	}
+	{
+		// A game of the retired rule, which read the held fighter's whole word ahead, refuses with its own reason.
+		sample_document f(339);
+		f.prepare();
+		f.begin(1, 0, nullptr, false, rule(R"({"version":1,"left":3,"right":3})"));
+		check(f.input.reason() == pbd::throw_break::retired_refusal, "a begin_game of the retired rule");
+	}
+	{
+		// A selection stream begins its game before the delay is applied; the witness from its game_started names the rule.
+		sample_document f(334);
+		f.prepare();
+		f.begin(1, 0, nullptr, true, fixed_picks + "\"roundWitnessRequired\":true,");
+		check(!f.input.pbd_throw_break().any());
+		const native_round round{4, 1, {0x1234, 0xabcd}};
+		const auto witness = "\"type\":\"game_witness\",\"gameNumber\":1,\"nativeRound\":" + pbd::set_channel::detail::serialize(round.json());
+		f.control(witness + R"(,"throwBreakLookahead":{"version":2,"left":3,"right":3})");
+		check(f.input.pbd_throw_break() == pbd::throw_break::lookahead_setting{{3, 3}}, "the witness fills it in");
+		f.control(witness);
+		check(f.input.pbd_throw_break() == pbd::throw_break::lookahead_setting{{3, 3}}, "a witness that names none keeps it");
+		f.control(witness + R"(,"throwBreakLookahead":{"version":2,"left":2,"right":2})", false);
+		check(f.input.reason() == "native_round_control_invalid", "and none changes it");
+		sample_document g(340);
+		g.prepare();
+		g.begin(1, 0, nullptr, true, fixed_picks + "\"roundWitnessRequired\":true,");
+		g.control(witness + R"(,"throwBreakLookahead":{"version":1,"left":3,"right":3})", false);
+		check(g.input.reason() == pbd::throw_break::retired_refusal, "a witness of the retired rule");
+	}
+	{
+		// A capsule's game names the rule in its capsule and in its begin_game, which must agree.
+		auto m = identity();
+		m.pbd_capsule = "fixture";
+		m.pbd_capsule_game = 3;
+		m.pbd_first_frame = 7;
+		m.pbd_source_origin = 106;
+		m.pbd_game_origin = 100;
+		m.pbd_capsule_throw_break = {{3, 3}};
+		const auto capsule_start = [](const std::string& fields)
+		{
+			return "\"type\":\"begin_game\",\"gameNumber\":3,\"originBoundary\":100,\"originCounter\":2147483825,\"kind\":\"capsule_start\"," + fields +
+			       "\"roundsPerGame\":3";
+		};
+		sample_document same(335, false, m);
+		same.prepare();
+		same.control(capsule_start(rule(R"({"version":2,"left":3,"right":3})")));
+		check(same.input.pbd_throw_break() == pbd::throw_break::lookahead_setting{{3, 3}});
+		sample_document other(336, false, m);
+		other.prepare();
+		other.control(capsule_start(fixed_picks), false);
+		check(other.input.reason() == "spectator_capsule_identity_mismatch", "a begin_game that names another rule than its capsule");
+	}
+}
+
 PBD_TEST(PbdSpectatorChannel, ABriefInputLockKeepsTheReceiptUntilThePacketCanBeChecked)
 {
 	sample_document f(240);

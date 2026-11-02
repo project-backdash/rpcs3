@@ -71,6 +71,10 @@ namespace pbd::session_health
 	// The receiver ends a session whose other PC sent no valid input for this long (peer_silence_timeout).
 	inline constexpr std::uint64_t peer_silence_us = 10'000'000;
 	inline constexpr std::uint64_t stall_ns = 10'000'000'000;
+	// While the renderer is inside a shader build or wait (pbd_shader_build.h) the game waits on it and is not stuck. No
+	// quiet stretch outlasts this bound, however many builds it holds, so this PC ends the set before the other PC's 90 s
+	// lease on its boundary call does.
+	inline constexpr std::uint64_t building_stall_ns = 60'000'000'000;
 
 	struct stall_facts
 	{
@@ -80,17 +84,23 @@ namespace pbd::session_health
 		bool boundary_seen = false; // the owner has left at least one boundary call
 		std::uint64_t quiet_from_ns = 0, now_ns = 0;
 		std::uint64_t peer_heard_us = 0, now_us = 0; // the other PC's last valid input; 0 when never heard or not watched
+		bool renderer_building = false;              // the RSX thread is inside a shader build or wait
+		std::uint64_t renderer_built_ns = 0;         // when its last build or wait ended, on the quiet_from_ns axis; 0 when none
 	};
 
 	// A game stopped in its own code: free to run, outside the boundary call and in battle, it published no boundary for
 	// stall_ns while the other PC is still heard. Nothing inside the boundary call can time it out, because the peer and
 	// hold timeouts run only there. Waits inside the call keep their own timeouts, a silent peer is the silence watch's to
-	// end, and loading outside battle keeps the launcher's longer allowance.
+	// end, and loading outside battle keeps the launcher's longer allowance. A renderer shader build holds off the stall_ns
+	// bound while it lasts, and that bound restarts when it ends; building_stall_ns of quiet ends the game either way, so a
+	// stream of builds cannot hide a freeze.
 	inline bool stalled(const stall_facts& facts) noexcept
 	{
 		const bool heard = facts.peer_heard_us && (facts.now_us <= facts.peer_heard_us || facts.now_us - facts.peer_heard_us < peer_silence_us);
-		return facts.idle && facts.battle && !facts.held && facts.boundary_seen && heard && facts.now_ns >= facts.quiet_from_ns &&
-		       facts.now_ns - facts.quiet_from_ns >= stall_ns;
+		if (!facts.idle || !facts.battle || facts.held || !facts.boundary_seen || !heard || facts.now_ns < facts.quiet_from_ns)
+			return false;
+		const std::uint64_t built = std::min(std::max(facts.quiet_from_ns, facts.renderer_built_ns), facts.now_ns);
+		return facts.now_ns - facts.quiet_from_ns >= building_stall_ns || (!facts.renderer_building && facts.now_ns - built >= stall_ns);
 	}
 
 	inline constexpr std::size_t snapshot_bytes = 4096, header_bytes = 31;

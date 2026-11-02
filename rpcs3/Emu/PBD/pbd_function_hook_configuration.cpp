@@ -2,6 +2,7 @@
 #include "pbd_function_hook_state.h"
 #include "pbd_session_policy.h"
 #include "pbd_env_parse.h"
+#include "pbd_throw_break.h"
 #include "Emu/pbd_session_mode.h"
 #include <charconv>
 
@@ -164,6 +165,14 @@ namespace pbd::fn_hook::detail
 			skippable.insert(skippable.end(), {0x59000u, 0x5aa18u});
 			std::sort(skippable.begin(), skippable.end());
 			skippable.erase(std::unique(skippable.begin(), skippable.end()), skippable.end());
+		}
+		// The throw break rule's probes, in every session. Its switch and L decide at run time, so a hidden preparation and
+		// the start it prepares emit the same code.
+		if (pbd::session_mode::active())
+		{
+			observed_sites.insert(observed_sites.end(), pbd::throw_break::probes.begin(), pbd::throw_break::probes.end());
+			std::sort(observed_sites.begin(), observed_sites.end());
+			observed_sites.erase(std::unique(observed_sites.begin(), observed_sites.end()), observed_sites.end());
 		}
 		if (pbd::practice::requested() || pbd::replay_viewer::requested())
 		{

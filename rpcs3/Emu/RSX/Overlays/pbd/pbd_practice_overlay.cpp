@@ -37,10 +37,12 @@ namespace rsx
 			const fonts& type;
 			atlas_ref atlas;
 			layer out;
+			// Training Overlay = Hide turns these off together; the toast and the recording band stay.
+			const ::pbd::practice::fight_displays shown = ::pbd::practice::shown_displays(snap);
 
 			void prompts()
 			{
-				// The latch sends no control bar while Control Hints is Hide; the scrim goes with it.
+				// The latch sends no control bar while Control Hints or Training Overlay is Hide; the scrim goes with it.
 				if (snap.hud_visible && snap.prompts.count)
 				{
 					out.image(layer::b_under, &assets::get().scrim, white, 0.f, 628.f, overlay::virtual_width, overlay::virtual_height);
@@ -60,7 +62,7 @@ namespace rsx
 					// side has its own Display Settings row. Arrows are the screen directions the stick was pushed.
 					for (usz side = 0; side < 2; side++)
 					{
-						if (!snap.command_history[side])
+						if (!shown.command_history[side])
 							continue;
 						const auto& history = snap.inputs[side];
 						history_column(out, atlas, side, std::min<u32>(history.count, static_cast<u32>(::pbd::practice::history_size)),
@@ -116,7 +118,7 @@ namespace rsx
 
 			void panels()
 			{
-				if (snap.hud_visible && snap.fight_live && (snap.attack_info || snap.frame_data))
+				if (snap.hud_visible && snap.fight_live && (shown.attack_info || shown.frame_data))
 				{
 					// Attack Info beside Frame Data along the bottom (pbd::practice::place_panels): P1's attacks at the left, P2's at
 					// the right, clear of the game's combo counter and of the command history columns, on screen for as long as
@@ -125,7 +127,7 @@ namespace rsx
 					for (usz side = 0; side < 2; side++)
 					{
 						const auto& fighter = snap.fighters[side];
-						const auto placed = ::pbd::practice::place_panels(side, snap.command_history[side], snap.attack_info, snap.frame_data);
+						const auto placed = ::pbd::practice::place_panels(side, shown.command_history[side], shown.attack_info, shown.frame_data);
 						if (placed.attack_info)
 						{
 							const auto lines = ::pbd::practice::attack_info_text(fighter);

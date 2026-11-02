@@ -487,7 +487,7 @@ void pbd::rollback_session::practice_steps::memory_save()
 	profile.mode = data.practice.training_mode == pbd::practice::training_mode::defense ? pbd::practice::training_mode::defense :
 	                                                                                      pbd::practice::training_mode::offense;
 	const auto& view = data.practice.view;
-	profile.view = {view.command_history, view.attack_info, view.frame_data, view.control_hints, view.movement_streaks};
+	profile.view = {view.command_history, view.attack_info, view.frame_data, view.control_hints, view.movement_streaks, view.training_overlay};
 	profile.restart = practice_store::saved_restart(data.practice.restart.position);
 	profile.dummy_back = data.practice.restart.variant.dummy_back;
 	profile.switch_positions = data.practice.restart.variant.switched;

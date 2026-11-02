@@ -794,6 +794,8 @@ const char* pbd::rollback_session::accept_spectator(const std::filesystem::path&
 	s.spectator.channel = std::make_unique<pbd::spectator::local_channel>(root, std::move(manifest));
 	if (!s.spectator.channel->healthy())
 		return "spectator_channel_invalid";
+	if (const char* refusal = configure_throw_break_playback())
+		return refusal;
 	if (const auto* trace = pbd::env::find("PBD_SPECTATOR_EXECUTED_TRACE"); trace && *trace)
 	{
 		const std::filesystem::path path(trace);
@@ -864,6 +866,8 @@ bool pbd::rollback_session::boundary_call::spectator_standby()
 			if (data.session.seed_set || !data.lobby.direct_match.pbd_configure_file(data.generation,
 											 session_runtime.watcher_mode(), binding.value->seed, binding.value->file, binding.value->replay))
 				return end("replay_standby_file_refused", guard_failed);
+			if (const char* refusal = session_runtime.configure_throw_break_playback())
+				return end(refusal, guard_failed);
 			data.session.seed = binding.value->seed;
 			data.session.seed_set = true;
 			if (!pbd::replay_standby::pbd_bind_presentation(root, *binding.value))

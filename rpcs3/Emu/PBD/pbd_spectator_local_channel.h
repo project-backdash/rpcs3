@@ -12,8 +12,14 @@ namespace pbd::spectator
 		presentation m_presentation;
 		u64 m_native_generation = 0, m_control_serial = 0, m_report_serial = 0;
 		u32 m_packet_serial = 0, m_game = 0, m_origin = 0, m_receipt = 0, m_consumed = 0, m_checked = 0;
-		u32 m_packet_through = 0;
-		digest m_packet_digest{};
+		// Each received packet not yet consumed to its end, oldest first: its consumed report goes out when the last of its
+		// frames is executed. More than one is held only while the watched games read ahead (lookahead_frames).
+		struct receipt
+		{
+			u32 serial = 0, through = 0;
+			digest payload{};
+		};
+		std::deque<receipt> m_receipts;
 		std::optional<u32> m_pbd_native_anchor;
 		u32 pbd_source_boundary(u32 boundary) const
 		{
@@ -35,6 +41,9 @@ namespace pbd::spectator
 		std::optional<pbd::rematch::load> m_load;
 		// The values the players' games wrote for the game's own Ranked screens (begin_game's rankScreens), written the same here.
 		std::optional<pbd::rank_stakes::game_values> m_rank_screens;
+		// The throw break rule this game runs with, as the players' game_started names it (pbd_throw_break_record.h): from its
+		// begin_game, or from its game_witness where a selection stream began the game before the agreed delay was applied.
+		pbd::throw_break::lookahead_setting m_throw_break;
 		picks fixed_picks() const
 		{
 			return m_load ? picks{m_load->selected.stage, m_load->selected.rows[0], m_load->selected.rows[1]} : m_identity.fixed();
@@ -234,12 +243,36 @@ namespace pbd::spectator
 		bool poll_control(const pbd::rematch::options* actual_options = nullptr);
 		template <typename Hash>
 		bool poll_input(Hash hash, std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
+		// The throw break rule of the game being watched.
+		const pbd::throw_break::lookahead_setting& pbd_throw_break() const
+		{
+			return m_throw_break;
+		}
+		// How many frames past the one it runs the watcher holds: the throw break rule reads a held fighter's word up to L ticks
+		// ahead (pbd_throw_break.h), so a tick runs only once its stream holds those frames, or the game's last frame. The
+		// launcher keeps that many frames offered past the running one while the game's L is above 0.
+		u32 lookahead_frames() const
+		{
+			return std::max(m_throw_break.lookahead[0], m_throw_break.lookahead[1]);
+		}
 		std::optional<frame> reserve()
 		{
-			if (!healthy() || !m_prepared || !game_active() || m_frames.empty() || m_reserved)
+			if (!healthy() || !m_prepared || !game_active() || m_frames.empty() || m_reserved ||
+				(m_frames.size() <= lookahead_frames() && !(m_end && m_receipt == *m_end)))
 				return {};
 			m_reserved = true;
 			return m_frames.front();
+		}
+		// A port's pad at a native boundary from the reserved frame on, among the frames held; nothing for one not held.
+		std::optional<std::uint16_t> pbd_queued_pad(u32 boundary, u32 port) const
+		{
+			const u32 source = pbd_source_boundary(boundary);
+			if (!m_reserved || port > 1 || source == ~0u)
+				return {};
+			for (const auto& item : m_frames)
+				if (item.boundary == source)
+					return item.pads[port];
+			return {};
 		}
 		bool verify_state(u32 boundary, u32 segment, u32 scene, u32 counter, u32 mask, const std::array<u64, 3>& combat);
 		// The game's applied picks at its first intro. A fixed set must show its own picks; an in-game set shows whatever this game

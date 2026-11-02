@@ -152,9 +152,9 @@ void pbd::rollback_session::practice_steps::publish_control_hints(bool situation
 			}
 			bar.add("{start}+{select}", "Exit (Hold)");
 		}
-		// Control Hints = Hide clears the bar during the fight. Ready to record and recording keep theirs: the bar
-		// is the only place those states show how to start and stop the take.
-		if (!data.practice.view.control_hints && data.practice.dummy.state != dummy_state::recording &&
+		// Control Hints = Hide (or Training Overlay = Hide) clears the bar during the fight. Ready to record and recording
+		// keep theirs: the bar is the only place those states show how to start and stop the take.
+		if (!pbd::practice::shown_displays(data.practice.view).control_hints && data.practice.dummy.state != dummy_state::recording &&
 			data.practice.dummy.state != dummy_state::ready)
 			bar = {};
 	}

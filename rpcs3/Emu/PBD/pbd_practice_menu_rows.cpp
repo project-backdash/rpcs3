@@ -210,14 +210,23 @@ void pbd::rollback_session::practice_steps::native_menu::restart_rows()
 void pbd::rollback_session::practice_steps::native_menu::display_rows()
 {
 	namespace display_rows = pbd::practice::display_rows;
-	choice_row(display_rows::p1_history, "P1 Command History", true, "Show P1's inputs at the left edge of the screen.");
-	choice_row(display_rows::p2_history, "P2 Command History", true, "Show P2's inputs at the right edge of the screen.");
-	choice_row(display_rows::attack_info, "Attack Info", true, "Show each side's last hit, its latest combo's hits and damage, and the session's damage during the fight.");
-	choice_row(display_rows::frame_data, "Frame Data", true, "Show each side's Startup and Frame Advantage, with the outcome for a launch, knockdown, wall hit or throw, and whether your attack punished one you blocked.");
-	choice_row(display_rows::control_hints, "Control Hints", true, "Show the control bar at the bottom of the screen during the fight.");
-	choice_row(display_rows::movement_streaks, "Movement Streaks", true,
+	choice_row(display_rows::training_overlay, "Training Overlay", true,
+		"Show or hide the displays below during the fight. Recording and notices still show.");
+	// Hide keeps each display's own choice below; those rows wait, dimmed, until the overlay shows again.
+	const bool overlay = data.practice.view.training_overlay;
+	const auto display = [&](u32 at, const char* label, const char* help)
+	{
+		choice_row(at, label, overlay, overlay ? std::string(help) : std::string("Set Training Overlay to Display first."));
+	};
+	display(display_rows::p1_history, "P1 Command History", "Show P1's inputs at the left edge of the screen.");
+	rows.back().gap = 8;
+	display(display_rows::p2_history, "P2 Command History", "Show P2's inputs at the right edge of the screen.");
+	display(display_rows::attack_info, "Attack Info", "Show each side's last hit, its latest combo's hits and damage, and the session's damage during the fight.");
+	display(display_rows::frame_data, "Frame Data", "Show each side's Startup and Frame Advantage, with the outcome for a launch, knockdown, wall hit or throw, and whether your attack punished one you blocked.");
+	display(display_rows::control_hints, "Control Hints", "Show the control bar at the bottom of the screen during the fight.");
+	display(display_rows::movement_streaks, "Movement Streaks",
 		"Grade each backdash cancel; after 3 or more wavedashes or cancels in a row, show how many and how fast.");
-	restore_row(true, "Display both command histories, Attack Info, Frame Data and the control bar again.");
+	restore_row(true, "Set every row on this page back to Display.");
 	panel.selected = data.practice.menu.row;
 }
 

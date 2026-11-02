@@ -47,7 +47,7 @@ namespace pbd::spectator
 	template <typename Hash>
 	inline bool local_channel::poll_input(Hash hash, std::chrono::steady_clock::time_point now)
 	{
-		if (!healthy() || !m_prepared || !game_active() || !m_frames.empty() || m_reserved)
+		if (!healthy() || !m_prepared || !game_active() || m_frames.size() > lookahead_frames() || m_reserved)
 			return healthy();
 		const auto path = m_directory / ("spectator-input-" + std::to_string(m_packet_serial + 1) + ".bin");
 		std::error_code ec;
@@ -87,11 +87,12 @@ namespace pbd::spectator
 		std::deque<frame> incoming;
 		if (!decode_frames(bytes.data(), count, stride, applied, incoming))
 			return false;
-		m_frames = std::move(incoming);
+		if (!m_frames.empty() && incoming.front().boundary <= m_frames.back().boundary)
+			return refuse("sync_facts_invalid");
+		m_frames.insert(m_frames.end(), incoming.begin(), incoming.end());
 		m_receipt += count;
 		++m_packet_serial;
-		m_packet_through = m_receipt;
-		m_packet_digest = payload;
+		m_receipts.push_back({m_packet_serial, m_receipt, payload});
 		if (!publish("received", value::object({{"chunkSerial", value::number(m_packet_serial)}, {"chunkDigest", value::string(hex(payload))},
 									 {"through", value::number(m_receipt)}, {"frameCount", value::number(count)}})))
 			return refuse("report_publish_failed");
@@ -182,10 +183,12 @@ namespace pbd::spectator
 		m_frames.pop_front();
 		if (m_presentation.analyze || (m_from_start && m_consumed == 1))
 			draw();
-		if (m_consumed != m_packet_through)
+		if (m_receipts.empty() || m_consumed != m_receipts.front().through)
 			return true;
+		const receipt done = m_receipts.front();
+		m_receipts.pop_front();
 		if (!publish("consumed", value::object({{"proof", value::string("two-pad-post-v1")}, {"owner", value::number(owner)}, {"cia", value::number(pc)},
-									 {"chunkSerial", value::number(m_packet_serial)}, {"chunkDigest", value::string(hex(m_packet_digest))}, {"through", value::number(m_consumed)},
+									 {"chunkSerial", value::number(done.serial)}, {"chunkDigest", value::string(hex(done.payload))}, {"through", value::number(m_consumed)},
 									 {"boundaryThrough", value::number(pbd_source_boundary(boundary) + 1)}, {"hashCheckedThrough", value::number(m_checked)}})))
 			return refuse("report_publish_failed");
 		return true;

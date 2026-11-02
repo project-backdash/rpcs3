@@ -105,6 +105,9 @@ struct pbd_direct_match::state
 	std::array<pbd::game_profile::record, 2> player_records{};
 	std::optional<pbd::rank_stakes::game_values> rank_screens;
 	std::optional<pbd::replay_notices::placements> placements;
+	// The throw break rule as the recording ran it: the game start's setting, then each recorded round's from its first
+	// input (pbd_throw_break.h). Only the game start's for a watched game, whose inputs come from the stream.
+	pbd::throw_break::lookahead_rounds throw_break;
 	std::chrono::steady_clock::time_point accepted;
 	s64 loading_vblank = 0;
 	u32 loading_limit = 0;
@@ -457,6 +460,8 @@ struct pbd_direct_match::state
 		player_ranks = start.ranks;
 		player_records = start.records;
 		handicaps = start.handicaps;
+		throw_break = {};
+		throw_break.add(0, start.throw_break);
 		recorded_input_counter = start.input_counter;
 		recorded_input_context = start.input_context;
 		ordinal = start.ordinal;

@@ -64,11 +64,13 @@ bool pbd::rollback_session::tick_dispatch::inject_input(u32 port, port_sample& s
 	{
 		raw = 0;
 		row.raw[port] = 0;
+		row.throw_break[port].practice_word = 0;
 	}
 	if (data.practice.rewind && !data.peer.enabled && pbd::practice::start::holds_port(port))
 	{
 		raw = 0;
 		row.raw[port] = 0;
+		row.throw_break[port].practice_word = 0;
 	}
 	// Live controller: the device read is recorded in original_r3 and becomes the NEXT tick's input;
 	// this tick injects row.raw exactly like a tape value so both peers execute identical, pre-published inputs.
@@ -139,12 +141,14 @@ void pbd::rollback_session::tick_dispatch::read_practice_input(u32 port, const p
 			                     !pbd::practice::controls::claims_input(data.practice_pause_scene()) && !data.practice.restart.reset_request &&
 			                     !data.practice.dummy.ignore_until_release && !data.takeover.ignore_pad_until_release &&
 			                     !pbd::settings_menu::claimed() && !data.game_overlay.claim;
-			if (const auto lesson_word = pbd::practice::lesson::input(port, allowed,
-					side && *side == pbd::practice::movement::screen_side::right))
+			const auto lesson_word = pbd::practice::lesson::input(port, allowed, side && *side == pbd::practice::movement::screen_side::right);
+			if (lesson_word)
 				raw = *lesson_word;
-			if (const auto move_word = pbd::practice::dummy_move::input(port, allowed,
-					side && *side == pbd::practice::movement::screen_side::right))
+			const auto move_word = pbd::practice::dummy_move::input(port, allowed, side && *side == pbd::practice::movement::screen_side::right);
+			if (move_word)
 				raw = *move_word;
+			if (lesson_word || move_word)
+				row.throw_break[port].practice_word = static_cast<u16>(raw);
 		}
 		if (!practice_press)
 			raw = pbd::practice::controls::fight_word(raw, data.session.in_match && data.practice.native.screen == 0);
@@ -153,7 +157,10 @@ void pbd::rollback_session::tick_dispatch::read_practice_input(u32 port, const p
 		// Loading phases consume neutral input in the same way at the injection and verification stages. A live
 		// device read must not replace that decision between character select and the native Practice arena.
 		if (data.session.enabled && data.neutral_at(index))
+		{
 			raw = 0;
+			row.throw_break[port].practice_word = 0;
+		}
 		row.raw[port] = static_cast<u16>(raw);
 	}
 }
@@ -196,10 +203,15 @@ void pbd::rollback_session::tick_dispatch::apply_practice_pause_input(u32 port, 
 		// released, before Practice's own pause has landed too; the dummy's playback keeps feeding P2.
 		if (pbd::settings_menu::blanks_port(pbd::settings_menu::claimed(), data.practice.rewind, port, data.practice.dummy.state == dummy_state::playing))
 			raw = 0;
-		// Input Delay Frames: P1's fight words run late; the START Practice injects below never waits.
+		// Input Delay Frames: P1's fight words run late; the START Practice injects below never waits. The throw break rule
+		// reads ahead from the word as it was before the delay, and how long it waits (pbd_throw_break.h).
 		if (port == 0)
-			raw = data.practice.input_delay.frame(static_cast<u16>(raw), data.practice.input_delay_frames,
-				data.session.in_match && data.practice.native.screen == 0 && !data.practice.native.paused);
+		{
+			const bool fight = data.session.in_match && data.practice.native.screen == 0 && !data.practice.native.paused;
+			row.throw_break[0].practice_word = static_cast<u16>(raw);
+			row.throw_break[0].practice_delay = static_cast<u8>(fight ? std::min(data.practice.input_delay_frames, pbd::practice::max_input_delay) : 0);
+			raw = data.practice.input_delay.frame(static_cast<u16>(raw), data.practice.input_delay_frames, fight);
+		}
 		if (data.practice.pause.requested)
 		{
 			raw = 0;
@@ -221,6 +233,9 @@ void pbd::rollback_session::tick_dispatch::apply_practice_pause_input(u32 port, 
 			data.practice.pause.resume_native = false;
 			data.practice.pause.resume_watch.sent(index);
 		}
+		// A word that replaces the delayed word replaces the word before the delay too.
+		if (port == 0 && (data.practice.pause.requested || practice_press))
+			row.throw_break[0].practice_word = static_cast<u16>(raw);
 	}
 	// Practice before its pause state can be read (its character and stage select, loading). The in-game Settings
 	// menu's claim needs no test here: cellPad already hands every guest read neutral words while it holds this PC's
@@ -228,4 +243,203 @@ void pbd::rollback_session::tick_dispatch::apply_practice_pause_input(u32 port, 
 	// and a watcher's two ports carry recorded input and never pass through it (pbd::settings_menu::blanks_port).
 	else
 		raw = practice_select_word(static_cast<u16>(raw));
+}
+
+// The throw break rule at its probes, on the owner thread inside the battle update that follows a tick's input update. Only
+// reads the registers (observed sites keep the compiler's cached registers after the callback); the slot, +0x6c4 and the
+// direction fields are written in guest memory, each after the undo log has its old value, so a rollback restores them with
+// the rest of the tick.
+void pbd::rollback_session::throw_break_probe(ppu_thread& ppu, u32 pc) noexcept
+{
+	if (ppu.id != pbd::t5dr::main_ppu_id || !m_active.load(std::memory_order_relaxed) || !m_storage || !m_storage->throw_break.on)
+		return;
+	namespace rule = pbd::throw_break;
+	auto& data = *m_storage;
+	auto& state = data.throw_break;
+	if (!state.executing)
+		return;
+	const u32 tick = *state.executing;
+	update_sample& row = state.side_row ? data.roundtrip.repeat_row : data.sample_at(tick);
+	const u32 address = static_cast<u32>(ppu.gpr[31]);
+	const auto byte = [](u32 at) -> u8
+	{
+		u8 value = 0;
+		return vm::try_access(at, &value, 1, false) ? value : u8{0};
+	};
+	const auto lookahead_of = state.lookahead_of(row.throw_break);
+	const auto refuse = [&](const char* reason)
+	{
+		data.guard_failure.store(reason);
+		if (data.live_stats)
+			pbd::live_stats::publish_guard(reason);
+		pbd_session_log.error("Throw break rule refused at tick %u (pc 0x%x, actor 0x%x): %s", tick, pc, address, reason);
+		finish(guard_failed);
+	};
+	const auto fighter = rule::read_actor(byte, address);
+	if (!rule::side_of(address) || fighter.port > 1)
+	{
+		if (lookahead_of[0] || lookahead_of[1])
+			refuse("throw_break_actor_unknown");
+		return;
+	}
+	auto& record = row.throw_break[fighter.port];
+	const auto spans = [&](u32 move, u32 moveset)
+	{
+		return state.spans.get(byte, move, moveset);
+	};
+	const auto write = [&](u32 at, u32 value)
+	{
+		pbd_tick_undo_store(ppu, at, 4);
+		u8 bytes[4]{static_cast<u8>(value >> 24), static_cast<u8>(value >> 16), static_cast<u8>(value >> 8), static_cast<u8>(value)};
+		return vm::try_access(at, bytes, 4, true);
+	};
+	// The scan sees the direction fields of the word ahead while a window reads them; the stock ones go back after it. A
+	// step whose word Practice blanked built them from nothing held, as offline.
+	if (pc == rule::scan_entry || pc == rule::scan_exit)
+	{
+		const u32 fields = address + rule::actor::direction_held;
+		if (pc == rule::scan_entry)
+		{
+			if (!record.loaded || !record.view || record.view_written || record.blanked)
+				return;
+			record.stock_fields = rule::read32(byte, fields);
+			if (record.stock_fields != record.view_fields && !write(fields, record.view_fields))
+				return refuse("throw_break_write_failed");
+			record.view_written = true;
+			return;
+		}
+		if (!record.view_written)
+			return;
+		if (rule::read32(byte, fields) != record.view_fields)
+			return refuse("throw_break_view_changed");
+		if (record.stock_fields != record.view_fields && !write(fields, record.stock_fields))
+			return refuse("throw_break_write_failed");
+		record.view_written = false;
+		return;
+	}
+	if (pc == rule::latch_entry)
+	{
+		rule::note_step(record, fighter, static_cast<u16>(ppu.gpr[7]));
+		const rule::step_registers step{static_cast<u16>(ppu.gpr[7]), static_cast<u16>(ppu.gpr[6])};
+		if (const char* refusal = rule::check_latch_entry(byte, address, tick, lookahead_of, row.throw_break, state.tech_rolls, step, spans))
+		{
+			pbd_session_log.error("Throw break step at tick %u: held 0x%x pressed 0x%x, +0x6c4 0x%x; loaded %u, stock 0x%x, slot 0x%x, +0x6c4 "
+								  "planned 0x%x (gate %u, mask 0x%x); previous step %u stock 0x%x (gate %u, known %u)",
+				tick, step.held, step.pressed, rule::read32(byte, address + rule::actor::previous_held), u32{record.loaded}, record.stock,
+				record.slot, record.previous_loaded, u32{record.gate_open}, record.use.mask, record.previous_step, record.previous_stock,
+				u32{record.previous_gate_open}, u32{record.previous_known});
+			return refuse(refusal);
+		}
+		if (record.loaded && record.slot != record.stock && !write(rule::slot_of(fighter.port), record.stock))
+			refuse("throw_break_write_failed");
+		return;
+	}
+	if (record.loaded && (lookahead_of[0] || lookahead_of[1]))
+		return refuse("throw_break_step_repeated");
+	// A mirror match may run both fighters from one loaded moveset, where only the break windows count; a developer run stops
+	// there so that a dump can settle it.
+	if (!state.movesets_checked && (lookahead_of[0] || lookahead_of[1]))
+	{
+		state.movesets_checked = true;
+		if (rule::shared_moveset(byte))
+		{
+			pbd_session_log.warning("Throw break rule: both fighters run the moveset at 0x%x in match %u; only break windows read ahead.",
+				fighter.moveset, data.session.matches);
+			if (state.developer)
+				return refuse("throw_break_shared_moveset");
+		}
+	}
+	// The held mask a port's input update stores at tick `source`. A peer session's own port reads the frozen local word,
+	// which the push model fixes D ticks ahead; the other port reads what has arrived as of the tick's boundary, or the
+	// prediction, except on a lockstep tick, which is final once it runs and so takes only a word that has arrived (the
+	// boundary waits for it while the fighter is held; a window that opens there without it refuses). Practice reads the
+	// player's word before the delay, at the step L ticks earlier, from the tick's row. A replay reads its recorded word, and
+	// a watched game the stream's frame for that tick, which the watcher holds before it runs a tick (local_channel::reserve).
+	u32 stage = pc;
+	boundary_call call{*this, data, ppu, stage};
+	const bool watched = data.spectator.channel && (!data.lobby.direct_match.enabled() || data.lobby.direct_match.pbd_live_inputs());
+	const bool lockstep = state.peer && tick < data.history.lockstep_ticks.size() && data.history.lockstep_ticks[tick];
+	const auto held_at = [&](u16 port, u32 source) -> std::optional<u16>
+	{
+		std::optional<u16> word;
+		if (state.peer)
+		{
+			if (source >= data.extent())
+				return std::nullopt;
+			if (port == data.peer.role)
+				word = data.history.live_fixed[source] ? std::optional<u16>{data.history.live_inputs[source]} : std::nullopt;
+			else if (lockstep && data.history.peer_remote_arrival[source] < 0)
+				return std::nullopt;
+			else
+				word = call.peer_remote_for(source, state.now);
+		}
+		else if (state.playback)
+			word = watched ? data.spectator.channel->pbd_queued_pad(source, port) : data.lobby.direct_match.pbd_recorded_word(source, port);
+		else if (port == 0)
+			word = rule::practice_word_at(row.throw_break[0], tick, source - lookahead_of[0]);
+		return word ? std::optional<u16>{static_cast<u16>(mapped_mask(*word))} : std::nullopt;
+	};
+	const bool was_reading = record.previous_read;
+	const rule::step_plan plan =
+		rule::at_word_load(byte, address, static_cast<u32>(ppu.gpr[30]), tick, lookahead_of, row.throw_break, state.tech_rolls, spans, held_at);
+	if (plan.refusal)
+		return refuse(plan.refusal);
+	rule::take_plan(record, plan);
+	if (plan.slot && !write(rule::slot_of(fighter.port), *plan.slot))
+		return refuse("throw_break_write_failed");
+	if (plan.previous_held && !write(address + rule::actor::previous_held, *plan.previous_held))
+		return refuse("throw_break_write_failed");
+	// A line where a window starts reading ahead, and one for every press it moves: fired from ahead, a used copy masked, or
+	// a press that came too early for its window.
+	if ((plan.use.reads() && !was_reading) || plan.early || plan.masked || plan.missed)
+	{
+		const auto text = fmt::format("{\"type\":\"throw_break\",\"tick\":%u,\"port\":%u,\"move\":%u,\"frame\":%u,\"lookahead\":%u,\"mask\":%u,"
+									  "\"source\":%u,\"word\":%u,\"stock\":%u,\"early\":%u,\"masked\":%u,\"missed\":%u,\"replayed\":%s}\n",
+			tick, fighter.port, fighter.move, fighter.frame, plan.ahead, plan.use.mask, plan.use.source, plan.use.word, plan.stock, plan.early,
+			plan.masked, plan.missed, json_bool(state.now != tick));
+		if (data.peer.file)
+			data.peer.file.write(text.data(), text.size());
+		else
+			pbd_session_log.notice("%s", text.substr(0, text.size() - 1));
+	}
+}
+
+// A replay or a watched game plays as it was played, so it runs the rule as its recording or stream names it, whatever
+// this PC's switch says. A watcher learns each game's setting as that game begins (local_channel::pbd_throw_break), so it
+// keeps the rule ready for every game; with L 0 the rule writes nothing.
+const char* pbd::rollback_session::configure_throw_break_playback() noexcept
+{
+	if (!m_storage || m_storage->peer.enabled || m_storage->practice.rewind)
+		return nullptr;
+	auto& s = *m_storage;
+	const bool watched = s.spectator.channel && (!s.lobby.direct_match.enabled() || s.lobby.direct_match.pbd_live_inputs());
+	const bool recorded = watched || s.lobby.direct_match.pbd_throw_break_recorded();
+	s.throw_break.configure_playback(recorded);
+	if (recorded && !watched)
+		pbd_session_log.notice("Throw break rule: the replay reads ahead as its players' games did.");
+	return nullptr;
+}
+
+// The live recording asks at each game and round start, on the owner thread. A game start needs only the applied delay: no
+// press is tracked before a game, wherever the initializer runs. A round start reads the tick whose input update has run;
+// the stretch between rounds runs in lockstep, so that tick is final.
+std::optional<pbd::throw_break::lookahead_setting> pbd::rollback_session::throw_break_round_start(bool round) noexcept
+{
+	if (!m_storage)
+		return pbd::throw_break::lookahead_setting{};
+	auto& data = *m_storage;
+	const auto& state = data.throw_break;
+	if (state.on && state.peer && !state.applied)
+		return std::nullopt;
+	const auto value = state.recorded();
+	if (!value.any() || !round)
+		return value;
+	const u32 tick = pbd::fn_hook::current_tick.load(std::memory_order_relaxed);
+	if (state.executing != tick || state.side_row || !data.history_contains(tick))
+		return std::nullopt;
+	const auto& row = data.sample_at(tick);
+	for (u32 port = 0; port < 2; ++port)
+		if (!pbd::throw_break::settled_after(row.throw_break[port], tick))
+			return std::nullopt;
+	return value;
 }

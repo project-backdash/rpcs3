@@ -224,6 +224,9 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)setup_digest_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)shader_build_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)skip_guard_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
@@ -297,6 +300,9 @@
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)practice_throw_escape_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)throw_break_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)practice_lesson_test.cpp">

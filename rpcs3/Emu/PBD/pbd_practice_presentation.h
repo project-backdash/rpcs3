@@ -36,6 +36,8 @@ namespace pbd::practice
 		bool control_hints = true;
 		// The pop-up for a run of P1's wavedashes or backdash cancels once it ends.
 		bool movement_streaks = true;
+		// Training Overlay: off hides every display above at once and keeps each one's own choice (shown_displays).
+		bool training_overlay = true;
 		// The fresh (never re-executed) boundary that published this view was about to run a Practice fight step
 		// (practice_fight). False through loading, a K.O. or the game's own selection, so the panels never cover them.
 		bool fight_live = false;
@@ -83,6 +85,21 @@ namespace pbd::practice
 		std::uint32_t dummy_frames = 0, dummy_limit = 1800;
 		std::string dummy_slot;
 	};
+
+	// The Display Settings displays the fight shows: each row's own choice, all off while Training Overlay is Hide. The
+	// recording band, toasts and notices are not among them, so recording and errors still show.
+	struct fight_displays
+	{
+		std::array<bool, 2> command_history{};
+		bool attack_info = false, frame_data = false, control_hints = false, movement_streaks = false;
+		friend constexpr bool operator==(const fight_displays&, const fight_displays&) = default;
+	};
+	inline fight_displays shown_displays(const snapshot& view) noexcept
+	{
+		if (!view.training_overlay)
+			return {};
+		return {view.command_history, view.attack_info, view.frame_data, view.control_hints, view.movement_streaks};
+	}
 
 	struct shared_state
 	{

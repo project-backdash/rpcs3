@@ -151,6 +151,77 @@ PBD_TEST(PbdReplayFileParserAudit, AnOpenGameStartReadsWithoutFinalScoreOrInputs
 		"contradictory round settings are admitted");
 }
 
+PBD_TEST(PbdReplayFileParserAudit, TheThrowBreakRuleComesFromTheGameStartAndEachRound)
+{
+	// A recording names the throw break rule's L per side at its game start and at each round start, only while some L is
+	// above 0, with the version of the rule that ran. A game start that names it has its own schema, which builds without the
+	// rule refuse. One from before the rule names none and plays without it; anything else in its place refuses the file.
+	using json = replay::json;
+	auto cap = pbd_open_game_capsule();
+	const auto older = pbd::replay_start::pbd_read_capsule_start(cap, 123);
+	check(older.value && !older.value->throw_break.any(), "an older start plays without the rule");
+	const auto recorded = pbd::throw_break::lookahead_setting{{3, 3}};
+	check(pbd::throw_break::capsule_schema(recorded) == "pbd-game-start-capsule-draft-3" && pbd::throw_break::capsule_schema({}) == "pbd-game-start-capsule-draft-2",
+		"the schema says whether the game ran the rule");
+	cap.fields.emplace_back(std::string(pbd::throw_break::record_key), pbd::throw_break::record_json(recorded));
+	const auto stock_schema = pbd::set_channel::detail::serialize(cap);
+	check(pbd::replay_start::pbd_read_capsule_start(std::string_view(stock_schema), 123).error == "capsule_start_throw_break",
+		"a start that names the rule under the stock schema");
+	const auto text = replace(stock_schema, "pbd-game-start-capsule-draft-2", "pbd-game-start-capsule-draft-3");
+	check(text.find("\"throwBreakLookahead\":{\"version\":2,\"left\":3,\"right\":3}") != std::string::npos, "the recorded form");
+	const auto start = pbd::replay_start::pbd_read_capsule_start(std::string_view(text), 123);
+	check(start.value && start.value->throw_break == recorded, "the game start's L");
+	const auto tech = pbd::throw_break::lookahead_setting{{2, 5}, true};
+	const auto tech_json = pbd::throw_break::record_json(tech);
+	check(pbd::throw_break::read_record(&tech_json) == tech, "the developer's tech-roll switch round trips");
+	for (const char* bad : {"{\"version\":2,\"left\":0,\"right\":0}", "{\"version\":2,\"left\":7,\"right\":3}", "{\"version\":2,\"left\":3}",
+			 "{\"version\":2,\"left\":3,\"right\":3,\"techRolls\":false}", "{\"version\":2,\"left\":3,\"right\":3,\"x\":1}", "{\"left\":3,\"right\":3}",
+			 "{\"version\":3,\"left\":3,\"right\":3}", "[3,3]", "3"})
+	{
+		const auto refused = pbd::replay_start::pbd_read_capsule_start(
+			std::string_view(replace(text, "{\"version\":2,\"left\":3,\"right\":3}", bad)), 123);
+		check(!refused.value && refused.error == "capsule_start_throw_break", std::string("refused: ") + bad);
+	}
+	const auto without = pbd::replay_start::pbd_read_capsule_start(
+		std::string_view(replace(text, ",\"throwBreakLookahead\":{\"version\":2,\"left\":3,\"right\":3}", "")), 123);
+	check(!without.value && without.error == "capsule_start_throw_break", "the rule's schema without the rule");
+	// A recording of the retired rule, which read the held fighter's whole word ahead, refuses with its own reason.
+	check(pbd::replay_start::pbd_read_capsule_start(std::string_view(replace(text, "{\"version\":2,", "{\"version\":1,")), 123).error ==
+			  pbd::throw_break::retired_refusal,
+		"a game start of the retired rule");
+	check(pbd::replay_start::pbd_read_capsule_start(std::string_view(replace(text, "capsule-draft-3", "capsule-draft-4")), 123).error ==
+			  "capsule_start_identity",
+		"an unknown schema");
+	const auto rule_file = replay::parse(replace(closed_game, "pbd-game-start-capsule-draft-2", "pbd-game-start-capsule-draft-3"));
+	check(rule_file.value, "a file whose games may name the rule");
+	check(!replay::parse(replace(closed_game, "pbd-game-start-capsule-draft-2", "pbd-game-start-capsule-draft-4")).value, "a file of another schema");
+	// Round capsules: each names the L from its first input on; one without it plays its round without the rule.
+	const auto point = [](u32 initializer, u32 offset)
+	{
+		return json::object({{"initializer", json::number(initializer)}, {"nativeOrdinal", json::number(0)}, {"frameCounter", json::number(9)},
+			{"inputOffset", json::number(offset)}, {"spawnSelector", json::number(0)}, {"sourceSegment", json::number(0)},
+			{"generatorContext", json::object({})},
+			{"scoreResult", json::array({json::array({json::number(0), json::number(0)}), json::array({json::number(0), json::number(0)})})}});
+	};
+	auto round = json::object({{"schema", json::string("pbd-round-start-capsule-draft-1")}, {"anchor", json::string("before-native-round-initializer")},
+		{"round", json::number(1)}, {"cleanup", json{}}, {"ready", point(4, 0)}, {"qualified", json::boolean(false)}});
+	const auto file_with = [&](const json& capsule)
+	{
+		return replace(closed_game, "\"roundCapsules\":[]", "\"roundCapsules\":[" + pbd::set_channel::detail::serialize(capsule) + "]");
+	};
+	const auto plain = replay::parse(file_with(round));
+	check(plain.value && plain.value->rounds.size() == 1 && !plain.value->rounds[0].throw_break.any(), "a round from before the rule");
+	round.fields.emplace_back(std::string(pbd::throw_break::record_key), pbd::throw_break::record_json(recorded));
+	const auto with_rule = replay::parse(file_with(round));
+	check(with_rule.value && with_rule.value->rounds[0].throw_break == recorded, "the round's L");
+	round.fields.back().second = json::object({{"version", json::number(2)}, {"left", json::number(0)}, {"right", json::number(0)}});
+	check(replay::parse(file_with(round)).error == "private_round_throw_break", "a round naming no L refuses the file");
+	round.fields.back().second = json::object({{"version", json::number(3)}, {"left", json::number(3)}, {"right", json::number(3)}});
+	check(replay::parse(file_with(round)).error == "private_round_throw_break", "and so does a round of another rule");
+	round.fields.back().second = json::object({{"version", json::number(1)}, {"left", json::number(3)}, {"right", json::number(3)}});
+	check(replay::parse(file_with(round)).error == pbd::throw_break::retired_refusal, "a round of the retired rule, with its own reason");
+}
+
 PBD_TEST(PbdReplayFileParserAudit, RecordedPlacementNoticesFollowTheSameIntroAndRoundScreens)
 {
 	using namespace pbd::replay_notices;

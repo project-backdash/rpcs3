@@ -105,18 +105,6 @@ namespace pbd::controllers
 			return path;
 		}
 #endif
-		// The left stick also as the directions, so an analog stick moves the fighter and the menus.
-		void fold_left_stick(state& value)
-		{
-			if (value.sticks[0] < -.5f)
-				value.buttons |= bit(left);
-			if (value.sticks[0] > .5f)
-				value.buttons |= bit(right);
-			if (value.sticks[1] < -.5f)
-				value.buttons |= bit(up);
-			if (value.sticks[1] > .5f)
-				value.buttons |= bit(down);
-		}
 		// The launcher's layout (gameSettings.ts buttonMapping, or the Controls page's last change): each physical button's
 		// action, so a face button or shoulder can be any attack or combination and a stick click with an action is that action.
 		state map_actions(state value, const settings::layout& mapping)

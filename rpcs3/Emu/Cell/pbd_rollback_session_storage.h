@@ -102,6 +102,7 @@ struct pbd::rollback_session::storage
 	rewind_state rewind;
 	practice_state practice;
 	game_overlay_state game_overlay;
+	pbd::throw_break::session_state throw_break;
 	usz history_slot(u32 index) const noexcept
 	{
 		return history.practice_continuous ? history.practice_window.slot(index) : index;

@@ -226,6 +226,39 @@ PBD_TEST(PbdControllerMapper, OwnershipMappingAndGlyphs)
 	check(glyph_label("start", screen) == "Enter", "the keyboard names Enter");
 }
 
+PBD_TEST(PbdControllerMapper, SticksOffLeaveOnlyTheDpad)
+{
+	// Up held on the d-pad, the left stick pushed right and the right stick down.
+	const state pad{bit(up), {1.f, 0.f, 0.f, 1.f}};
+	auto on = pad;
+	fold_left_stick(on);
+	check(on.buttons == (bit(up) | bit(right)) && on.sticks == pad.sticks, "with the sticks on the left stick also moves");
+	auto off = without_sticks(pad);
+	check(off.sticks == std::array<float, 4>{}, "with the sticks off the game reads both at rest");
+	fold_left_stick(off);
+	check(off.buttons == bit(up), "the d-pad still moves and the left stick moves no direction");
+	// SDL reports the d-pad of a pad with no gamepad mapping through a hat, and some pads through axes; taught to those, each
+	// direction is a press like any button.
+	const raw_state rest{{false}, {0.f, 0.f}, {0}};
+	auto held = rest;
+	held.hats[0] = 1;
+	held.axes[1] = 1.f;
+	layout dpad{};
+	dpad[up] = binding{binding::hat, 0, 1};
+	dpad[down] = binding{binding::axis, 1, 1};
+	check(without_sticks(map({}, held, dpad)).buttons == (bit(up) | bit(down)), "a d-pad read from a hat or an axis stays");
+	// An arcade stick or retro pad SDL maps with no d-pad reports its lever as the left stick: it keeps the directions.
+	const auto lever = without_sticks({0, {-1.f, 1.f, 0.f, 0.f}}, true);
+	check(lever.buttons == (bit(left) | bit(down)) && lever.sticks == std::array<float, 4>{},
+		"a lever SDL reads as the left stick still moves, without its analog values");
+	selector owner("keyboard");
+	std::array<source, 2> inputs{{{"keyboard", {}, true}, {"pad", {}}}};
+	owner.sample(inputs, true, false);
+	inputs[1].value = without_sticks({0, {1.f, 0.f, 0.f, 0.f}});
+	owner.sample(inputs, true, false);
+	check(owner.owner() == "keyboard", "a stick bumped while off never takes the controller");
+}
+
 PBD_TEST(PbdControllerMapper, KeyboardBindingsKeepTheTwoEnterKeysDistinct)
 {
 	using namespace pbd::raw_keyboard;

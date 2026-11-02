@@ -1,6 +1,7 @@
 #include "Emu/RSX/VK/vkutils/descriptors.h"
 #include "stdafx.h"
 #include "Emu/PBD/pbd_stall_metrics.h"
+#include "Emu/PBD/pbd_shader_build.h"
 #include "../Overlays/overlay_compile_notification.h"
 #include "../Overlays/Shaders/shader_loading_dialog_native.h"
 
@@ -1280,11 +1281,29 @@ void VKGSRender::on_init_thread()
 			m_shaders_cache->load(&dlg);
 		}
 	}
+
+	// PBD: each set is a new process, so every interpreter variant a fight needs was built again at its first draw. The
+	// builder thread builds the variants draws ask for, off the RSX thread. The variants draws needed are recorded beside
+	// the pipeline cache, in the same per-depth-format folders, and built again while the game boots, parks and loads.
+	if (g_cfg.video.shadermode == shader_mode::async_with_interpreter)
+	{
+		std::string record_dir;
+		if (!g_cfg.video.disable_on_disk_shader_cache)
+		{
+			if (const std::string cache_path = rpcs3::cache::get_ppu_cache(); !cache_path.empty())
+			{
+				record_dir = cache_path + "shaders_cache/interpreter/" + (m_device->get_formats_support().d24_unorm_s8 ? "vulkan" : "vulkan-d32s8") + "/v1/";
+			}
+		}
+
+		m_shader_interpreter.start_builder(std::move(record_dir));
+	}
 }
 
 void VKGSRender::on_exit()
 {
 	GSRender::on_exit();
+	m_shader_interpreter.stop_builder();
 	vk::destroy_pipe_compiler(); // Ensure no pending shaders being compiled
 	zcull_ctrl.release();
 }
@@ -1937,18 +1956,25 @@ bool VKGSRender::load_program()
 
 	if (shadermode == shader_mode::async_with_interpreter || shadermode == shader_mode::interpreter_only)
 	{
-		const bool is_interpreter = !m_program;
+		bool is_interpreter = !m_program;
 		const bool was_interpreter = m_shader_interpreter.is_interpreter(m_prev_program);
 
 		// First load the next program if not available
 		if (!m_program)
 		{
+			vk::shader_interpreter::variant_request request{};
 			m_program = m_shader_interpreter.get(
 				m_pipeline_properties,
 				current_fp_metadata,
 				current_vp_metadata,
 				current_vertex_program.ctrl,
-				current_fragment_program.ctrl);
+				current_fragment_program.ctrl,
+				shadermode == shader_mode::async_with_interpreter ? &request : nullptr);
+
+			if (request.pending)
+			{
+				is_interpreter = wait_for_program(request);
+			}
 
 			// Program has changed, reupload
 			m_interpreter_state = rsx::invalidate_pipeline_bits;
@@ -1979,6 +2005,79 @@ bool VKGSRender::load_program()
 	}
 
 	return m_program != nullptr;
+}
+
+// PBD: the draw's compiled program is still building on the compile workers and its interpreter variant on the interpreter
+// builder thread. Waits for whichever is ready first, so the draw runs as it would have with either and in the same order; only how long this thread
+// waits changes. Building the variant here instead held this thread, and the game's main thread waiting on it, for the
+// driver's whole compile of the interpreter: seconds on slow drivers, many times the compiled program it stood in for.
+// Returns whether the draw uses the interpreter, or no program at all when emulation stops first.
+bool VKGSRender::wait_for_program(const vk::shader_interpreter::variant_request& request)
+{
+	const u32 vp_id = m_vertex_prog ? m_vertex_prog->id : 0;
+	const u32 fp_id = m_fragment_prog ? m_fragment_prog->id : 0;
+	rsx_log.warning("Shader wait start: vp %u fp %u have no compiled program yet and their interpreter variant (options 0x%04x, state %016llx) is building",
+		vp_id, fp_id, request.options, request.state_hash);
+
+	const auto start = std::chrono::steady_clock::now();
+	std::string_view used = "no program (emulation stopped)";
+	bool interpreter = true;
+	{
+		::pbd::shader_build::scope build(::pbd::shader_build::renderer(), ::pbd::shader_build::kind::wait, request.options, request.state_hash, vp_id, fp_id);
+
+		while (!is_stopped() && !Emu.IsStopped())
+		{
+			std::this_thread::sleep_for(1ms);
+
+			// A copy: the lookup narrows the color write masks of the state it is given, and the variant's key must stay the
+			// one requested.
+			vk::pipeline_props properties = m_pipeline_properties;
+			vk::enter_uninterruptible();
+			const auto [program, vertex_prog, fragment_prog] = m_prog_buffer->get_graphics_pipeline(
+				&m_program_cache_hint,
+				current_vertex_program,
+				current_fragment_program,
+				properties,
+				true, true);
+			vk::leave_uninterruptible();
+
+			if (program)
+			{
+				m_program = program;
+				m_vertex_prog = vertex_prog;
+				m_fragment_prog = fragment_prog;
+				used = "compiled program";
+				interpreter = false;
+				break;
+			}
+
+			vk::shader_interpreter::variant_request again{};
+			m_program = m_shader_interpreter.get(
+				m_pipeline_properties,
+				current_fp_metadata,
+				current_vp_metadata,
+				current_vertex_program.ctrl,
+				current_fragment_program.ctrl,
+				&again);
+
+			if (m_program)
+			{
+				used = "interpreter";
+				break;
+			}
+
+			if (!again.pending)
+			{
+				// Not reachable: the draw's state does not change while it waits.
+				break;
+			}
+		}
+	}
+
+	m_shader_interpreter.end_wait();
+	rsx_log.warning("Shader wait end after %u ms: vp %u fp %u drew with the %s",
+		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count(), vp_id, fp_id, used);
+	return interpreter;
 }
 
 void VKGSRender::load_program_env()

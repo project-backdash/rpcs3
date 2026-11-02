@@ -2,6 +2,7 @@
 
 #include "pbd_checkpoint_write_plan.h"
 #include "pbd_session_trace.h"
+#include "pbd_throw_break.h"
 
 namespace pbd::session_runtime
 {
@@ -106,6 +107,9 @@ namespace pbd::session_runtime
 		const char* failure = nullptr;
 		const char* soft = nullptr; // Round-transition mode: first recorded (non-fatal) guard of this dispatch.
 		std::array<port_sample, 2> ports{};
+		// The throw break rule's record of this tick per port: the input step, Practice's word before its delay and what
+		// the word load used (pbd_throw_break.h). Re-executions record again.
+		std::array<pbd::throw_break::port_record, 2> throw_break{};
 	};
 
 	// One-tick witnesses: battle counters written only inside the battle update 0x15458

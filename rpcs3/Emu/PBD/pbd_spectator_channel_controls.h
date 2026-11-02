@@ -74,6 +74,15 @@ namespace pbd::spectator
 		std::optional<pbd::rank_stakes::game_values> rank_screens;
 		if (const auto* item = root.find("rankScreens"))
 			rank_screens = pbd::rank_stakes::read_values(item);
+		// The throw break rule the game runs with, as the players' game_started names it (none when absent); a capsule's game
+		// names it in its capsule too, and both must agree, or the watcher would run another game.
+		if (pbd::throw_break::retired_record(root.find(pbd::throw_break::record_key)))
+			return refuse(pbd::throw_break::retired_refusal);
+		const auto throw_break = pbd::throw_break::read_record(root.find(pbd::throw_break::record_key));
+		if (!throw_break)
+			return refuse("game_control_unverified");
+		if (capsule && *throw_break != m_identity.pbd_capsule_throw_break)
+			return refuse("spectator_capsule_identity_mismatch");
 		const bool from_start = required != nullptr, round_required = from_start || round.has_value();
 		if (m_game && (m_round_required != round_required || m_from_start != from_start))
 			return refuse("native_round_contract_changed");
@@ -107,6 +116,7 @@ namespace pbd::spectator
 		m_reported_picks = reported;
 		m_applied_picks.reset();
 		m_rank_screens = rank_screens;
+		m_throw_break = *throw_break;
 		m_game = game;
 		m_origin = origin;
 		m_receipt = m_consumed = m_checked = capsule ? m_identity.pbd_first_frame : 0;
@@ -140,6 +150,16 @@ namespace pbd::spectator
 			return refuse("native_round_control_invalid");
 		if (m_expected_round && *m_expected_round != *round)
 			return refuse("native_round_start_mismatch");
+		// A selection stream begins its game before the agreed delay may be applied; the game_started this witness comes from
+		// names the throw break rule the game runs with, which may fill in what begin_game could not name, but never change
+		// what it named.
+		if (pbd::throw_break::retired_record(root.find(pbd::throw_break::record_key)))
+			return refuse(pbd::throw_break::retired_refusal);
+		const auto throw_break = pbd::throw_break::read_record(root.find(pbd::throw_break::record_key));
+		if (!throw_break || (throw_break->any() && m_throw_break.any() && *throw_break != m_throw_break))
+			return refuse("native_round_control_invalid");
+		if (throw_break->any())
+			m_throw_break = *throw_break;
 		m_expected_round = round;
 		return true;
 	}

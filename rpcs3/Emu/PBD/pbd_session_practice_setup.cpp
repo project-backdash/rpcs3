@@ -161,6 +161,7 @@ void pbd::rollback_session::configure_practice_memory()
 		s.practice.view.frame_data = memory->saved.view.frame_data;
 		s.practice.view.control_hints = memory->saved.view.control_hints;
 		s.practice.view.movement_streaks = memory->saved.view.movement_streaks;
+		s.practice.view.training_overlay = memory->saved.view.training_overlay;
 		s.practice.restart.position = practice_store::live_restart(memory->saved.restart);
 		s.practice.restart.variant = {.switched = memory->saved.switch_positions, .dummy_back = memory->saved.dummy_back};
 		s.practice.input_delay_frames = memory->saved.input_delay;
