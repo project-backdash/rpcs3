@@ -11,11 +11,11 @@ to PROJECT BACKDASH, not to RPCS3.
 
 - Upstream: RPCS3 commit [`028d1e8f4a42df2292cdbcd35e540c9e71fc47aa`](https://github.com/RPCS3/rpcs3/commit/028d1e8f4a42df2292cdbcd35e540c9e71fc47aa) (2026-09-10, "Fix some VFS issues - #19378"), unchanged,
   as a source base; snapshot preparation fetches it shallowly and includes no private repository history.
-- Changes on top of it: 704 files (585 added, 113 changed, 6 deleted, 0 renamed), 148682 lines added and 1056 removed,
+- Changes on top of it: 704 files (585 added, 113 changed, 6 deleted, 0 renamed), 148803 lines added and 1056 removed,
   not counting this file. Line counts describe the recorded native revision; exported build adapters may differ.
-- Emulator source revision: `139f23122a445105cc3b94684426bb09252ca009`.
+- Emulator source revision: `19b3c8254656b1615e5f8b711e42a9abd13aced5`.
 - This release snapshot retains public build support and documentation, with PBD C++ formatting.
-- Release build: Project Backdash 0.61.5, `rpcs3.exe` SHA-256 `f573d64a71fb795ea794e2d72aed129edf832c9805141f5e3356c1e1cf9a3248`.
+- Release build: Project Backdash 0.61.7, `rpcs3.exe` SHA-256 `00c141a2c63f3288df39f5cd6a2e62051888116ed80788692d30ede21e556b25`.
 
 ## The GPL source in the installer
 
@@ -440,7 +440,7 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/stage_rule_test.cpp` | 70 |
 | `rpcs3/tests/pbd/stage_sync_test.cpp` | 59 |
 | `rpcs3/tests/pbd/swapchain_rebuild_test.cpp` | 432 |
-| `rpcs3/tests/pbd/throw_break_test.cpp` | 3969 |
+| `rpcs3/tests/pbd/throw_break_test.cpp` | 4089 |
 | `rpcs3/tests/pbd/undo_restore_test.cpp` | 377 |
 | `rpcs3/tests/pbd/versus_test.cpp` | 352 |
 | `rpcs3/tests/pbd/vs_cards_test.cpp` | 144 |
@@ -677,11 +677,11 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_stall_metrics.h` | 208 |
 | `rpcs3/Emu/PBD/pbd_swapchain_rebuild.h` | 130 |
 | `rpcs3/Emu/PBD/pbd_takeover_restore_steps.h` | 364 |
-| `rpcs3/Emu/PBD/pbd_throw_break.h` | 1195 |
+| `rpcs3/Emu/PBD/pbd_throw_break.h` | 1202 |
 | `rpcs3/Emu/PBD/pbd_throw_break_record.h` | 77 |
 | `rpcs3/Emu/PBD/pbd_tick_checkpoint.cpp` | 163 |
 | `rpcs3/Emu/PBD/pbd_tick_entry.cpp` | 463 |
-| `rpcs3/Emu/PBD/pbd_tick_input.cpp` | 445 |
+| `rpcs3/Emu/PBD/pbd_tick_input.cpp` | 439 |
 | `rpcs3/Emu/PBD/pbd_tick_state.cpp` | 217 |
 | `rpcs3/Emu/PBD/pbd_tick_verification.cpp` | 191 |
 | `rpcs3/Emu/PBD/pbd_undo_capture.h` | 247 |

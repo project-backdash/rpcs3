@@ -275,13 +275,10 @@ void pbd::rollback_session::throw_break_probe(ppu_thread& ppu, u32 pc) noexcept
 		pbd_session_log.error("Throw break rule refused at tick %u (pc 0x%x, actor 0x%x): %s", tick, pc, address, reason);
 		finish(guard_failed);
 	};
-	const auto fighter = rule::read_actor(byte, address);
-	if (!rule::side_of(address) || fighter.port > 1)
-	{
-		if (lookahead_of[0] || lookahead_of[1])
-			refuse("throw_break_actor_unknown");
+	const auto known = rule::probe_actor(byte, address);
+	if (!known)
 		return;
-	}
+	const auto& fighter = *known;
 	auto& record = row.throw_break[fighter.port];
 	const auto spans = [&](u32 move, u32 moveset)
 	{
@@ -336,8 +333,7 @@ void pbd::rollback_session::throw_break_probe(ppu_thread& ppu, u32 pc) noexcept
 	}
 	if (record.loaded && (lookahead_of[0] || lookahead_of[1]))
 		return refuse("throw_break_step_repeated");
-	// A mirror match may run both fighters from one loaded moveset, where only the break windows count; a developer run stops
-	// there so that a dump can settle it.
+	// A mirror match may run both fighters from one loaded moveset, where only the break windows count.
 	if (!state.movesets_checked && (lookahead_of[0] || lookahead_of[1]))
 	{
 		state.movesets_checked = true;
@@ -345,8 +341,6 @@ void pbd::rollback_session::throw_break_probe(ppu_thread& ppu, u32 pc) noexcept
 		{
 			pbd_session_log.warning("Throw break rule: both fighters run the moveset at 0x%x in match %u; only break windows read ahead.",
 				fighter.moveset, data.session.matches);
-			if (state.developer)
-				return refuse("throw_break_shared_moveset");
 		}
 	}
 	// The held mask a port's input update stores at tick `source`. A peer session's own port reads the frozen local word,

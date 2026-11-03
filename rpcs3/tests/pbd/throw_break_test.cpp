@@ -1794,6 +1794,124 @@ PBD_TEST(PbdThrowBreak, ProbesAndActors)
 		"buttons 1 to 4 in the word");
 }
 
+PBD_TEST(PbdThrowBreak, TemporaryActorsKeepStockTiming)
+{
+	// Actor initialization reaches the same latch routine for objects outside the live fighter records.
+	for (const u32 address : {0x425db740u, 0x425da650u, side_0 + 4, side_1 + pbd::replay_memory::actor_stride, 0u, 0xfffffff0u})
+		for (u32 delay = 0; delay <= max_lookahead; ++delay)
+		{
+			u32 reads = 0;
+			const auto byte = [&](u32) -> u8
+			{
+				++reads;
+				return 0;
+			};
+			const auto no_span = [&](u32, u32)
+			{
+				check(false, "a temporary object has no fighter move to decode");
+				return move_span{};
+			};
+			const auto no_word = [&](u16, u32) -> std::optional<u16>
+			{
+				check(false, "a temporary object must not read either port ahead");
+				return std::nullopt;
+			};
+			std::array<port_record, 2> row{};
+			row[0].escape.early[0][0] = 3;
+			row[1].escape.used_held = 2;
+			const auto before = row;
+			check(!probe_actor(byte, address), "only a live fighter can own a rule probe");
+			const auto plan = at_word_load(byte, address, 0, 12927, {delay, delay}, row, false, no_span, no_word);
+			check(!plan.needed(), "the game's own input timing passes through unchanged");
+			check(!check_latch_entry(byte, address, 12927, {delay, delay}, row, false, {both, one}, no_span), "the latch never refuses the object");
+			check(reads == 0, "unrecognized addresses are rejected before any memory access");
+			for (u32 port = 0; port < 2; ++port)
+				check(row[port].escape == before[port].escape && !row[port].loaded && !row[port].stepped, "neither fighter's history changes");
+		}
+}
+
+PBD_TEST(PbdThrowBreak, UnknownPortsKeepStockTiming)
+{
+	memory g;
+	for (const u32 address : {side_0, side_1})
+		for (const u16 port : {u16{2}, u16{0xffff}})
+		{
+			g.put16(address + actor::port, port);
+			check(!probe_actor(g, address), "an unknown port cannot select a fighter's rule history");
+			std::array<port_record, 2> row{};
+			const auto no_span = [](u32, u32)
+			{
+				return move_span{};
+			};
+			const auto no_word = [](u16, u32) -> std::optional<u16>
+			{
+				return std::nullopt;
+			};
+			check(!at_word_load(g, address, port, 100, {3, 3}, row, false, no_span, no_word).needed(), "unknown ports keep stock input");
+			check(!check_latch_entry(g, address, 100, {3, 3}, row, false, {both, both}, no_span), "unknown ports cannot stop the game");
+		}
+}
+
+PBD_TEST(PbdThrowBreak, UnlistedMovesKeepStockTimingInEverySession)
+{
+	for (const u16 port : {u16{0}, u16{1}})
+		for (u32 delay = 0; delay <= max_lookahead; ++delay)
+			for (u32 mode = 0; mode < 3; ++mode)
+			{
+				memory g;
+				const u32 address = port ? side_1 : side_0;
+				g.put16(address + actor::port, port);
+				g.put32(address + actor::moveset, 0x20000000);
+				g.put32(address + actor::move_moveset, 0x21000000);
+				g.put32(address + actor::move, 0x21001234);
+				g.put32(address + actor::life, 0x00910000);
+				g.put32(address + actor::previous_held, one);
+				g.put32(slot_of(port), both | back);
+				const auto checksum = g.checksum();
+				std::array<port_record, 2> row{};
+				auto& record = row[port];
+				record.previous_known = record.previous_gate_open = true;
+				record.previous_ahead = static_cast<u8>(delay);
+				record.previous_step = 99;
+				record.escape.base = 99;
+				record.escape.early[0][0] = 1;
+				record.escape.used_held = 2;
+				record.escape.queued = 4;
+				session_state session;
+				if (mode == 0)
+					session.configure_peer(setting::on, setting::off, true, delay);
+				else if (mode == 1)
+				{
+					session.configure_practice(setting::on, setting::off);
+					row[0].practice_delay = static_cast<u8>(delay);
+				}
+				else
+				{
+					session.configure_playback(true);
+					check(!take_recorded(row, nullptr, 100, {{delay, delay}}, true), "the recorded settings are usable");
+				}
+				const auto no_span = [](u32, u32)
+				{
+					return move_span{};
+				};
+				const auto no_word = [](u16, u32) -> std::optional<u16>
+				{
+					check(false, "an unreadable move never requests input ahead");
+					return std::nullopt;
+				};
+				const auto ahead = session.lookahead_of(row);
+				const auto plan = at_word_load(g, address, port, 100, ahead, row, false, no_span, no_word);
+				check(!plan.needed() && plan.stock == (both | back) && plan.escape.empty(), "an unknown move keeps the stock word without carrying escape guesses");
+				take_plan(record, plan);
+				note_step(record, *probe_actor(g, address), both | back);
+				check(!check_latch_entry(g, address, 100, ahead, row, false, {both | back, two | back}, no_span), "the stock latch continues");
+				check(g.checksum() == checksum, "the rule makes no guest writes");
+				port_record next;
+				carry(next, &record, 101);
+				check(next.previous_known && next.previous_stock == (both | back) && next.escape.empty(), "the next step starts from the actual stock input");
+			}
+}
+
 PBD_TEST(PbdThrowBreak, ReadWidths)
 {
 	memory guest;
@@ -2477,18 +2595,19 @@ PBD_TEST(PbdThrowBreak, WordLoadAndLatchEntry)
 	check(says(plan_at(100).refusal, "throw_break_source_missing"), "nor the previous step's");
 	words = {{102, 0}, {103, 0}};
 	record.previous_known = false;
-	check(says(plan_at(100).refusal, "throw_break_previous_step_unknown"), "a window whose previous step is not held");
+	check(!plan_at(100).needed(), "a window whose previous step is not held keeps stock timing");
 	prepare(0, 0, 0);
 	record.previous_ahead = 2;
 	check(!plan_at(100).use.reads() && !plan_at(100).refusal, "the first step with a new L tracks from there");
 	prepare(0, 0, 0);
-	check(says(at_word_load(g, side_1, 0, 100, ahead, row, false, span_of, held_at).refusal, "throw_break_port_mismatch"), "another port's slot");
+	check(!at_word_load(g, side_1, 0, 100, ahead, row, false, span_of, held_at).needed(), "another port's slot keeps stock timing");
 	check(!at_word_load(g, side_1, 0, 100, std::array<u32, 2>{0, 0}, row, false, span_of, held_at).refusal, "without L nothing is read");
 	check(!at_word_load(g, side_1, 1, 100, std::array<u32, 2>{3, 0}, row, false, span_of, held_at).use.reads(), "L of the other port");
 
 	// A step the word load did not see.
 	prepare(0, 0, 0);
-	check(says(check_latch_entry(g, side_1, 100, ahead, row, false, {0, 0}, span_of), "throw_break_step_unhooked"), "a window step from another source");
+	check(!check_latch_entry(g, side_1, 100, ahead, row, false, {0, 0}, span_of) && !record.use.reads() && record.escape.empty() && record.ahead == 0,
+		"a window step from another source keeps stock timing and starts a fresh history");
 	m.put32(side_1 + actor::move, lay.moves[0][0]);
 	m.put32(side_1 + actor::move_moveset, layout::base[0]);
 	prepare(held_mask(forward), 0, 0);
@@ -3893,7 +4012,8 @@ PBD_TEST(PbdThrowBreak, ARoundJumpStartsOnlyWhereNothingIsTracked)
 				const bool same = !jumped.refusal && std::equal(jumped.digests.begin() + at, jumped.digests.end(), full.digests.begin() + at);
 				if (full.rows[at][side].use.reads())
 				{
-					check(says(jumped.refusal, "throw_break_previous_step_unknown"), "a window's step needs the step before");
+					check(!jumped.refusal && !jumped.rows[at][side].use.reads(), "a window without its previous step starts at stock timing");
+					inexact += !same;
 					continue;
 				}
 				check(same || !settled_there, "a round start where nothing is tracked plays as recorded");

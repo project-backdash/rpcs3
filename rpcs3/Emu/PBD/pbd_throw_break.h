@@ -418,6 +418,17 @@ namespace pbd::throw_break
 		return view;
 	}
 
+	// Actor initialization also runs the input routine on other objects. Only the two live fighter records can own
+	// a port's escape history; reject other addresses before reading their fields or changing that history.
+	template <typename Byte>
+	constexpr std::optional<actor_view> probe_actor(const Byte& byte, u32 address)
+	{
+		if (!side_of(address))
+			return std::nullopt;
+		const actor_view fighter = read_actor(byte, address);
+		return fighter.port <= 1 ? std::optional<actor_view>{fighter} : std::nullopt;
+	}
+
 	// What the rule moves at one step: the word bits of K; those a window other than a sequence reads, where a press that
 	// arrives late was made too early; whether the hold can go on, where every press that arrives late was; and whether a
 	// window reads the directions.
@@ -798,8 +809,8 @@ namespace pbd::throw_break
 		return std::nullopt;
 	}
 
-	// What the word load writes, and what it leaves for the next step; or the session ends because a word or a step the
-	// step needs is not known.
+	// What the word load writes and leaves for the next step. Unknown actor and move states keep stock timing; a word
+	// needed by a known escape must be available before the step can run.
 	struct step_plan
 	{
 		const char* refusal = nullptr;
@@ -866,18 +877,18 @@ namespace pbd::throw_break
 		const std::array<port_record, 2>& records, bool tech_rolls, Spans&& span_of, Words&& held_at)
 	{
 		step_plan plan;
-		const actor_view fighter = read_actor(byte, address);
-		if (!fighter.human || fighter.port > 1)
+		const auto known = probe_actor(byte, address);
+		if (!known || !known->human)
 			return plan;
-		if (port_register != fighter.port && (lookahead_of[0] || lookahead_of[1]))
-		{
-			plan.refusal = "throw_break_port_mismatch";
-			return plan;
-		}
+		const actor_view& fighter = *known;
 		plan.port = fighter.port;
 		plan.stock = static_cast<u16>(read32(byte, slot_of(fighter.port)));
 		const u32 current = read32(byte, address + actor::previous_held);
 		plan.previous_loaded = current;
+		// An alternate slot or an unreadable move cannot identify an escape. Keep this step's stock timing and start
+		// its history afresh, using only guest state so every execution makes the same decision.
+		if (port_register != fighter.port)
+			return plan;
 		const u32 ahead = lookahead_of[fighter.port];
 		plan.ahead = static_cast<u8>(ahead);
 		const port_record& record = records[fighter.port];
@@ -887,13 +898,10 @@ namespace pbd::throw_break
 			return plan;
 		plan.in_hold = fighter.move_moveset != fighter.moveset;
 		plan.escape.base = tick;
-		const escape_view view =
-			escapes_at(fighter, span_of(fighter.move, fighter.move_moveset), tech_rolls, hold_continues(byte, address, fighter, span_of), ahead);
-		if (view.any() && !record.previous_known)
-		{
-			plan.refusal = "throw_break_previous_step_unknown";
+		const move_span span = span_of(fighter.move, fighter.move_moveset);
+		if (!span.readable)
 			return plan;
-		}
+		const escape_view view = escapes_at(fighter, span, tech_rolls, hold_continues(byte, address, fighter, span_of), ahead);
 		// The first step with this L tracks from here and moves nothing: the session changes L only where nothing is tracked
 		// (Practice's delay drops to 0 only off the fight).
 		if (!record.previous_known || record.previous_ahead != ahead)
@@ -1022,18 +1030,19 @@ namespace pbd::throw_break
 	};
 
 	// At the latch entry, after note_step: whether the step ran what the rule planned. A step the word load did not see
-	// (another source, 0xed184 or 0xed1d4) must not have needed it; it still leaves what the rule tracks for the next step.
+	// (another source, 0xed184 or 0xed1d4) keeps its own input timing and starts a fresh history for the next word load.
 	// Where the word load wrote, +0x6c4 must hold what it left there (the input mode 0 path 0xed79c sets it without a step),
 	// and the step must have held the planned word and pressed what it fired, or nothing where Practice blanked it (0xed740),
 	// which the game decides from the word itself as it does offline. A wrong model would change the game alike on both PCs,
 	// where no hash sees it.
 	template <typename Byte, typename Spans>
-	const char* check_latch_entry(const Byte& byte, u32 address, u32 tick, const std::array<u32, 2>& lookahead_of,
+	const char* check_latch_entry(const Byte& byte, u32 address, u32 tick, const std::array<u32, 2>&,
 		std::array<port_record, 2>& records, bool tech_rolls, step_registers step, Spans&& span_of)
 	{
-		const actor_view fighter = read_actor(byte, address);
-		if (!fighter.human || fighter.port > 1)
+		const auto known = probe_actor(byte, address);
+		if (!known || !known->human)
 			return nullptr;
+		const actor_view& fighter = *known;
 		port_record& record = records[fighter.port];
 		if (!record.loaded)
 		{
@@ -1041,9 +1050,7 @@ namespace pbd::throw_break
 			{
 				return u16{0};
 			};
-			const step_plan unseen = at_word_load(byte, address, fighter.port, tick, lookahead_of, records, tech_rolls, span_of, any);
-			if (unseen.needed())
-				return "throw_break_step_unhooked";
+			const step_plan unseen = at_word_load(byte, address, fighter.port, tick, {}, records, tech_rolls, span_of, any);
 			record.stock = unseen.stock;
 			record.ahead = unseen.ahead;
 			record.escape = unseen.escape;
