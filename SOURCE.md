@@ -11,11 +11,11 @@ to PROJECT BACKDASH, not to RPCS3.
 
 - Upstream: RPCS3 commit [`028d1e8f4a42df2292cdbcd35e540c9e71fc47aa`](https://github.com/RPCS3/rpcs3/commit/028d1e8f4a42df2292cdbcd35e540c9e71fc47aa) (2026-09-10, "Fix some VFS issues - #19378"), unchanged,
   as a source base; snapshot preparation fetches it shallowly and includes no private repository history.
-- Changes on top of it: 704 files (585 added, 113 changed, 6 deleted, 0 renamed), 148635 lines added and 1056 removed,
+- Changes on top of it: 704 files (585 added, 113 changed, 6 deleted, 0 renamed), 148682 lines added and 1056 removed,
   not counting this file. Line counts describe the recorded native revision; exported build adapters may differ.
-- Emulator source revision: `c5f78433f6aea1222edb25c48f52f0d9401c99cd`.
+- Emulator source revision: `139f23122a445105cc3b94684426bb09252ca009`.
 - This release snapshot retains public build support and documentation, with PBD C++ formatting.
-- Release build: Project Backdash 0.61.4, `rpcs3.exe` SHA-256 `490751cb14e649e3da99daea40baf43d532783d3489a4c5aab0198d4e41fcb55`.
+- Release build: Project Backdash 0.61.5, `rpcs3.exe` SHA-256 `f573d64a71fb795ea794e2d72aed129edf832c9805141f5e3356c1e1cf9a3248`.
 
 ## The GPL source in the installer
 
@@ -323,7 +323,7 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/clip_buffer_test.cpp` | 215 |
 | `rpcs3/tests/pbd/clip_frames_test.cpp` | 287 |
 | `rpcs3/tests/pbd/clip_hud_test.cpp` | 202 |
-| `rpcs3/tests/pbd/controller_mapper_test.cpp` | 295 |
+| `rpcs3/tests/pbd/controller_mapper_test.cpp` | 321 |
 | `rpcs3/tests/pbd/controller_takeover_test.cpp` | 124 |
 | `rpcs3/tests/pbd/corner_chat_test.cpp` | 66 |
 | `rpcs3/tests/pbd/correction_journal_test.cpp` | 422 |
@@ -517,7 +517,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_clip_destination.h` | 182 |
 | `rpcs3/Emu/PBD/pbd_clip_hud.h` | 249 |
 | `rpcs3/Emu/PBD/pbd_controller_display.h` | 132 |
-| `rpcs3/Emu/PBD/pbd_controller_mapper.h` | 276 |
+| `rpcs3/Emu/PBD/pbd_controller_mapper.h` | 301 |
 | `rpcs3/Emu/PBD/pbd_controller_settings.h` | 187 |
 | `rpcs3/Emu/PBD/pbd_correction_execution.cpp` | 98 |
 | `rpcs3/Emu/PBD/pbd_correction_journal.h` | 456 |
@@ -691,7 +691,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/RSX/pbd_present_identity.h` | 255 |
 | `rpcs3/Input/pbd_controller_backend.cpp` | 398 |
 | `rpcs3/Input/pbd_controller_backend.h` | 27 |
-| `rpcs3/Input/pbd_controller_backend_state.h` | 541 |
+| `rpcs3/Input/pbd_controller_backend_state.h` | 545 |
 | `rpcs3/Input/pbd_gamecontrollerdb.LICENSE` | 18 |
 | `rpcs3/Input/pbd_gamecontrollerdb.h` | 500 |
 | `rpcs3/rpcs3qt/pbd_clips_controller.cpp` | 370 |

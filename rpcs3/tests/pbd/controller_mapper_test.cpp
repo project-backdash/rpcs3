@@ -259,6 +259,32 @@ PBD_TEST(PbdControllerMapper, SticksOffLeaveOnlyTheDpad)
 	check(owner.owner() == "keyboard", "a stick bumped while off never takes the controller");
 }
 
+PBD_TEST(PbdControllerMapper, ThreeMovementModesKeepAvailableDirections)
+{
+	check(read_movement_mode("") == movement_mode::both, "missing values default to both");
+	check(read_movement_mode("", false) == movement_mode::dpad, "saved Off keeps d-pad only");
+	check(read_movement_mode("both") == movement_mode::both);
+	check(read_movement_mode("dpad") == movement_mode::dpad);
+	check(read_movement_mode("analog") == movement_mode::analog);
+	check(read_movement_mode("invalid") == movement_mode::both);
+	const auto directions = bit(up) | bit(down) | bit(left) | bit(right);
+	const state pad{directions | bit(cross) | bit(l3) | bit(r3), {1.f, 0.f, -.7f, .8f}};
+	check(movement_input(pad, movement_mode::both, false, true) == pad);
+	auto analog = movement_input(pad, movement_mode::analog, false, true);
+	check(analog.buttons == (bit(cross) | bit(l3) | bit(r3)), "analog ignores all d-pad directions and keeps buttons");
+	check(analog.sticks == pad.sticks, "both sticks retain their values in analog mode");
+	fold_left_stick(analog);
+	check((analog.buttons & directions) == bit(right), "only the left stick supplies movement");
+	check(movement_input(pad, movement_mode::analog, false, false) == pad, "a pad without a left stick keeps the d-pad");
+	const auto digital = movement_input(pad, movement_mode::dpad, false, true);
+	check(digital.buttons == pad.buttons && digital.sticks == std::array<float, 4>{});
+	const auto lever = movement_input({bit(cross), {-1.f, 1.f, .8f, .9f}}, movement_mode::dpad, true, true);
+	check(lever.buttons == (bit(cross) | bit(left) | bit(down)) && lever.sticks == std::array<float, 4>{});
+	// Switching a held sample takes effect immediately in either direction.
+	check(movement_input(pad, movement_mode::both, false, true) == pad);
+	check(movement_input(pad, movement_mode::analog, false, true).buttons == (pad.buttons & ~directions));
+}
+
 PBD_TEST(PbdControllerMapper, KeyboardBindingsKeepTheTwoEnterKeysDistinct)
 {
 	using namespace pbd::raw_keyboard;

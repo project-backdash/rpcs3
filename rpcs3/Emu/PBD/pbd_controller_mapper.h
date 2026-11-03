@@ -126,16 +126,41 @@ namespace pbd::controllers
 			value.buttons |= bit(down);
 	}
 
-	// Analog sticks off (the launcher's gameSettings.controls.analogSticks): a controller's report with both sticks at rest, so
-	// the game reads them centred, the left stick folds into no direction and a stick never claims the controller. The buttons
-	// stay, the d-pad among them, whether SDL reads it from buttons, a hat or axes, and directions taught to a lever's axes.
-	// A pad SDL maps with no d-pad reports its lever or d-pad as the left stick (`left_stick_is_dpad`): that stick keeps its
-	// four directions as presses and loses only its analog values.
+	enum class movement_mode
+	{
+		both,
+		dpad,
+		analog
+	};
+
+	inline movement_mode read_movement_mode(std::string_view value, bool legacy_enabled = true)
+	{
+		if (value == "dpad")
+			return movement_mode::dpad;
+		if (value == "analog")
+			return movement_mode::analog;
+		if (value == "both")
+			return movement_mode::both;
+		return legacy_enabled ? movement_mode::both : movement_mode::dpad;
+	}
+
+	// A lever mapped as a left stick keeps digital directions when analog input is disabled.
 	inline state without_sticks(state value, bool left_stick_is_dpad = false)
 	{
 		if (left_stick_is_dpad)
 			fold_left_stick(value);
 		value.sticks = {};
+		return value;
+	}
+
+	// Filter before the left stick becomes directions. Missing analog hardware keeps the d-pad usable.
+	// Both and analog retain the right stick for games that use it; dpad centres both sticks.
+	inline state movement_input(state value, movement_mode mode, bool left_stick_is_dpad, bool has_left_stick)
+	{
+		if (mode == movement_mode::dpad)
+			return without_sticks(value, left_stick_is_dpad);
+		if (mode == movement_mode::analog && has_left_stick)
+			value.buttons &= ~(bit(up) | bit(down) | bit(left) | bit(right));
 		return value;
 	}
 

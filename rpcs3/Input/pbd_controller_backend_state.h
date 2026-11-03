@@ -5,8 +5,8 @@ struct pbd::controllers::backend::impl
 {
 	std::string config;
 	bool standalone = false, ready = false, lock = false;
-	// The launcher's Analog sticks setting, read with the rest of its settings file: a game sees no stick while it is off.
-	bool sticks = true;
+	// Read with the settings file so every game can change movement without a restart.
+	movement_mode movement = movement_mode::both;
 	std::int64_t stamp = -1;
 	std::uint64_t last_reload = 0;
 	std::uint64_t controls_revision = 0, controls_published = 0;
@@ -59,6 +59,7 @@ struct pbd::controllers::backend::impl
 		bool home_down = false;
 		// SDL maps no d-pad for this pad, so its lever or d-pad arrives as the left stick (many arcade sticks and retro pads).
 		bool left_stick_is_dpad = false;
+		bool has_left_stick = false;
 		// The buttons SDL reports for clips, and the clip button's name in the in-game prompts (pbd::clips::prompt_name).
 		bool misc1_button = false;
 		std::string clip_name;
@@ -111,6 +112,8 @@ struct pbd::controllers::backend::impl
 			                       !SDL_GamepadHasButton(d.gamepad, SDL_GAMEPAD_BUTTON_DPAD_DOWN) &&
 			                       !SDL_GamepadHasButton(d.gamepad, SDL_GAMEPAD_BUTTON_DPAD_LEFT) &&
 			                       !SDL_GamepadHasButton(d.gamepad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
+			d.has_left_stick = SDL_GamepadHasAxis(d.gamepad, SDL_GAMEPAD_AXIS_LEFTX) ||
+			                   SDL_GamepadHasAxis(d.gamepad, SDL_GAMEPAD_AXIS_LEFTY);
 			read_gamepad_bindings(d);
 		}
 		else if (SDL_GetJoystickVendor(d.joystick) == 0x054c || SDL_GetJoystickVendor(d.joystick) == 0x1532 || SDL_GetJoystickVendor(d.joystick) == 0x0f0d)
@@ -189,8 +192,8 @@ struct pbd::controllers::backend::impl
 			value = map(value, raw, d.defaults);
 		const auto taught = apply_device_layout(d, raw, value);
 		// The launcher's own menus keep the sticks; the setting is for the games.
-		if (!standalone && !sticks)
-			value = without_sticks(value, d.left_stick_is_dpad);
+		if (!standalone)
+			value = movement_input(value, movement, d.left_stick_is_dpad, d.has_left_stick);
 		const bool click = (value.buttons & bit(touchpad)) != 0;
 		const auto clip_button = pbd::clips::parse_pad_button(settings.value("clips").toObject().value("padButton").toString().toStdString());
 		const bool versus = seated && pbd::versus::input::active.load(std::memory_order_acquire);
@@ -260,8 +263,9 @@ struct pbd::controllers::backend::impl
 			selection = selector(requested);
 		}
 		lock = settings.value("controllerLock").toBool(false);
-		// Anything but an explicit false keeps the sticks, as an older settings file has none.
-		sticks = settings.value("gameSettings").toObject().value("controls").toObject().value("analogSticks").toBool(true);
+		// Old On/Off choices keep their movement; absent or invalid values use both.
+		const auto saved_movement = settings.value("gameSettings").toObject().value("controls").toObject().value("analogSticks");
+		movement = read_movement_mode(saved_movement.toString().toStdString(), saved_movement.toBool(true));
 		const auto saved = settings.value("gameSettings").toObject().value("controls").toObject().value("keyboardKeys").toObject();
 		for (unsigned i = 0; i < count; ++i)
 		{
