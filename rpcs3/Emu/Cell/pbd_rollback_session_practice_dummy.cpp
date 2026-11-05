@@ -206,6 +206,7 @@ void pbd::rollback_session::boundary_call::practice_restart_contact()
 	pbd::practice::dummy_move::current.contacts = {};
 	data.practice.contact.reaction_count.reset();
 	data.practice.reactions.wakeup_control.reset();
+	data.practice.reactions.recording_wakeup.reset();
 	data.practice.reactions.wakeup_suspended = false;
 	data.practice.reactions.guard.restart();
 	data.practice.reactions.counter_hit.restart();

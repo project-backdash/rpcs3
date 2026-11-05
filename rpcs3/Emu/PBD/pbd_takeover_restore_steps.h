@@ -303,6 +303,7 @@ struct pbd::rollback_session::takeover_restore_steps : boundary_call
 			data.practice.native.action = a.practice_native_action;
 			data.practice.native.written = a.practice_native_written;
 			data.practice.reactions.wakeup_control.reset();
+			data.practice.reactions.recording_wakeup.reset();
 			data.practice.reactions.wakeup_suspended = false;
 			data.practice.reactions.throw_escape_control.reset();
 			data.practice.history_pending = false;

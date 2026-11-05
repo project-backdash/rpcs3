@@ -14,7 +14,7 @@
 namespace pbd::session_runtime
 {
 	// Practice dummy recording is host-owned and offline-only. P1 remains the player's ordinary live input; while recording the
-	// same controller drives P2 and P1 is neutral. Accepted recordings are kept in eight bounded slots and replayed through the
+	// same controller drives P2 and P1 receives only automatic get-up input. Accepted recordings occupy eight bounded slots and use the
 	// same canonical input word consumed by the game. Scheduler entropy never reads or mutates the guest's RNG.
 	struct practice_dummy_slot
 	{
@@ -280,7 +280,7 @@ namespace pbd::session_runtime
 		struct reactions_state
 		{
 			pbd::practice::pbd_wakeup_option wakeup = pbd::practice::pbd_wakeup_option::stand_up;
-			pbd::practice::pbd_wakeup_controller wakeup_control;
+			pbd::practice::pbd_wakeup_controller wakeup_control, recording_wakeup;
 			bool wakeup_suspended = false;
 			// Guard All's guard choice (Dummy Action's Guard After First Hit and Random Guard) and Counter Hit's Random, with the
 			// host random state their draws come from (pbd::practice::pbd_guard_state, practice_guard_frame).

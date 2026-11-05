@@ -166,7 +166,7 @@ namespace pbd::practice
 		std::uint32_t allocation = 0, counter = 0;
 		bool on_floor = false, actionable = false, standing = false;
 		pbd_ground_position position = pbd_ground_position::unknown;
-		bool knocked_down = false;
+		bool knocked_down = false, recovering = false;
 	};
 	struct pbd_wakeup_controller
 	{
@@ -174,7 +174,7 @@ namespace pbd::practice
 		pbd_wakeup_option choice = pbd_wakeup_option::stand_up;
 		pbd_wakeup_option requested = pbd_wakeup_option::stand_up;
 		std::optional<std::uint32_t> counter;
-		std::uint32_t origin = 0, random_word = 0;
+		std::uint32_t random_word = 0;
 		std::uint16_t word = 0;
 		bool armed = false, engaged = false, active = false;
 		void reset() noexcept
@@ -204,10 +204,9 @@ namespace pbd::practice
 				return {};
 			if (now.knocked_down || now.on_floor)
 				engaged = true;
-			if (!active && now.on_floor)
+			if ((!active || !floor.started) && now.on_floor)
 			{
 				active = true;
-				origin = now.allocation;
 				const bool pick_again = requested == pbd_wakeup_option::random &&
 				                        (!pbd_wakeup_available(choice, now.position) || pbd_wakeup_native_action(choice));
 				floor.reset(pbd_plan_wakeup(pick_again ? pbd_wakeup_option::random : choice, now.position, false, random_word));
@@ -222,7 +221,7 @@ namespace pbd::practice
 				return {};
 			}
 			counter = now.counter;
-			word = floor.next(now.on_floor, now.actionable, now.allocation != origin).value_or(0);
+			word = floor.next(now.on_floor, now.actionable, !now.on_floor || now.recovering).value_or(0);
 			return word;
 		}
 	};

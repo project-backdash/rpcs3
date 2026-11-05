@@ -474,6 +474,7 @@ void pbd::rollback_session::practice_steps::memory_apply(const practice_store::d
 {
 	data.practice.reactions.wakeup = rows.wakeup;
 	data.practice.reactions.wakeup_control.reset();
+	data.practice.reactions.recording_wakeup.reset();
 	data.practice.reactions.wakeup_suspended = false;
 	data.practice.reactions.throw_escape = rows.throw_escape;
 	data.practice.reactions.throw_escape_control.reset();

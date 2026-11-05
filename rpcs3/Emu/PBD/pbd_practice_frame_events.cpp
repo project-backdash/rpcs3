@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "pbd_native_call.h"
+#include "pbd_practice_wakeup_reading.h"
 
 namespace pbd::practice::native
 {
@@ -172,48 +173,12 @@ namespace pbd::practice::native
 	{
 		return frame_data.references;
 	}
-	std::optional<wakeup_view> read_wakeup() noexcept
+	std::optional<wakeup_view> read_wakeup(unsigned side) noexcept
 	{
 		if (!supported() || !pbd::practice::requested() ||
-			!pbd::practice::practice_fight(word(pbd::t5dr::game_mode_address), word(pbd::t5dr::scene_address), word(0x10093230)) ||
-			word(frame_actors[0] + 0x5c) != frame_actors[1] || word(frame_actors[1] + 0x5c) != frame_actors[0])
+			!pbd::practice::practice_fight(word(pbd::t5dr::game_mode_address), word(pbd::t5dr::scene_address), word(0x10093230)))
 			return {};
-		const u32 actor = frame_actors[1], allocation = word(actor + 0xc4), bank = word(actor + 0x50);
-		// Incoming reactions can use the opponent's loaded move bank. Resting aliases still belong to the dummy.
-		if (!frame_allocation(actor, allocation) && !frame_allocation(frame_actors[0], allocation))
-			return {};
-		wakeup_view out;
-		out.allocation = allocation;
-		out.counter = word(0x1008f05c);
-		if (out.counter == ~0u)
-			return {};
-		const u32 table = word(bank + 0x1e0), count = word(bank + 0x1e4);
-		const auto alias = [&](u32 id)
-		{
-			const u32 index = word(bank + 0xac + id * 4);
-			return index < count && allocation == table + index * 0x4c;
-		};
-		const u32 flags = word(actor + 0xcc);
-		if (flags == ~0u)
-			return {};
-		out.knocked_down = (flags & 0x6000) == 0x6000;
-		out.standing = !(flags & 4) && word(actor + 0x48) == 0 && word(actor + 0x320) == 0 && (alias(1) || alias(2));
-		// The stock move-flag bit used by the get-up input handler is admitted only on its lying-pose aliases.
-		// Training's byte +1b1 is a forced-input property, not a ground-position reading.
-		if ((flags & 4) && halfword(actor + 0x146) == 1)
-		{
-			for (const u32 id : {4u, 5u, 6u, 8u, 9u, 11u, 12u, 13u, 14u})
-				if (alias(id))
-				{
-					out.on_floor = true;
-					out.actionable = halfword(actor + 0x96) > 0 && halfword(actor + 0x96) <= halfword(allocation + 0x24);
-					out.position = id == 4 ? pbd::practice::pbd_ground_position::face_up_feet_toward :
-					               id < 8  ? pbd::practice::pbd_ground_position::face_up_feet_away :
-					                         pbd::practice::pbd_ground_position::face_down_feet_toward;
-					break;
-				}
-		}
-		return out;
+		return pbd::practice::pbd_read_wakeup(side, word, halfword);
 	}
 	std::optional<pbd::practice::throw_escape_view> read_throw_escape() noexcept
 	{

@@ -86,6 +86,7 @@ bool pbd::rollback_session::practice_steps::choose_training_setting(u32 row, u32
 		{
 			data.practice.reactions.wakeup = static_cast<pbd::practice::pbd_wakeup_option>(option);
 			data.practice.reactions.wakeup_control.reset();
+			data.practice.reactions.recording_wakeup.reset();
 			data.practice.reactions.wakeup_suspended = false;
 		}
 		return true;

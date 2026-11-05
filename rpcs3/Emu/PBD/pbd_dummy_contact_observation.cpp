@@ -207,3 +207,32 @@ std::optional<u16> pbd::rollback_session::boundary_call::dummy_wakeup_word(u32 i
 
 	return std::nullopt;
 }
+
+// While the controller records P2, P1 has no live player to request a get-up. Supply the ordinary Stand Up input;
+// the Wake-up menu still describes P2, whose recorded words must remain untouched.
+u16 pbd::rollback_session::boundary_call::practice_recording_wakeup()
+{
+	auto& control = data.practice.reactions.recording_wakeup;
+	const bool recording = data.practice.dummy.state == dummy_state::recording || data.practice.dummy.state == dummy_state::ready;
+	if (!recording || !data.practice.native.pause_valid || data.practice.native.paused || data.practice.dummy.mask_ui ||
+		data.practice.dummy.ignore_until_release || data.takeover.ignore_pad_until_release || data.game_overlay.claim)
+	{
+		control.reset();
+		return 0;
+	}
+	const auto floor = pbd::practice::native::read_wakeup(0);
+	if (!floor)
+	{
+		control.reset();
+		return 0;
+	}
+	if (floor->on_floor && !control.armed)
+		control.arm(pbd::practice::pbd_wakeup_option::stand_up);
+	auto word = control.sample(*floor);
+	if (floor->on_floor && !control.armed)
+	{
+		control.arm(pbd::practice::pbd_wakeup_option::stand_up);
+		word = control.sample(*floor);
+	}
+	return pbd::practice::movement::play_word(word.value_or(0), practice_side_of(0).value_or(pbd::practice::movement::screen_side::left));
+}

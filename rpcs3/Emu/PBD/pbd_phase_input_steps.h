@@ -75,9 +75,8 @@ struct pbd::rollback_session::phase_input_steps : tick_dispatch
 		data.peer.live.assigned_any = true;
 	}
 
-	// Lockstep delay covers transit time so each tick need not wait for its input. Round intros and transitions
-	// cap it at 6 ticks to keep the first actionable inputs close to the player's presses;
-	// character select permits up to 30 ticks because it has no actionable fight inputs.
+	// Lockstep queues the rule's lookahead plus transit time: tick t needs the word t + L before it can run.
+	// Cap the transit allowance at 6 ticks during rounds and 30 in character select; fight delay stays unchanged.
 	static constexpr u32 max_lockstep_delay = 6;
 	static constexpr u32 max_select_delay = 30;
 
@@ -107,6 +106,7 @@ struct pbd::rollback_session::phase_input_steps : tick_dispatch
 					smallest = std::min(smallest, data.peer.rtt.ring[(data.peer.rtt.ring_count - 1 - k) % data.peer.rtt.ring.size()]);
 				wanted = std::clamp<u32>(static_cast<u32>(std::ceil((smallest / 2.0 + 8000.0) / frame_period_us)), 1u, select ? max_select_delay : max_lockstep_delay);
 			}
+			wanted += data.throw_break.peer_lookahead[data.peer.role];
 			data.peer.lock_delay = std::max(data.peer.lock_delay, wanted);
 			delay_here = std::max(delay_here, data.peer.lock_delay);
 		}

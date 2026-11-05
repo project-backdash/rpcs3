@@ -194,6 +194,7 @@ bool pbd::rollback_session::practice_steps::practice_dummy_settled()
 void pbd::rollback_session::practice_steps::practice_dummy_settle(const char* reason)
 {
 	data.practice.reactions.wakeup_control.reset();
+	data.practice.reactions.recording_wakeup.reset();
 	data.practice.reactions.wakeup_suspended = false;
 	data.practice.reactions.throw_escape_control.reset();
 	if (data.practice.dummy.state == dummy_state::playing && practice_dummy_settled())

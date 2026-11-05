@@ -76,6 +76,62 @@ namespace pbd::test
 				});
 		}
 
+#ifdef _WIN32
+		void lockstep_phase_inputs(u32 delay, u32 round_trip_us, bool rule, u32 role)
+		{
+			auto& data = *runtime.m_storage;
+			data.input_sequence.resize(256);
+			data.extend_session_history();
+			data.peer.role = role;
+			data.peer.live.enabled = data.peer.live.entry_sample = data.peer.phase_delay = true;
+			data.peer.input_delay = delay;
+			data.peer.rtt.ring_count = 8;
+			std::fill_n(data.peer.rtt.ring.begin(), 8, round_trip_us);
+			data.throw_break.configure_peer(rule ? throw_break::setting::on : throw_break::setting::off,
+				throw_break::setting::off, true, delay);
+			const u32 transit = std::clamp<u32>(static_cast<u32>(std::ceil((round_trip_us / 2.0 + 8000.0) / frame_period_us)), 1, 6);
+			const u32 ahead = data.throw_break.peer_lookahead[role];
+			const u32 queued = std::max(delay, ahead + transit);
+			std::array<u32, 256> sent_at;
+			sent_at.fill(~u32{0});
+			rollback_session::boundary_call call{runtime, data, *owner, pc};
+			for (u32 index = 16; index < 64; ++index)
+			{
+				data.history.entry_sampled[index] = 1;
+				const u16 word = index % 2 ? 0x10 : 0x80;
+				data.history.entry_sample[index] = word;
+				rollback_session::tick_dispatch tick{call, index, data.sample_at(index)};
+				tick.assign_phase_delay(true);
+				check(data.peer.lock_delay == ahead + transit);
+				check(data.peer.live.assigned_through == index + queued);
+				check(data.history.live_fixed[index + queued] && data.history.live_inputs[index + queued] == word);
+				check(data.throw_break.peer_lookahead[role] == ahead && data.peer.input_delay == delay);
+				peer_message::input_message packet;
+				call.append_outgoing_inputs(packet, index);
+				for (u32 k = 0; k < packet.count; ++k)
+					sent_at[packet.inputs[k].tick] = std::min(sent_at[packet.inputs[k].tick], index);
+				// The other PC's word t + L must have been sent at least one transit allowance before t.
+				if (index >= 16 + queued)
+					check(throw_break::lookahead_arrived(data.sample_at(index - 1).throw_break[1 - role], index, ahead,
+						[&](u32 source)
+						{
+							return sent_at[source] <= index - transit;
+						}));
+			}
+			const u32 fixed_through = data.peer.live.assigned_through;
+			for (u32 index = 64; index <= fixed_through; ++index)
+			{
+				const u16 fixed = data.history.live_inputs[index];
+				data.history.entry_sampled[index] = 1;
+				data.history.entry_sample[index] = 0;
+				rollback_session::tick_dispatch tick{call, index, data.sample_at(index)};
+				tick.assign_phase_delay(false);
+				check(data.history.live_inputs[index] == fixed);
+			}
+			check(data.peer.input_delay == delay && data.throw_break.peer_lookahead[role] == ahead);
+		}
+#endif
+
 		void end_input_wait()
 		{
 			auto timeout = deadline();
@@ -446,6 +502,20 @@ namespace pbd::test
 		}
 	};
 } // namespace pbd::test
+
+#ifdef _WIN32
+PBD_TEST(PbdPeerWait, LockstepQueuesLookaheadBeforeItsNetworkTransit)
+{
+	for (const u32 delay : {1u, 3u, 5u, 6u})
+		for (const u32 rtt : {40000u, 68000u, 83000u, 125000u})
+			for (const bool rule : {false, true})
+				for (const u32 role : {0u, 1u})
+				{
+					lobby_test_state::sample_document test(450);
+					pbd::test::peer_wait_fixture(test.directory).lockstep_phase_inputs(delay, rtt, rule, role);
+				}
+}
+#endif
 
 PBD_TEST(PbdPeerWait, ProtectedWaitsHonorTheLobbyEnding)
 {

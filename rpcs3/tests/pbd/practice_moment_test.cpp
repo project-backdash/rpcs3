@@ -176,6 +176,112 @@ namespace pbd::test
 			}
 		}
 
+		void recording_wakeup()
+		{
+			struct identity_scope
+			{
+				std::string title = Emu.GetTitleID(), hash = Emu.GetExecutableHash();
+				std::string requested = pbd::env::find("PBD_PRACTICE_REWIND") ? pbd::env::find("PBD_PRACTICE_REWIND") : "";
+				~identity_scope()
+				{
+					const_cast<std::string&>(Emu.GetTitleID()) = title;
+					Emu.SetExecutableHash(hash);
+#ifdef _WIN32
+					_putenv_s("PBD_PRACTICE_REWIND", requested.c_str());
+#else
+					if (requested.empty())
+						unsetenv("PBD_PRACTICE_REWIND");
+					else
+						setenv("PBD_PRACTICE_REWIND", requested.c_str(), 1);
+#endif
+				}
+			} identity;
+#ifdef _WIN32
+			_putenv_s("PBD_PRACTICE_REWIND", "1");
+#else
+			setenv("PBD_PRACTICE_REWIND", "1", 1);
+#endif
+			const_cast<std::string&>(Emu.GetTitleID()) = pbd::t5dr::title_id;
+			Emu.SetExecutableHash(pbd::t5dr::executable_hash);
+			check(vm::map(0x10050000, 0x10000, vm::page_size_64k));
+			check(vm::falloc(0x10050000, 0x10000));
+			vm::write32(pbd::t5dr::game_mode_address, 10);
+			vm::write32(pbd::t5dr::scene_address, 17);
+			vm::write32(0x10093230, 17);
+			vm::write32(0x10052a50, 0x1008ebf4);
+			vm::write32(0x1008ebf4, 0);
+			vm::write32(0x1008ec60, 0);
+			vm::write32(0x1008ec64, 0);
+			constexpr std::array<u32, 2> actors{0x10090040, 0x10090910}, banks{0x10080000, 0x10081000}, tables{0x10082000, 0x10084000};
+			for (unsigned side = 0; side < 2; ++side)
+			{
+				const u32 actor = actors[side], bank = banks[side], table = tables[side];
+				vm::write32(actor + 0x5c, actors[1 - side]);
+				vm::write16(actor + 0x3c, static_cast<u16>(side));
+				vm::write32(actor + 0x50, bank);
+				vm::write32(bank + 0x1e0, table);
+				vm::write32(bank + 0x1e4, 64);
+				const u32 commands = 0x10086000 + side * 0x1000;
+				vm::write32(bank + 0x1b0, commands);
+				vm::write32(bank + 0x1b4, 2);
+				vm::write32(commands, 0x00002004);
+				vm::write16(commands + 16, 1);
+				vm::write16(commands + 18, 255);
+				vm::write16(commands + 22, 0x50);
+				vm::write32(commands + 24, 0x80000000);
+				vm::write32(table + 0x17 * 0x4c + 0x14, commands);
+				for (u32 id = 1; id <= 0x17; ++id)
+					vm::write32(bank + 0xac + id * 4, id);
+				vm::write32(actor + 0x48, 0);
+				vm::write32(actor + 0x320, 0);
+				vm::write32(actor + 0xc4, table + 0x17 * 0x4c);
+				vm::write32(actor + 0xcc, 0x6084);
+				vm::write16(actor + 0x96, 1);
+				vm::write16(actor + 0x146, 1);
+				vm::write16(table + 0x17 * 0x4c + 0x24, 60);
+			}
+			auto& data = *runtime.m_storage;
+			data.practice.dummy.enabled = true;
+			data.practice.native.pause_valid = true;
+			data.practice.native.paused = false;
+			data.practice.training_mode = pbd::practice::training_mode::defense;
+			data.practice.dummy.pad = 0x8040;
+			data.practice.input_delay_frames = pbd::practice::max_input_delay;
+			rollback_session::boundary_call call{runtime, data, *owner, pc};
+			using state = pbd::practice::dummy_state;
+			for (const auto recording : {state::ready, state::recording})
+				for (u32 option = 0; option < pbd::practice::pbd_wakeup_option_count; ++option)
+				{
+					data.practice.dummy.state = recording;
+					data.practice.reactions.wakeup = static_cast<pbd::practice::pbd_wakeup_option>(option);
+					data.practice.reactions.recording_wakeup.reset();
+					vm::write32(0x1008f05c, 100);
+					pbd::session_runtime::update_sample row;
+					call.choose_practice_input(100, row);
+					check(row.raw[0] == 0x1000 && row.raw[1] == 0x8040, "P1 gets up while the controller's P2 take stays exact, under every Wake-up menu choice");
+					const u32 index = 100;
+					rollback_session::tick_dispatch tick{{runtime, data, *owner, pc}, index, row};
+					u32 raw = 0;
+					bool press = false;
+					tick.apply_practice_pause_input(0, raw, press);
+					check(raw == 0x1000 && !press && row.throw_break[0].practice_delay == 0, "the final P1 latch retains get-up immediately at maximum input delay");
+					raw = 0;
+					tick.apply_practice_pause_input(1, raw, press);
+					check(raw == 0x8040 && !press, "the final P2 latch retains the recording input");
+					data.practice.native.paused = true;
+					check(call.practice_recording_wakeup() == 0 && !data.practice.reactions.recording_wakeup.armed);
+					data.practice.native.paused = false;
+					data.practice.dummy.state = state::idle;
+					check(call.practice_recording_wakeup() == 0 && !data.practice.reactions.recording_wakeup.armed, "ending the role swap releases P1");
+					for (unsigned frame = 0; frame <= pbd::practice::max_input_delay; ++frame)
+					{
+						raw = 0;
+						tick.apply_practice_pause_input(0, raw, press);
+						check(raw == 0, "returning P1 to the player cannot replay an automatic get-up from the delay queue");
+					}
+				}
+		}
+
 		void precision_keeps_movement_toast()
 		{
 			struct game_identity
@@ -252,4 +358,9 @@ PBD_TEST(PbdPractice, ShortActionIntervalKeepsOtherTimings)
 PBD_TEST(PbdPractice, MovePickerMarksOtherSlotsWithoutRestrictingThem)
 {
 	pbd::test::practice_moment_fixture{}.move_picker_feedback();
+}
+
+PBD_TEST(PbdPracticeWakeup, DefenseRecordingGetsP1UpWithoutChangingTheP2Take)
+{
+	pbd::test::practice_moment_fixture{}.recording_wakeup();
 }

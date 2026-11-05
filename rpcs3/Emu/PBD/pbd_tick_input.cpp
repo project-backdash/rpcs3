@@ -170,12 +170,12 @@ void pbd::rollback_session::tick_dispatch::apply_practice_pause_input(u32 port, 
 	if (data.practice.native.pause_valid)
 	{
 		// In ordinary Practice both ports retain their device words. Recording gives the one live controller to P2 while
-		// P1 is neutral; playback feeds P2 from the selected slot and leaves P1 live. Host gestures are never guest input.
+		// P1 gets up automatically; playback feeds P2 from the selected slot and leaves P1 live. Host gestures are never guest input.
 		if (data.practice.dummy.enabled && port == 1 && (data.practice.dummy.state == dummy_state::recording || data.practice.dummy.state == dummy_state::playing || data.practice.dummy.state == dummy_state::ready || (data.practice.reactions.wakeup_control.armed && data.practice.reactions.wakeup_control.engaged) || data.practice.reactions.throw_escape_control.owns()))
 			raw = row.raw[1];
 		else if (data.practice.dummy.enabled && port == 0 &&
 				 (data.practice.dummy.state == dummy_state::recording || data.practice.dummy.state == dummy_state::ready))
-			raw = 0;
+			raw = row.raw[0];
 		if (port == 0)
 		{
 			// SELECT is a modifier: while it is down nothing else on this controller reaches the game, so a SELECT
@@ -207,7 +207,10 @@ void pbd::rollback_session::tick_dispatch::apply_practice_pause_input(u32 port, 
 		// reads ahead from the word as it was before the delay, and how long it waits (pbd_throw_break.h).
 		if (port == 0)
 		{
-			const bool fight = data.session.in_match && data.practice.native.screen == 0 && !data.practice.native.paused;
+			const bool recording = data.practice.dummy.enabled &&
+			                       (data.practice.dummy.state == dummy_state::recording || data.practice.dummy.state == dummy_state::ready);
+			// P1's automated recording get-up is not a player's delayed word; it must not remain queued when control returns.
+			const bool fight = data.session.in_match && data.practice.native.screen == 0 && !data.practice.native.paused && !recording;
 			row.throw_break[0].practice_word = static_cast<u16>(raw);
 			row.throw_break[0].practice_delay = static_cast<u8>(fight ? std::min(data.practice.input_delay_frames, pbd::practice::max_input_delay) : 0);
 			raw = data.practice.input_delay.frame(static_cast<u16>(raw), data.practice.input_delay_frames, fight);

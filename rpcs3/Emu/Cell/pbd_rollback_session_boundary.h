@@ -214,6 +214,7 @@ struct pbd::rollback_session::boundary_call
 	bool choose_reaction_slot();
 	std::optional<u16> dummy_throw_escape(u32 index);
 	std::optional<u16> dummy_wakeup_word(u32 index);
+	u16 practice_recording_wakeup();
 	u32 practice_dummy_route(u32 index);
 	void practice_getup_guard();
 	void practice_guard_frame(const std::array<u32, 2>& contacts, bool hit);

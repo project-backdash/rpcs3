@@ -1,9 +1,11 @@
 #include "pbd_test.h"
 
 #include "Emu/PBD/pbd_practice_wakeup.h"
+#include "Emu/PBD/pbd_practice_wakeup_reading.h"
 #include "Emu/PBD/pbd_movement_observation.h"
 
 #include <set>
+#include <map>
 
 namespace
 {
@@ -187,4 +189,249 @@ PBD_TEST(PbdPracticeWakeup, GuardSettingsKeepTheStockGetUp)
 	check(changed.boundary(true, false, 0, 1, 10), "Standing removes the get-up guard");
 	check(!changed.boundary(false, false, 1, 1, 11) && !changed.entered(1, 11),
 		"Standing Guard chosen during a get-up gives the rest of it the stock guard at once");
+}
+
+namespace
+{
+	// Synthetic loaded banks let the production reader see both fighters, shared reactions and every floor alias.
+	struct wakeup_memory
+	{
+		static constexpr std::array<std::uint32_t, 2> actors{0x10090040, 0x10090910};
+		static constexpr std::array<std::uint32_t, 2> banks{0x20000000, 0x20001000}, tables{0x21000000, 0x21010000};
+		std::map<std::uint32_t, std::uint32_t> words;
+		wakeup_memory()
+		{
+			words[0x1008f05c] = 100;
+			for (unsigned side = 0; side < 2; ++side)
+			{
+				const auto actor = actors[side], bank = banks[side];
+				words[actor + 0x5c] = actors[1 - side];
+				words[actor + 0x50] = bank;
+				words[bank + 0x1e0] = tables[side];
+				words[bank + 0x1e4] = 64;
+				const auto commands = 0x22000000 + side * 0x10000;
+				words[bank + 0x1b0] = commands;
+				words[bank + 0x1b4] = 2;
+				words[commands] = 0x00002004;
+				words[commands + 16] = 1;
+				words[commands + 18] = 255;
+				words[commands + 22] = 0x50;
+				words[commands + 24] = 0x80000000;
+				for (unsigned id = 1; id <= 0x17; ++id)
+					words[bank + 0xac + id * 4] = id;
+				pose(side, 4);
+			}
+		}
+		void pose(unsigned side, unsigned id, unsigned owner = 2)
+		{
+			const auto actor = actors[side], move = tables[owner < 2 ? owner : side] + id * 0x4c;
+			words[actor + 0xc4] = move;
+			words[actor + 0xcc] = 0x6084;
+			words[actor + 0x48] = words[actor + 0x320] = 0;
+			words[actor + 0x96] = words[actor + 0x146] = 1;
+			words[move + 0x24] = 60;
+			words[move + 0x14] = 0x22000000 + (owner < 2 ? owner : side) * 0x10000;
+		}
+		std::optional<pbd_wakeup_observation> read(unsigned side)
+		{
+			return pbd_read_wakeup(side, [&](auto at)
+				{
+					return words.contains(at) ? words.at(at) : ~0u;
+				},
+				[&](auto at)
+				{
+					return words.contains(at) ? words.at(at) : ~0u;
+				});
+		}
+	};
+} // namespace
+
+PBD_TEST(PbdPracticeWakeup, EveryFloorAliasAndSharedReactionReceivesEveryWakeupChoice)
+{
+	for (unsigned side = 0; side < 2; ++side)
+		for (const unsigned id : {4u, 5u, 6u, 7u, 8u, 9u, 10u, 11u, 12u, 13u, 14u, 0x17u, 40u})
+			for (unsigned owner = 0; owner < 2; ++owner)
+				for (unsigned selected = 0; selected < pbd_wakeup_option_count; ++selected)
+				{
+					wakeup_memory memory;
+					memory.pose(side, id, owner);
+					const auto now = memory.read(side);
+					check(now && now->on_floor && now->actionable, "the live floor flag admits own-bank and attacker-bank floor poses");
+					pbd_wakeup_controller control;
+					control.arm(static_cast<option>(selected));
+					const auto plan = pbd_plan_wakeup(static_cast<option>(selected), now->position, false);
+					check(control.sample(*now) == (plan.count ? plan.words[0] : 0), "each choice reaches its floor input or its documented fallback");
+				}
+}
+
+PBD_TEST(PbdPracticeWakeup, FloorClockDirectionAndInvalidMemoryDoNotInventAGetup)
+{
+	wakeup_memory memory;
+	for (unsigned side = 0; side < 2; ++side)
+	{
+		const auto actor = memory.actors[side];
+		for (const unsigned direction : {1u, 2u, 0u, 0xffffu})
+		{
+			memory.words[actor + 0x146] = direction;
+			const auto now = memory.read(side);
+			check(now && now->on_floor && now->actionable == (direction == 1 || direction == 2),
+				"positive cursor steps accept floor input; a frozen or reversed cursor waits");
+		}
+		memory.words[actor + 0xcc] = 0x6000;
+		check(memory.read(side)->knocked_down && !memory.read(side)->on_floor, "a falling launcher reaction keeps the landing-tech route");
+		memory.words[actor + 0xcc] = 0x1052;
+		check(!memory.read(side)->on_floor, "a rising move is not another floor pose");
+		memory.words[actor + 0xc4]++;
+		check(!memory.read(side), "a misaligned move pointer cannot drive either fighter");
+	}
+	check(!memory.read(2));
+}
+
+PBD_TEST(PbdPracticeWakeup, ChangingFloorMovesDoesNotAcknowledgeAnIgnoredOpening)
+{
+	pbd_wakeup_controller control;
+	control.arm(option::stand_up);
+	pbd_wakeup_observation now{34, 100, true, true, false, position::face_up_feet_toward};
+	check(control.sample(now) == 0x1000);
+	for (unsigned frame = 1; frame <= 7; ++frame)
+	{
+		now.counter++;
+		now.allocation++;
+		check(control.sample(now) == 0, "floor-to-floor transitions do not repeat an accepted action");
+	}
+	now.counter++;
+	check(control.sample(now) == 0x1000, "an ignored get-up retries without needing another hit");
+	now.counter++;
+	now.on_floor = false;
+	check(control.sample(now) == 0);
+	for (unsigned frame = 0; frame < 30; ++frame)
+	{
+		now.counter++;
+		now.on_floor = true;
+		check(control.sample(now) == 0, "a get-up that left the floor is not restarted on a later floor pose");
+	}
+}
+
+PBD_TEST(PbdPracticeWakeup, LockedLandingPreservesEveryOpeningUntilTheGetupWindow)
+{
+	for (unsigned selected = 0; selected < pbd_wakeup_option_count; ++selected)
+	{
+		wakeup_memory memory;
+		const auto actor = memory.actors[1], commands = 0x22010000u;
+		const auto landing = memory.words[actor + 0xc4], floor = memory.tables[1] + 7 * 0x4c;
+		memory.words[landing + 0x14] = commands + 24;
+		memory.words[commands + 24 + 8] = 0x8007;
+		memory.words[commands + 24 + 16] = 60;
+		memory.words[commands + 24 + 18] = 255;
+		memory.words[floor + 0x14] = commands;
+		memory.words[floor + 0x24] = 60;
+		pbd_wakeup_controller control;
+		control.arm(static_cast<option>(selected));
+		for (unsigned cursor = 1; cursor < 60; ++cursor)
+		{
+			memory.words[actor + 0x96] = cursor;
+			memory.words[0x1008f05c]++;
+			const auto now = memory.read(1);
+			check(now && now->on_floor && !now->actionable, "a grounded landing without an input window cannot consume a wake-up");
+			check(control.sample(*now) == 0 && control.floor.given == 0);
+		}
+		memory.words[actor + 0x96] = 60;
+		memory.words[0x1008f05c]++;
+		const auto now = memory.read(1);
+		check(now && now->actionable, "the end-command window admits the floor target's inputs on the same frame");
+		const auto plan = pbd_plan_wakeup(static_cast<option>(selected), now->position, false);
+		check(control.sample(*now) == (plan.count ? plan.words[0] : 0), "the requested opening survives the normal floor time");
+		memory.words[commands + 24 + 8] = 0x8030;
+		check(!memory.read(1)->actionable, "an invalid terminal target is never followed");
+	}
+}
+
+PBD_TEST(PbdPracticeWakeup, PaulBackThreeKnockdownWaitsForTheFloorCommandWindow)
+{
+	// Paul's Pl_Swlk reaction sDm_ASI10LD ends at alias 4; dwDWN_00U then opens alias 6 at cursor 60.
+	// The phase lengths before that window are modelled; the command window and floor aliases come from the move data.
+	for (unsigned selected = 0; selected < pbd_wakeup_option_count; ++selected)
+	{
+		wakeup_memory memory;
+		const auto actor = memory.actors[1], bank = memory.banks[1], table = memory.tables[1], commands = 0x22010000u;
+		memory.words[bank + 0x1e4] = 700;
+		memory.words[bank + 0xac + 4 * 4] = 35;
+		memory.words[bank + 0xac + 6 * 4] = 40;
+		memory.words[bank + 0xac + 7 * 4] = 39;
+		pbd_wakeup_controller control;
+		control.arm(static_cast<option>(selected));
+		memory.pose(1, 667);
+		memory.words[actor + 0xcc] = 0x7402;
+		check(!control.sample(*memory.read(1)) && control.engaged && !control.active, "the falling reaction retains landing techs");
+		check(control.native_action() == pbd_wakeup_native_action(static_cast<option>(selected)), "landing-tech choices retain their native action before the floor");
+		memory.pose(1, 35);
+		memory.words[table + 35 * 0x4c + 0x14] = commands + 24;
+		memory.words[commands + 24 + 8] = 0x8006;
+		memory.words[commands + 24 + 16] = 60;
+		memory.words[commands + 24 + 18] = 255;
+		memory.words[table + 40 * 0x4c + 0x14] = commands;
+		memory.words[table + 40 * 0x4c + 0x24] = 60;
+		for (unsigned cursor = 1; cursor < 60; ++cursor)
+		{
+			memory.words[actor + 0x96] = cursor;
+			memory.words[0x1008f05c]++;
+			check(control.sample(*memory.read(1)) == 0 && control.floor.given == 0, "the normal floor time cannot spend the requested action");
+		}
+		memory.words[actor + 0x96] = 60;
+		memory.words[0x1008f05c]++;
+		const auto expected = control.floor.plan.count ? control.floor.plan.words[0] : 0;
+		check(control.sample(*memory.read(1)) == expected, "the selected floor action runs when the game opens get-up input");
+	}
+}
+
+PBD_TEST(PbdPracticeWakeup, GroundedSideRollAndFaceDownGetupAcknowledgeTheirInputTarget)
+{
+	for (const auto selected : {option::side_roll_up, option::side_roll_down, option::rising_low_kick, option::stand_up})
+	{
+		wakeup_memory memory;
+		const auto commands = 0x22010000u;
+		memory.pose(1, 7);
+		memory.words[commands + 8] = 43;
+		pbd_wakeup_controller control;
+		control.arm(selected);
+		const auto opening = control.sample(*memory.read(1));
+		check(opening == control.floor.plan.words[0]);
+		memory.pose(1, 43);
+		memory.words[0x1008f05c]++;
+		const auto rolling = memory.read(1);
+		check(rolling && rolling->on_floor && rolling->recovering, "a grounded input target is an accepted roll or get-up");
+		check(control.sample(*rolling) == 0 && control.floor.responded);
+		memory.pose(1, 7);
+		for (unsigned frame = 0; frame < 120; ++frame)
+		{
+			memory.words[0x1008f05c]++;
+			check(control.sample(*memory.read(1)) == 0, "a side roll ending on the floor is not replaced by Stand Up");
+		}
+	}
+}
+
+PBD_TEST(PbdPracticeWakeup, LandingPoseChoosesAvailableGroundAttacksWhenTheWindowOpens)
+{
+	for (const auto selected : {option::toe_kick, option::spring_kick})
+	{
+		wakeup_memory memory;
+		const auto actor = memory.actors[1], table = memory.tables[1], commands = 0x22010000u;
+		memory.pose(1, 40);
+		memory.words[table + 40 * 0x4c + 0x14] = commands + 24;
+		memory.words[commands + 24 + 8] = 0x8007;
+		memory.words[commands + 24 + 16] = 60;
+		memory.words[commands + 24 + 18] = 255;
+		memory.words[table + 7 * 0x4c + 0x14] = commands;
+		memory.words[table + 7 * 0x4c + 0x24] = 60;
+		pbd_wakeup_controller control;
+		control.arm(selected);
+		check(control.sample(*memory.read(1)) == 0 && control.floor.plan.option == option::stand_up, "an unidentified locked landing has not spent its opening");
+		memory.words[actor + 0x96] = 60;
+		memory.words[0x1008f05c]++;
+		const auto now = memory.read(1);
+		check(now && now->actionable && now->position == position::face_up_feet_toward, "the terminal's floor alias identifies the available get-up before the hand-over");
+		const auto opening = control.sample(*now);
+		check(control.floor.plan.option == selected && opening == (selected == option::toe_kick ? 0x4040 : 0x8000),
+			"toe and spring kicks are chosen from the pose that admits input, including after a locked throw landing");
+	}
 }

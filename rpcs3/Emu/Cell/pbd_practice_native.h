@@ -26,7 +26,7 @@ namespace pbd::practice
 namespace pbd::practice::native
 {
 	using wakeup_view = pbd::practice::pbd_wakeup_observation;
-	std::optional<wakeup_view> read_wakeup() noexcept;
+	std::optional<wakeup_view> read_wakeup(unsigned side = 1) noexcept;
 	// The dummy while it is held in a throw whose escape window is open (pbd::practice::throw_escape_view); nothing otherwise.
 	std::optional<pbd::practice::throw_escape_view> read_throw_escape() noexcept;
 	// Called at every Practice boundary with the Dummy Action the player chose for the dummy (umax when the player drives

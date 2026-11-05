@@ -104,11 +104,12 @@ void pbd::rollback_session::boundary_call::choose_practice_input(u32 index, upda
 	if (data.practice.dummy.enabled && !data.roundtrip.repeat_active)
 	{
 		// The scheduler advances once per boundary, before the two port hooks. P1 is still replaced by its ordinary live
-		// device read below; P2 consumes this exact recorded word. Recording, and the ready state before it, neutralise P1
-		// so one controller drives only P2.
+		// device read below; P2 consumes this exact recorded word. Recording, and the ready state before it, give P1
+		// only automatic get-up input so one controller drives only P2.
 		row.raw[1] = practice_dummy_word(index);
+		const u16 recording_word = practice_recording_wakeup();
 		if (data.practice.dummy.state == dummy_state::recording || data.practice.dummy.state == dummy_state::ready)
-			row.raw[0] = 0;
+			row.raw[0] = recording_word;
 		// The word's frame runs with the route its playback state now asks for: a pause for a hit that began or ended
 		// at this boundary, or playback that started or ended in it, reaches this frame rather than the next. A route
 		// refused here ends playback, and the word chosen for it then reaches no one.
