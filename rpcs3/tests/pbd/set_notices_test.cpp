@@ -463,3 +463,18 @@ PBD_TEST(PbdSetNotices, NoticeArtFolder)
 		  cleanup.filename().string().starts_with("pbd-notice-art-test-"));
 	std::filesystem::remove_all(cleanup);
 }
+
+PBD_TEST(PbdSetNotices, CapableLobbyCardsShowRankedPlatesWithoutStakes)
+{
+	auto view = ranked_view();
+	view.mode = set_mode::lobby;
+	view.rank_profiles = true;
+	view.ranks = {19, 0};
+	view.stakes = pbd::rank_stakes::stakes{};
+	const auto shown = notices::compose(view);
+	check(shown.mode == set_mode::lobby && !shown.stakes);
+	check(shown.sides[0].shown == plate{plate::kind::rank, 19, 0, 0});
+	check(shown.sides[1].shown == plate{plate::kind::rank, 0, 0, 0});
+	view.rank_profiles = false;
+	check(notices::compose(view).sides[0].shown == plate{});
+}

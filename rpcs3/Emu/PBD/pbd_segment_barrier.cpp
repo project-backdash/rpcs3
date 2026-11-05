@@ -23,10 +23,8 @@ bool pbd::rollback_session::boundary_call::session_segment_barrier()
 			                    !(battle_scene(now_scene[0]) && battle_scene(data.session.segments.last_scene[0]));
 			data.session.segments.last_scene = now_scene;
 			data.session.segments.last_scene_valid = true;
-			// The Ranked notices and the VS cards follow the scene at every fresh boundary (the cards: shown on the VS screens,
-			// hidden on any other).
-			publish_set_notices(now_scene[0]);
-			publish_vs_cards(now_scene[0]);
+			if (change && !data.peer.enabled)
+				write_custom_looks(data.next_index, now_scene[0]);
 			// A saved replay's players, as its file recorded them, in the game's records (pbd::game_profile), so the replayed game
 			// draws their names, recorded ranks and PLAYER DATA numbers (zeros when the recording names none) under the life bars.
 			// Display only, as in the recorded game; repeats write nothing, and after a scrub to an earlier frame the next fresh
@@ -50,6 +48,9 @@ bool pbd::rollback_session::boundary_call::session_segment_barrier()
 				if (peer_segment_change(now_scene))
 					return true;
 			}
+			// Publish after the shared barrier resolved the actual picks, so the first VS frame already has their plates.
+			publish_set_notices(now_scene[0]);
+			publish_vs_cards(now_scene[0]);
 		}
 	}
 	return false;
@@ -128,6 +129,8 @@ bool pbd::rollback_session::boundary_call::peer_segment_change(const std::array<
 	// The players' names, ranks and PLAYER DATA numbers in the game's records (write_game_profiles), here where both peers stand
 	// aligned on boundary `target` and nothing earlier can be re-executed, and the Ranked stakes both peers hold, from which the
 	// next game's command plans the game's own Ranked screens (settle_rank_stakes).
+	data.lobby.look_slots[data.peer.role] = data.session.segments.look_slot;
+	data.lobby.look_slots[1 - data.peer.role] = data.session.segments.peer_look_slot[n % 8];
 	write_game_profiles(target, now_scene[0], n);
 	settle_rank_stakes(n);
 	// Settle aligned peers before the configured loading scene so host loading latency does not change its executed frames.
@@ -172,6 +175,8 @@ u32 pbd::rollback_session::boundary_call::prepare_peer_segment(u32 k, const std:
 	data.session.segments.prev_records = data.session.segments.records;
 	data.lobby.records_plan = shown_game_records();
 	data.session.segments.records = pbd::game_profile::records_word(data.lobby.records_plan);
+	data.session.segments.prev_look_slot = data.session.segments.look_slot;
+	data.session.segments.look_slot = data.lobby.look_slot_own;
 	const u32 n = data.session.segments.number;
 	if (!pbd::fn_hook::draw_statistics.empty() || pbd::fn_hook::draw_statistics_active.load())
 	{

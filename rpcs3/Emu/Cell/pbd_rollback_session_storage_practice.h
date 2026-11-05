@@ -8,6 +8,8 @@
 #include "../PBD/pbd_practice_input_delay.h"
 #include "../PBD/pbd_practice_move_list.h"
 #include "../PBD/pbd_practice_punish.h"
+#include "../PBD/pbd_costume_select.h"
+#include "../PBD/pbd_custom_files.h"
 
 namespace pbd::session_runtime
 {
@@ -148,6 +150,10 @@ namespace pbd::session_runtime
 	// Practice: its menus, sides, restarts and the player's input.
 	struct practice_state
 	{
+		std::array<pbd::costume_select::row, 2> costume_rows;
+		std::array<std::optional<pbd::costume_select::card>, 2> costume_picks;
+		pbd::custom_files::practice costume_files;
+		bool costumes_read = false, costumes_written = false, costume_selecting = false;
 		// Practice rewind uses the same admitted static checkpoint, owner-write journal and one-boundary rollback bridge as
 		// replay takeover. R3 replaces the anchor with the current live moment; SELECT+CROSS returns to it. It has no replay
 		// input source: after the bridge, the game's ordinary controller word is used again.

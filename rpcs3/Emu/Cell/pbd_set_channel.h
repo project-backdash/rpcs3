@@ -307,6 +307,10 @@ namespace pbd::set_channel
 				session.stage_id = applied.rematch->selected.stage;
 			if (confirmed && !applied.replay && in_game(session))
 				count_game(*confirmed);
+			if (applied.rank_tables[0])
+				session.left.ranks = applied.rank_tables[0];
+			if (applied.rank_tables[1])
+				session.right.ranks = applied.rank_tables[1];
 			post_winner.reset();
 			started_picks.reset();
 			return true;
@@ -348,6 +352,13 @@ namespace pbd::set_channel
 			return pbd::set_channel::shown_records(session, tally, rows, known_characters());
 		}
 
+		// Resolve the actual picks at a shared boundary before profiles and replay starts read the scalar ranks.
+		void select_ranks(const std::array<std::uint32_t, 2>& rows)
+		{
+			session.left.rank = shown_rank(session.left, rows[0]);
+			session.right.rank = shown_rank(session.right, rows[1]);
+		}
+
 		// A next set against the same opponent keeps the process, the directory and both cursors. The driver verifies the
 		// completed set's terminal result first and gives its deciding game as `last`. The acknowledgement is written under the
 		// completed set's identity, so the launcher reads it with the identity it wrote the command under; everything after it
@@ -372,6 +383,10 @@ namespace pbd::set_channel
 				session.left.rank = *applied.ranks[0];
 			if (applied.ranks[1])
 				session.right.rank = *applied.ranks[1];
+			if (applied.rank_tables[0])
+				session.left.ranks = applied.rank_tables[0];
+			if (applied.rank_tables[1])
+				session.right.ranks = applied.rank_tables[1];
 			post_winner.reset();
 			started_picks.reset();
 			return true;

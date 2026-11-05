@@ -21,6 +21,7 @@ namespace pbd::replay_start
 		std::array<std::uint32_t, 2> ranks{};
 		// The PLAYER DATA numbers each bar showed (players[i] "wins" and "losses"); zeros when a start names none.
 		std::array<pbd::game_profile::record, 2> records{};
+		pbd::custom_wire::pair looks;
 		std::array<std::uint8_t, 13> options{};
 		std::array<std::uint8_t, 1> rounds_option{};
 		std::array<std::uint8_t, 44> rules{};
@@ -35,7 +36,8 @@ namespace pbd::replay_start
 	// row the game loaded, the rank its record held and, when the bar showed a record, its PLAYER DATA numbers, which
 	// pbd_read_capsule_start reads back.
 	inline pbd::set_channel::json_value capsule_player(std::string id, std::string name, std::uint32_t fighter, std::uint32_t costume,
-		std::uint32_t row, std::uint32_t rank, const std::optional<pbd::game_profile::record>& shown)
+		std::uint32_t row, std::uint32_t rank, const std::optional<pbd::game_profile::record>& shown,
+		const std::optional<pbd::custom_wire::drawn>& look = std::nullopt)
 	{
 		using json = pbd::set_channel::json_value;
 		auto entry = json::object({{"id", json::string(std::move(id))}, {"name", json::string(std::move(name))}, {"fighter", json::number(fighter)},
@@ -45,6 +47,8 @@ namespace pbd::replay_start
 			entry.fields.emplace_back("wins", json::number(shown->wins));
 			entry.fields.emplace_back("losses", json::number(shown->losses));
 		}
+		if (look)
+			entry.fields.emplace_back("look", pbd::custom_wire::drawn_json(*look));
 		return entry;
 	}
 
@@ -57,7 +61,7 @@ namespace pbd::replay_start
 		try
 		{
 			if (!seed || integer(cap, "sessionSeed") != seed || integer(cap, "initializer") != 2 ||
-				!(is(cap, "schema", pbd::throw_break::capsule_schema_stock) || is(cap, "schema", pbd::throw_break::capsule_schema_rule)) ||
+				!(is(cap, "schema", pbd::throw_break::capsule_schema_stock) || is(cap, "schema", pbd::throw_break::capsule_schema_rule) || is(cap, "schema", pbd::custom_wire::capsule_schema)) ||
 				!is(cap, "anchor", "before-native-match-initializer"))
 				return {{}, "capsule_start_identity"};
 			pbd_capsule_start out;
@@ -85,7 +89,7 @@ namespace pbd::replay_start
 			if (pbd::throw_break::retired_record(cap.find(pbd::throw_break::record_key)))
 				return {{}, pbd::throw_break::retired_refusal};
 			const auto throw_break = pbd::throw_break::read_record(cap.find(pbd::throw_break::record_key));
-			if (!throw_break || !is(cap, "schema", pbd::throw_break::capsule_schema(*throw_break)))
+			if (!throw_break || (!is(cap, "schema", pbd::custom_wire::capsule_schema) && !is(cap, "schema", pbd::throw_break::capsule_schema(*throw_break))))
 				return {{}, "capsule_start_throw_break"};
 			out.throw_break = *throw_break;
 			const auto& choice = field(cap, "selection");
@@ -95,6 +99,17 @@ namespace pbd::replay_start
 			out.left = integer(choice, "leftRow", 84);
 			out.right = integer(choice, "rightRow", 84);
 			out.stage = integer(choice, "stage", 0x25);
+			const auto* players = cap.find("players");
+			if (players)
+				for (std::size_t side = 0; side < 2; ++side)
+					if (const auto* value = players->items[side].find("look"))
+					{
+						out.looks[side] = pbd::custom_wire::read_drawn(value, side ? out.right : out.left);
+						if (!out.looks[side])
+							return {{}, "capsule_start_look"};
+					}
+			if (is(cap, "schema", pbd::custom_wire::capsule_schema) != (out.looks[0].has_value() || out.looks[1].has_value()))
+				return {{}, "capsule_start_look_schema"};
 			const auto rule = out.allow_jinpachi ? character_rule::rule::stock : character_rule::rule::ban_jinpachi;
 			if (!character_rule::row_available(rule, out.left) || !character_rule::row_available(rule, out.right) ||
 				!stage_rule::loadable(out.stage))

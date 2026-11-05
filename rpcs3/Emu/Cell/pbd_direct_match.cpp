@@ -98,6 +98,10 @@ std::array<pbd::game_profile::record, 2> pbd_direct_match::pbd_player_records() 
 {
 	return data ? data->player_records : std::array<pbd::game_profile::record, 2>{};
 }
+pbd::custom_wire::pair pbd_direct_match::pbd_player_looks() const noexcept
+{
+	return data ? data->player_looks : pbd::custom_wire::pair{};
+}
 std::optional<pbd::rank_stakes::game_values> pbd_direct_match::pbd_rank_screens() const noexcept
 {
 	return data ? data->rank_screens : std::nullopt;

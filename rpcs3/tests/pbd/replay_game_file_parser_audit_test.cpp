@@ -189,12 +189,12 @@ PBD_TEST(PbdReplayFileParserAudit, TheThrowBreakRuleComesFromTheGameStartAndEach
 	check(pbd::replay_start::pbd_read_capsule_start(std::string_view(replace(text, "{\"version\":2,", "{\"version\":1,")), 123).error ==
 			  pbd::throw_break::retired_refusal,
 		"a game start of the retired rule");
-	check(pbd::replay_start::pbd_read_capsule_start(std::string_view(replace(text, "capsule-draft-3", "capsule-draft-4")), 123).error ==
+	check(pbd::replay_start::pbd_read_capsule_start(std::string_view(replace(text, "capsule-draft-3", "capsule-draft-5")), 123).error ==
 			  "capsule_start_identity",
 		"an unknown schema");
 	const auto rule_file = replay::parse(replace(closed_game, "pbd-game-start-capsule-draft-2", "pbd-game-start-capsule-draft-3"));
 	check(rule_file.value, "a file whose games may name the rule");
-	check(!replay::parse(replace(closed_game, "pbd-game-start-capsule-draft-2", "pbd-game-start-capsule-draft-4")).value, "a file of another schema");
+	check(!replay::parse(replace(closed_game, "pbd-game-start-capsule-draft-2", "pbd-game-start-capsule-draft-5")).value, "a file of another schema");
 	// Round capsules: each names the L from its first input on; one without it plays its round without the rule.
 	const auto point = [](u32 initializer, u32 offset)
 	{
@@ -629,6 +629,7 @@ PBD_TEST(PbdReplayFileParserAudit, SavedReplayAdoptionRetiresOnlyItsLiveWatching
 		std::string(64, 'c'), std::string(64, 'd')};
 	spectator::publish_presentation(binding.generation, {});
 	check(spectator::load_presentation(binding.generation).active && spectator::load_presentation(binding.generation).hidden);
+	check(!spectator::load_presentation(binding.generation + 1).active, "an unpublished generation acquired a live cover");
 	held::lifecycle match(held::purpose::match);
 	check(!standby::pbd_bind_presentation({}, binding, match));
 	check(spectator::load_presentation(binding.generation).active, "a refused replay bind removed the live cover");
@@ -636,8 +637,39 @@ PBD_TEST(PbdReplayFileParserAudit, SavedReplayAdoptionRetiresOnlyItsLiveWatching
 	check(standby::pbd_bind_presentation({}, binding, replay));
 	check(!spectator::load_presentation(binding.generation).active, "the live preparation cover still obscures the saved game");
 	check(!replay.can_show(), "retiring the cover bypassed the held game's picture gate");
-	check(spectator::load_presentation(binding.generation + 1).active, "saved playback removed another runtime's live cover");
+	check(!spectator::load_presentation(binding.generation + 1).active, "saved playback activated an unpublished generation");
+	spectator::presentation watching;
+	watching.hidden = false;
+	watching.left_name = "Ana";
+	spectator::publish_presentation(binding.generation + 1, watching);
 	check(!standby::pbd_bind_presentation({}, binding, replay), "the same held game bound twice");
+	const auto replacement = spectator::load_presentation(binding.generation + 1);
+	check(replacement.active && !replacement.hidden && replacement.left_name == watching.left_name,
+		"a refused replay bind changed the replacement watch");
+	check(!spectator::load_presentation(binding.generation).active, "the replacement watch reactivated the saved game's cover");
 	standby::pbd_report() = {};
 	spectator::publish_presentation(0, {});
+}
+PBD_TEST(PbdReplayFileParserAudit, CustomLooksRequireTheirSchemaAndPreserveTheThrowRule)
+{
+	using json = replay::json;
+	using namespace pbd::custom_wire;
+	auto cap = pbd_open_game_capsule();
+	const drawn wanted{3, pack(pbd::custom_look::look{0})};
+	cap.fields.emplace_back("players", json::array({pbd::replay_start::capsule_player("left", "Left", 0, 0, 0, 0, {}, wanted),
+										   pbd::replay_start::capsule_player("right", "Right", 0, 1, 1, 0, {})}));
+	const auto old_text = pbd::set_channel::detail::serialize(cap);
+	check(pbd::replay_start::pbd_read_capsule_start(std::string_view(old_text), 123).error == "capsule_start_look_schema");
+	const auto text = replace(old_text, "capsule-draft-2", "capsule-draft-4");
+	const auto parsed = pbd::replay_start::pbd_read_capsule_start(std::string_view(text), 123);
+	check(parsed.value && parsed.value->looks[0] == wanted && !parsed.value->looks[1] && !parsed.value->throw_break.any());
+	check(capsule_matches(cap, {0, 1}, {wanted, std::nullopt}));
+	check(!capsule_matches(cap, {0, 1}, {}));
+	check(!capsule_matches(cap, {1, 0}, {wanted, std::nullopt}));
+	const auto combined = replace(text, "\"initializer\":2", "\"initializer\":2,\"throwBreakLookahead\":{\"version\":2,\"left\":3,\"right\":3}");
+	const auto both = pbd::replay_start::pbd_read_capsule_start(std::string_view(combined), 123);
+	check(both.value && both.value->looks == parsed.value->looks && both.value->throw_break.lookahead == std::array<std::uint32_t, 2>{3, 3});
+	for (const auto wrong : {replace(text, "\"slot\":3", "\"slot\":0"), replace(text, "00ffffffffffffffffffffff", "01ffffffffffffffffffffff"),
+			 replace(text, "\"look\":", "\"missingLook\":"), replace(text, "capsule-draft-4", "capsule-draft-3")})
+		check(!pbd::replay_start::pbd_read_capsule_start(std::string_view(wrong), 123).value);
 }

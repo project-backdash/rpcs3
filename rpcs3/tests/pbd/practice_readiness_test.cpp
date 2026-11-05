@@ -1058,6 +1058,7 @@ PBD_TEST(PbdPracticeReadiness, StanceAttackObservedFree)
 	check(defender.latest[0].advantage == 11, "the defender's stance reading");
 	defender.commit_reading(1, 231, 231, 1, plain_reading(20), true, 10, 10);
 	check(defender.latest[0].defender_ready == 230 && defender.latest[0].advantage == 1, "its attack shows it was free the frame before");
+	check(defender.latest[1].move == 231u && defender.latest[1].startup == 10u, "the defender's stance attack starts its own count");
 }
 
 PBD_TEST(PbdPracticeReadiness, WhiffWithAlternative)

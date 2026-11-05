@@ -8,6 +8,29 @@
 // word here is the game's canonical 16-bit controller word (digital1 << 8 | digital2).
 namespace pbd::input_taps
 {
+	// Retaining two successive taps must not invent a simultaneous pair of opposite directions. Each axis remembers its
+	// latest non-neutral report; an opposite pair actually present in that report remains a pair.
+	class direction_history
+	{
+		std::uint16_t m_latest = 0;
+		static constexpr std::array<std::uint16_t, 2> axes{0xa000, 0x5000};
+
+	public:
+		void sample(std::uint16_t word) noexcept
+		{
+			for (const auto axis : axes)
+				if (word & axis)
+					m_latest = static_cast<std::uint16_t>((m_latest & ~axis) | (word & axis));
+		}
+		std::uint16_t resolve(std::uint16_t word) const noexcept
+		{
+			for (const auto axis : axes)
+				if ((word & axis) == axis && (m_latest & axis))
+					word = static_cast<std::uint16_t>((word & ~axis) | (m_latest & axis));
+			return word;
+		}
+	};
+
 	// The readers of this PC's controller that each read it once per frame.
 	enum class reader : unsigned
 	{
@@ -21,7 +44,8 @@ namespace pbd::input_taps
 	// A button pressed since a reader's previous read reads as held at its next read, so a tap that went down and up
 	// between the two still counts for one frame. Nothing else changes: a press reads at the first read after it and a
 	// release at the first read after it, so a press is never delayed, a release is never stretched and a button held
-	// across reads reads as it is. Each reader keeps its own record, so one read never takes a tap from another.
+	// across reads reads as it is. Opposites from separate reports keep the latest direction on that axis. Each reader
+	// keeps its own record, so one read never takes a tap from another.
 	class tap_buffer
 	{
 	public:
@@ -32,6 +56,7 @@ namespace pbd::input_taps
 		// The controller's word as the host sees it now.
 		void sample(std::uint16_t word, std::uint64_t now_us) noexcept
 		{
+			m_directions.sample(word);
 			const auto pressed = static_cast<std::uint16_t>(word & ~m_level);
 			for (unsigned bit = 0; bit < m_pressed_us.size(); ++bit)
 				if (pressed >> bit & 1)
@@ -49,7 +74,7 @@ namespace pbd::input_taps
 			for (unsigned bit = 0; bit < m_pressed_us.size(); ++bit)
 				if ((taps >> bit & 1) && now_us - m_pressed_us[bit] <= hold_us)
 					word |= static_cast<std::uint16_t>(1u << bit);
-			return word;
+			return m_directions.resolve(word);
 		}
 
 		// The reader's read: the buttons held now and those pressed since its previous read.
@@ -67,6 +92,7 @@ namespace pbd::input_taps
 
 	private:
 		std::uint16_t m_level = 0;
+		direction_history m_directions;
 		std::array<std::uint16_t, static_cast<unsigned>(reader::count)> m_taps{};
 		std::array<std::uint64_t, 16> m_pressed_us{};
 	};
@@ -93,18 +119,25 @@ namespace pbd::input_taps
 				std::uint16_t previous = m_word;
 				for (std::uint32_t slot = m_written; slot != written; ++slot)
 				{
+					m_directions.sample(words[slot & 15]);
 					pressed |= static_cast<std::uint16_t>(words[slot & 15] & ~previous);
 					previous = words[slot & 15];
 				}
 			}
+			else
+			{
+				m_directions = {};
+				m_directions.sample(newest);
+			}
 			m_valid = true;
 			m_written = written;
 			m_word = words[(written - 1) & 15];
-			return static_cast<std::uint16_t>(newest | pressed);
+			return m_directions.resolve(static_cast<std::uint16_t>(newest | pressed));
 		}
 
 	private:
 		std::uint32_t m_written = 0;
+		direction_history m_directions;
 		std::uint16_t m_word = 0;
 		bool m_valid = false;
 	};

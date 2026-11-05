@@ -139,7 +139,7 @@ namespace rsx
 		private:
 			compiled_resource m_compiled{};
 			f32 m_output_scale = 1.f, m_compiled_scale = 0.f;
-			u64 m_revision = ~u64{0};
+			u64 m_revision = ~u64{0}, m_costume_revision = ~u64{0};
 			void refresh(const ::pbd::select_band::snapshot& band);
 		};
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "../PBD/pbd_custom_wire.h"
 #include "util/types.hpp"
 #include "../PBD/pbd_rank_stakes.h"
 #include "../PBD/pbd_throw_break.h"
@@ -86,6 +87,7 @@ public:
 	std::array<u32, 2> pbd_player_ranks() const noexcept;
 	// The PLAYER DATA numbers the recorded game's bars showed, left and right, from its start; zeros when it names none.
 	std::array<pbd::game_profile::record, 2> pbd_player_records() const noexcept;
+	pbd::custom_wire::pair pbd_player_looks() const noexcept;
 	// The values the recorded game's own Ranked screens were written with (pbd::rank_stakes::game_values), from its start;
 	// none without a file or when the recording names none.
 	std::optional<pbd::rank_stakes::game_values> pbd_rank_screens() const noexcept;

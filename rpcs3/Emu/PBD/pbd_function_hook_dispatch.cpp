@@ -3,12 +3,13 @@
 #include "../Cell/pbd_versus_native.h"
 #include "pbd_practice_paint.h"
 #include "pbd_throw_break.h"
+#include "pbd_custom_editor.h"
 
 namespace pbd::fn_hook::detail
 {
 	std::optional<hook_action> hook_event::admit()
 	{
-		if (!pbd::versus::frame_boundary(ppu, address))
+		if (!pbd::custom_editor::trial_boundary(ppu, address) || !pbd::versus::frame_boundary(ppu, address))
 		{
 			ppu.state += cpu_flag::exit;
 			return hook_action::fatal;

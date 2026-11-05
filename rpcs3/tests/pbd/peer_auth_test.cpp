@@ -14,6 +14,59 @@
 
 using pbd::test::check;
 
+PBD_TEST(PbdPeerAuth, BoundedSocketEvidenceDoesNotAdmitRejectedTraffic)
+{
+	using namespace pbd::peer_auth;
+	using pbd::peer_diagnostics::rejection;
+	key secret{};
+	secret[0] = 17;
+	state sender, receiver;
+	check(sender.install(secret, 0) && receiver.install(secret, 1));
+	std::array<std::uint8_t, maximum_bytes> packet{};
+	pbd::peer_message::input_message input;
+	input.role = 0;
+	input.sync.session = 42;
+	std::array<std::uint8_t, pbd::peer_message::max_input_bytes> payload{};
+	const auto length = pbd::peer_message::encode_input(input, payload);
+	const auto size = sender.send(std::span(payload).first(length), packet);
+	rejection reason{};
+	auto wire = std::span(packet).first(size);
+	packet[size - 1] ^= 1;
+	check(!receiver.receive(wire, &reason) && reason == rejection::tag);
+	packet[size - 1] ^= 1;
+	check(receiver.receive(wire, &reason).has_value() && reason == rejection::none);
+	check(!receiver.receive(wire, &reason) && reason == rejection::replay);
+	check(!receiver.receive(wire.first(3), &reason) && reason == rejection::format);
+	receiver.retire();
+	check(!receiver.receive(wire, &reason) && reason == rejection::epoch);
+	check(pbd::peer_message::diagnostic_check(std::span(payload).first(length), 1, 42) == rejection::none);
+	check(pbd::peer_message::diagnostic_check(std::span(payload).first(length), 0, 42) == rejection::role);
+	check(pbd::peer_message::diagnostic_check(std::span(payload).first(length), 1, 43) == rejection::session);
+	pbd::peer_diagnostics::counters evidence;
+	evidence.sent(false, 10051);
+	evidence.sent(true, 0);
+	evidence.received(false, 2000);
+	evidence.received(true, 3000);
+	evidence.rejected(rejection::tag);
+	evidence.rejected(rejection::epoch);
+	check(evidence.send_ok == 1 && evidence.send_failed == 1 && evidence.last_send_error == 10051);
+	check(evidence.datagrams == 2 && evidence.source_match == 1 && evidence.source_mismatch == 1 && evidence.first_datagram_us == 2000);
+	evidence.datagrams = std::numeric_limits<std::uint32_t>::max();
+	evidence.received(true, 4000);
+	check(evidence.datagrams == std::numeric_limits<std::uint32_t>::max());
+	pbd::peer_recovery::state link;
+	link.configure({"session", "set", 42, 1}, {}, 1000);
+	link.datagram(false, 2000);
+	link.rejected(rejection::tag);
+	link.send_result(false, 10051);
+	const auto status = link.get();
+	check(!status.heard && !status.sent && !status.recovering && status.sequence == 1);
+	const auto document = pbd::json::detail::json_parser(pbd::peer_recovery::status_json(status, 3000)).parse();
+	check(document.value && document.value->find("socket") && document.value->find("socket")->find("rejectTag")->text == "1");
+	link.configure({"session", "next-set", 43, 2}, {}, 4000);
+	check(link.get().socket.datagrams == 0 && link.get().socket.first_datagram_us == 0);
+}
+
 // Before current-key contact, loading silence stays under the start wait's 180 s budget without requesting recovery.
 PBD_TEST(PbdPeerRecovery, AnOpponentNotYetHeardUnderTheKeyIsStillLoadingNotALostPath)
 {

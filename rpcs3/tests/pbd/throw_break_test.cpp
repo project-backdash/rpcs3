@@ -1,6 +1,8 @@
 #include "pbd_test.h"
 
 #include "Emu/PBD/pbd_throw_break.h"
+#include "Emu/PBD/pbd_throw_break_record.h"
+#include "Emu/PBD/pbd_match_bind.h"
 
 #include <algorithm>
 #include <array>
@@ -487,13 +489,9 @@ namespace
 		std::vector<std::pair<u32, int>> commits;
 
 		// Everything a combat hash would see, and more: the state memory, the move, the queue and the input history.
-		u64 digest() const
+		template <typename Mix>
+		void visit_proof(Mix&& mix) const
 		{
-			u64 hash = 0xcbf29ce484222325ull;
-			const auto mix = [&](u64 value)
-			{
-				hash = (hash ^ value) * 0x100000001b3ull;
-			};
 			std::vector<std::size_t> order(g.state.pages.size());
 			for (std::size_t at = 0; at < order.size(); ++at)
 				order[at] = at;
@@ -523,7 +521,25 @@ namespace
 				mix(u64{step.fresh} | u64{step.held} << 8 | u64{step.direction} << 16 | u64{step.changed} << 32);
 			for (const auto& [tick, move] : commits)
 				mix(u64{tick} << 32 | static_cast<u32>(move));
+		}
+		u64 digest() const
+		{
+			u64 hash = 0xcbf29ce484222325ull;
+			visit_proof([&](u64 value)
+				{
+					hash = (hash ^ value) * 0x100000001b3ull;
+				});
 			return hash;
+		}
+		std::vector<u8> proof_bytes() const
+		{
+			std::vector<u8> bytes;
+			visit_proof([&](u64 value)
+				{
+					for (u32 shift = 0; shift < 64; shift += 8)
+						bytes.push_back(static_cast<u8>(value >> shift));
+				});
+			return bytes;
 		}
 	};
 
@@ -1140,10 +1156,9 @@ namespace
 	// newest 16 fixed words every frame, also while it holds; when the other PC's report of what it confirmed has not moved
 	// for 15 frames and lies before that window, every other datagram carries the 16 words after it (append_outgoing_inputs).
 	// It holds while its first unconfirmed row is max_prediction behind, or in lockstep until every earlier row is confirmed
-	// and this tick's word is in, with the word L past it while the other PC's fighter may read ahead; runs a missing word as
-	// the last one received, except in lockstep, which is final once it runs and refuses a word read ahead that has not
-	// arrived; corrects from the first row that ran on a wrong word, from a ring of 9 checkpoints; publishes only what it
-	// confirmed; and at the end waits at a segment barrier, where a misprediction is fatal. A PC past the barrier has left the
+	// and this tick's word is in, with every possible word L past it; runs a missing word as the last one received,
+	// except in lockstep, which waits before execution; corrects from the first row that ran on a wrong word, from a ring
+	// of 9 checkpoints; publishes only what it confirmed; and at the end waits at a segment barrier, where a misprediction is fatal. A PC past the barrier has left the
 	// segment: its words from there count as neutral (remote_left), but a word read ahead counts only once it arrives. Both
 	// PCs read the held fighter's port L = D ahead. `confirm_reads_ahead` off confirms as if no row read ahead,
 	// `lockstep_waits_ahead` off runs a lockstep row without the word L past it, and `read_ahead_needs_arrival` off counts a
@@ -1164,6 +1179,7 @@ namespace
 		u32 lockstep_from = 0;  // the first boundary that runs in lockstep (the stretch after the fight)
 		u64 seed = 1;
 		bool confirm_reads_ahead = true, lockstep_waits_ahead = true, read_ahead_needs_arrival = true;
+		std::optional<std::array<session_state, 2>> policies;
 	};
 
 	struct pair_result
@@ -1176,6 +1192,7 @@ namespace
 		std::vector<std::array<u16, 2>> words;
 		std::vector<u64> digests;
 		std::vector<std::array<port_record, 2>> rows;
+		std::vector<std::vector<u8>> proofs;
 	};
 
 	constexpr u32 checkpoint_ring = 9, replay_slots = 8;
@@ -1197,6 +1214,7 @@ namespace
 		std::vector<u8> arrived;
 		std::vector<u16> received;
 		std::vector<u64> digests; // after each tick, as last run
+		std::vector<std::vector<u8>> proofs;
 		std::vector<std::optional<u64>> confirmed, published;
 		std::vector<datagram> inbox;
 		span_cache spans;
@@ -1218,7 +1236,6 @@ namespace
 	{
 		const scenario& c = s.c;
 		const u32 ticks = c.ticks, extent = ticks + s.delay + 1;
-		const std::array<u32, 2> ahead{s.delay, s.delay};
 		pair_result result;
 		u64 random = s.seed * 0x9e3779b97f4a7c15ull | 1;
 		const auto next_random = [&]
@@ -1244,6 +1261,8 @@ namespace
 			p.arrived.resize(extent);
 			p.received.resize(extent);
 			p.digests.resize(extent);
+			if (s.policies)
+				p.proofs.resize(extent);
 			p.confirmed.resize(extent);
 			p.published.resize(extent);
 		}
@@ -1294,8 +1313,14 @@ namespace
 					return std::nullopt;
 				return held_mask(remote_for(p, source));
 			};
-			tick(c, p.now, p.spans, row, t, words[c.port], ahead, held_at, words[1 - c.port]);
+			scenario run = c;
+			if (s.policies)
+				run.hooks = (*s.policies)[p.role].on ? hook::rule : hook::none;
+			const auto ahead = s.policies ? (*s.policies)[p.role].lookahead_of(row) : std::array<u32, 2>{s.delay, s.delay};
+			tick(run, p.now, p.spans, row, t, words[c.port], ahead, held_at, words[1 - c.port]);
 			p.digests[t] = p.now.digest();
+			if (s.policies)
+				p.proofs[t] = p.now.proof_bytes();
 		};
 		const auto confirm = [](peer_side& p, u32 through)
 		{
@@ -1401,7 +1426,7 @@ namespace
 				}
 				return;
 			}
-			// Lockstep: the word L past the row too while the other PC's fighter may read ahead there.
+			// Lockstep waits for every possible source before the battle update can open a window.
 			const bool ahead_in = !s.lockstep_waits_ahead || !index || lookahead_arrived(p.rows[index - 1][1 - p.role], index, s.delay, [&](u32 source)
 																		   {
 																			   return source >= extent || p.arrived[source];
@@ -1467,6 +1492,8 @@ namespace
 				result.fault = "the PCs differ at a confirmed tick";
 			else if (!same_use(left, right))
 				result.fault = "the PCs read different words ahead";
+			else if (s.policies && pcs[0].proofs[t] != pcs[1].proofs[t])
+				result.fault = "the PCs differ in state bytes";
 		}
 		for (u32 role = 0; role < 2; ++role)
 			result.commits[role] = pcs[role].now.commits;
@@ -1475,6 +1502,8 @@ namespace
 			result.words.push_back({word(0, t), word(1, t)});
 			result.digests.push_back(pcs[0].digests[t]);
 			result.rows.push_back(pcs[0].rows[t]);
+			if (s.policies)
+				result.proofs.push_back(pcs[0].proofs[t]);
 		}
 		return result;
 	}
@@ -1575,13 +1604,14 @@ namespace
 		const char* refusal = nullptr;
 		std::vector<u64> digests;
 		std::vector<std::array<port_record, 2>> rows;
+		std::vector<std::vector<u8>> proofs;
 		std::vector<std::pair<u32, int>> commits;
 		std::optional<fighter> kept;
 	};
 
 	template <typename AtHand>
 	playback play_back(const scenario& c, const std::vector<std::array<u16, 2>>& words, const lookahead_rounds& rounds, AtHand&& at_hand,
-		const fighter* from = nullptr, u32 first = 0, u32 keep_at = ~0u)
+		const fighter* from = nullptr, u32 first = 0, u32 keep_at = ~0u, bool capture_proofs = false)
 	{
 		playback out;
 		session_state state;
@@ -1612,6 +1642,8 @@ namespace
 			run.tech_rolls = value.tech_rolls;
 			tick(run, f, spans, row, t, words[t][c.port], state.lookahead_of(row), held_at, words[t][1 - c.port]);
 			out.digests[t] = f.digest();
+			if (capture_proofs)
+				out.proofs.push_back(f.proof_bytes());
 			if ((out.refusal = f.refusal))
 				break;
 		}
@@ -2442,7 +2474,7 @@ PBD_TEST(PbdThrowBreak, PreviousSteps)
 	check(fourth.previous_step == 12 && fourth.previous_gate_open && fourth.previous_held == both && fourth.previous_stock == held_mask(forward) &&
 			  !fourth.previous_read && settled(fourth) && settled_after(third, 12),
 		"the newest step; with nothing tracked, settled");
-	check(may_read_ahead(fourth) && !may_read_ahead(port_record{}), "a fighter in the opponent's moves may read ahead at its next step");
+	check(fourth.in_hold, "the hold survives a skipped input step");
 
 	port_record record{};
 	record.practice_word = one;
@@ -3304,8 +3336,8 @@ PBD_TEST(PbdThrowBreak, AfterAPracticeBlankHeldButtonsAreFreshAgain)
 
 PBD_TEST(PbdThrowBreak, LockstepWaitsForBothWordsAhead)
 {
-	// A lockstep row whose fighter may read ahead runs only once the word L past it and the word L past its previous step,
-	// against which its presses count, have arrived.
+	// Every lockstep row waits for the word L past it and the word L past its previous step, against which its presses
+	// count, because a window may open only after the boundary.
 	std::vector<u32> in{23};
 	const auto arrived = [&](u32 source)
 	{
@@ -3323,11 +3355,14 @@ PBD_TEST(PbdThrowBreak, LockstepWaitsForBothWordsAhead)
 	check(!lookahead_arrived(before, 20, 3, arrived), "after a pause the previous step is 15: word 18");
 	in.push_back(18);
 	check(lookahead_arrived(before, 20, 3, arrived), "all in");
-	check(lookahead_arrived(port_record{}, 20, 3, arrived) && lookahead_arrived(before, 20, 0, [](u32)
-																  {
-																	  return false;
-																  }),
-		"a fighter that cannot read ahead, or L 0, waits for nothing");
+	check(lookahead_arrived(port_record{}, 20, 3, arrived), "even an unknown previous step waits for this row's source");
+	in.clear();
+	check(!lookahead_arrived(port_record{}, 20, 3, arrived), "a new window cannot bypass the wait");
+	check(lookahead_arrived(before, 20, 0, [](u32)
+			  {
+				  return false;
+			  }),
+		"L 0 waits for nothing");
 }
 
 PBD_TEST(PbdThrowBreak, DirectionsAndOtherButtonsKeepTheDelay)
@@ -3819,11 +3854,64 @@ PBD_TEST(PbdThrowBreak, LockstepRowsRunOnFinalWords)
 	check(parted, "a lockstep row that runs on a predicted word ahead");
 }
 
-PBD_TEST(PbdThrowBreak, AWindowThatOpensInLockstepRunsExactlyOrRefuses)
+PBD_TEST(PbdThrowBreak, RoundEndWaitsForUnannouncedWindowSource)
 {
-	// No hold starts in the stretches that run in lockstep, but if one did, its first window step would need words no
-	// boundary waited for: it runs if they have arrived and refuses if not, and never runs a prediction that cannot be
-	// corrected.
+	// A round transition can introduce a window after a step that did not read ahead. The remote word at 4191 is
+	// present, but the word at 4192 arrives later over the link; the boundary must wait before any guest substitution.
+	port_record before;
+	before.stepped = true;
+	before.ahead = 1;
+	std::vector<u32> in{4190, 4191};
+	const auto arrived = [&](u32 source)
+	{
+		return listed(in, source);
+	};
+	check(!lookahead_arrived(before, 4191, 1, arrived), "the first possible window waits for source 4192");
+	in.push_back(4192);
+	check(lookahead_arrived(before, 4191, 1, arrived), "the delayed word admits the tick");
+	before.stepped = false;
+	before.previous_known = true;
+	before.previous_step = 4187;
+	check(!lookahead_arrived(before, 4191, 1, arrived), "a pause also waits for the previous step's source 4188");
+	in.push_back(4188);
+	check(lookahead_arrived(before, 4191, 1, arrived), "both words are final after the pause");
+}
+
+PBD_TEST(PbdThrowBreak, RoundTransitionAt4191CompletesOverDelayedLink)
+{
+	// A first-frame escape window opens on the round transition, after the last boundary had no window. At D 1 its
+	// source is 4192. One-way transit of 2..3 frames leaves that remote word late even when tick 4191 is already known.
+	const world w = throw_world({{1, 15, 15, break_class::one}});
+	for (u16 side = 0; side < 2; ++side)
+		for (const bool paused : {false, true})
+		{
+			pair_setup s;
+			s.c = base_of(w, 4230);
+			s.c.grab = 4191;
+			s.c.hooks = hook::rule;
+			s.c.port = side;
+			s.c.actor = side ? side_1 : side_0;
+			if (paused)
+				s.c.paused = {4189, 4190};
+			s.delay = 1;
+			s.lockstep_from = 4180;
+			s.link = {2, 1, 0};
+			s.samples[side] = words_with(4240, {{4194, one, 1}});
+			s.samples[1 - side] = words_with(4240, {});
+			const pair_result r = play_pair(s);
+			check(!r.fault, r.fault ? r.fault : "");
+			check(r.holds, "the link delayed input before lockstep execution");
+			check(r.rows[4191][side].use.source == 4192, "the first window used its final source at 4192");
+			const auto expected = offline_commits(s.c, s.samples[side], s.samples[1 - side]);
+			check(!expected.empty() && expected.back().second == 2 && r.commits[0] == expected && r.commits[1] == expected,
+				"both peers complete the throw and escape on the offline ticks");
+		}
+}
+
+PBD_TEST(PbdThrowBreak, AWindowThatOpensInLockstepWaitsForFinalWords)
+{
+	// A new hold can open after the boundary classified the round as lockstep. Its first window needs final words
+	// even when the preceding step had no hold or window. Both PCs wait and then execute identical input and state.
 	const world w = throw_world({{1, 15, 15, break_class::one}});
 	pair_setup s;
 	s.c = base_of(w, 120);
@@ -3831,7 +3919,7 @@ PBD_TEST(PbdThrowBreak, AWindowThatOpensInLockstepRunsExactlyOrRefuses)
 	s.c.thrower = {{0, held_mask(one | three), 1, 0xffff, 1, 1}};
 	s.c.hooks = hook::rule;
 	s.lockstep_from = 20;
-	u32 ran = 0, refused = 0;
+	u32 ran = 0;
 	for (u16 side = 0; side < 2; ++side)
 		for (u32 delay = 1; delay <= 6; ++delay)
 			for (u32 link = 0; link < links.size(); ++link)
@@ -3844,16 +3932,12 @@ PBD_TEST(PbdThrowBreak, AWindowThatOpensInLockstepRunsExactlyOrRefuses)
 				s.link = links[link];
 				s.seed = (u64{side} << 40) ^ (u64{delay} << 32) ^ (u64{link} << 24) ^ 7;
 				const pair_result r = play_pair(s);
-				if (!r.fault)
-					++ran;
-				else
-				{
-					check(says(r.fault, "throw_break_source_missing"), std::string(r.fault) + " (side " + std::to_string(side) + ", D " +
-																		   std::to_string(delay) + ", link " + std::to_string(link) + ")");
-					++refused;
-				}
+				check(!r.fault, std::string(r.fault ? r.fault : "") + " (side " + std::to_string(side) + ", D " +
+									std::to_string(delay) + ", link " + std::to_string(link) + ")");
+				check(r.holds, "late input holds before execution");
+				++ran;
 			}
-	check(ran + refused == 48, "every pair ran exactly or refused");
+	check(ran == 48, "every pair completed with matching confirmed input and state");
 }
 
 PBD_TEST(PbdThrowBreak, AWordReadAheadPastTheOtherPcsExitMustArrive)
@@ -3928,6 +4012,96 @@ PBD_TEST(PbdThrowBreak, RoundSettings)
 	session_state off;
 	off.configure_peer(setting::off, setting::on, true, 3);
 	check(!off.recorded().any(), "the rule off records nothing, whatever the tech-roll switch");
+}
+
+PBD_TEST(PbdThrowBreak, HeldAndColdMatchesHaveIdenticalProofsRecordsAndWatchers)
+{
+	const world thrown = throw_world({{1, 15, 15, break_class::one}}), tackle = tackle_world(30);
+	for (const pair_case& p : {break_case(thrown), tackle_case(tackle)})
+		for (u16 side = 0; side < 2; ++side)
+			for (u32 delay = 1; delay <= max_lookahead; ++delay)
+				for (const bool enabled : {false, true})
+					for (const bool automatic : {false, true})
+					{
+						auto set = record_set(p, side, delay);
+						std::optional<pair_result> cold;
+						std::string cold_metadata;
+						for (u32 held = 0; held < 4; ++held)
+						{
+							std::array<session_state, 2> states;
+							for (u32 role = 0; role < 2; ++role)
+							{
+								auto& state = states[role];
+								const bool warm = (held & (1u << role)) != 0;
+								std::optional<bool> admitted;
+								if (warm)
+								{
+									const pbd::match_bind::identity identity{42, std::string(64, 'a'), std::string(64, 'b'), std::string(64, 'c')};
+									const std::string bind = "{\"schema\":\"pbd-match-bind-1\",\"nativeGeneration\":\"42\",\"checkpointSha256\":" +
+									                         pbd::json::quoted(identity.checkpoint) + ",\"emulatorSha256\":" + pbd::json::quoted(identity.emulator) +
+									                         ",\"recipeSha256\":" + pbd::json::quoted(identity.recipe) + ",\"setId\":\"set-1\",\"seed\":1,\"spectatorFromStart\":false," +
+									                         "\"peer\":{\"role\":" + std::to_string(role) + ",\"session\":7,\"localPort\":5000,\"remotePort\":5001,\"address\":\"127.0.0.1\"," +
+									                         "\"throwBreak\":{\"version\":2,\"enabled\":" + (enabled ? "true" : "false") + "}}}";
+									const auto parsed = pbd::match_bind::parse(bind, identity);
+									check(parsed.value && parsed.value->throw_break.has_value());
+									admitted = parsed.value->throw_break;
+								}
+								state.configure_peer(read_setting(warm ? (enabled ? "0" : "1") : (enabled ? "1" : "0")),
+									warm ? setting::on : setting::off, true, automatic ? std::nullopt : std::optional<u32>{delay}, admitted);
+								if (automatic)
+								{
+									check(!state.recorded().any());
+									check((state.match_changed(true) != nullptr) == enabled);
+									state.apply_delay(delay);
+								}
+								check(!state.match_changed(true));
+								check(state.recorded() == (enabled ? lookahead_setting{{delay, delay}} : lookahead_setting{}));
+							}
+							check(states[0].options_digest(123) == states[1].options_digest(123));
+							const auto recorded = states[0].recorded();
+							const auto metadata = recorded.any() ? pbd::set_channel::detail::serialize(record_json(recorded)) : std::string{};
+							set.setup.policies = states;
+							const auto played = play_pair(set.setup);
+							check(!played.fault, played.fault ? played.fault : "");
+							if (!held)
+							{
+								cold = played;
+								cold_metadata = metadata;
+							}
+							check(played.proofs == cold->proofs && played.digests == cold->digests && played.words == cold->words && played.commits == cold->commits);
+							check(metadata == cold_metadata);
+							for (u32 t = 0; t < played.rows.size(); ++t)
+								for (u32 port = 0; port < 2; ++port)
+									check(same_use(played.rows[t][port].use, cold->rows[t][port].use));
+							lookahead_rounds rounds;
+							check(rounds.add(0, recorded));
+							const auto replay = play_back(set.setup.c, played.words, rounds, everything, nullptr, 0, ~0u, true);
+							check(!replay.refusal && replay.proofs == played.proofs && replay.digests == played.digests && replay.commits == played.commits[0]);
+							const auto frames = watcher_frames(static_cast<u32>(played.words.size()), 51, 7, 7, enabled ? delay : 0);
+							const auto watched = play_back(set.setup.c, played.words, rounds, [&](u32 t)
+								{
+									return frames[t];
+								},
+								nullptr, 0, ~0u, true);
+							check(!watched.refusal && watched.proofs == played.proofs && watched.digests == played.digests && watched.commits == played.commits[0]);
+						}
+					}
+}
+
+PBD_TEST(PbdThrowBreak, AdmissionKeepsLegacyTimingAndDelayBounds)
+{
+	for (u32 delay = 0; delay <= max_lookahead + 1; ++delay)
+		for (const bool fixed_ahead : {false, true})
+		{
+			session_state legacy, cold;
+			legacy.configure_peer(setting::on, setting::on, fixed_ahead, delay, false);
+			cold.configure_peer(setting::off, setting::off, fixed_ahead, delay);
+			check(legacy.recorded() == cold.recorded() && legacy.options_digest(7) == cold.options_digest(7));
+			check(!legacy.on && !legacy.tech_rolls && !legacy.developer);
+			session_state held;
+			held.configure_peer(setting::off, setting::off, fixed_ahead, delay, true);
+			check(held.peer_lookahead == std::array<u32, 2>{lookahead(true, fixed_ahead, delay), lookahead(true, fixed_ahead, delay)});
+		}
 }
 
 PBD_TEST(PbdThrowBreak, ARecordedSetPlaysBackBitIdentical)

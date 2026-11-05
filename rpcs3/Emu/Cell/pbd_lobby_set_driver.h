@@ -104,6 +104,24 @@ namespace pbd::lobby_set
 			// and its game_started name the same ones.
 			if (rank_values && rank_values->any())
 				payload.fields.back().second.fields.emplace_back("rankScreens", pbd::rank_stakes::values_json(*rank_values));
+			if (output.identity().rank_profiles)
+			{
+				const auto profile = [](const fighter& player)
+				{
+					if (!player.ranks)
+						return json_value::object({{"rank", json_value::number(player.rank)}});
+					std::vector<json_value> groups;
+					for (const auto& group : *player.ranks)
+					{
+						std::vector<json_value> rows;
+						for (const auto row : group.rows)
+							rows.push_back(json_value::number(row));
+						groups.push_back(json_value::object({{"rows", json_value::array(std::move(rows))}, {"rank", json_value::number(group.rank)}}));
+					}
+					return json_value::object({{"ranks", json_value::array(std::move(groups))}});
+				};
+				payload.fields.back().second.fields.emplace_back("rankProfiles", json_value::object({{"left", profile(output.identity().left)}, {"right", profile(output.identity().right)}}));
+			}
 			return payload;
 		}
 		bool prepare_stream()
@@ -174,7 +192,7 @@ namespace pbd::lobby_set
 							detail::number32(parsed.value->find("boundary"), game_origin, observed_boundary, boundary) &&
 							detail::number32(cap->find("sessionSeed"), 1, 0xffffffffu, seed) && seed == clean.seed &&
 							(detail::is(cap->find("schema"), pbd::throw_break::capsule_schema_stock) ||
-								detail::is(cap->find("schema"), pbd::throw_break::capsule_schema_rule)))
+								detail::is(cap->find("schema"), pbd::throw_break::capsule_schema_rule) || detail::is(cap->find("schema"), pbd::custom_wire::capsule_schema)))
 						{
 							payload.fields.emplace_back("gameStartCapsule", std::move(*parsed.value));
 							if (pbd_source_emulator.size() == 64 && std::all_of(pbd_source_emulator.begin(), pbd_source_emulator.end(),
@@ -442,10 +460,14 @@ namespace pbd::lobby_set
 				const auto words = pad(next);
 				if (!words.verified)
 					return refuse("confirmed_pad_readback_missing", "The confirmed input has no verified two-port native post.");
-				const auto encoded = pad_record(words.raw[output.identity().local_side == side::left ? 0 : 1]);
-				for (const auto word : words.raw)
+				const auto own = output.identity().local_side == side::left ? 0u : 1u;
+				auto encoded = pad_record(words.raw[own]);
+				const bool customs = in_game(output.identity()) && (output.identity().left.custom_fields || output.identity().right.custom_fields);
+				encoded[2] = customs ? static_cast<std::uint8_t>(words.look_slots[own]) : 0;
+				for (std::size_t side = 0; side < 2; ++side)
 				{
-					const auto record = pad_record(word);
+					auto record = pad_record(words.raw[side]);
+					record[2] = customs ? static_cast<std::uint8_t>(words.look_slots[side]) : 0;
 					paired_pads.insert(paired_pads.end(), record.begin(), record.end());
 				}
 				for (const auto word : words.applied)

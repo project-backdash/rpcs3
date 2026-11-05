@@ -152,7 +152,14 @@ void pbd::rollback_session::practice_steps::advance_opening_selection(pbd::pract
 			if (!requested)
 				opening_refuse(entry, now, refusal);
 			else
+			{
 				entry.load_requested = true;
+			}
+		}
+		if (context && start::look_boundary(entry.load_requested, entry.looks_written, mode, scene, pending))
+		{
+			write_opening_looks(entry);
+			entry.looks_written = true;
 		}
 		start::snapshot sample;
 		sample.mode = mode;
@@ -187,5 +194,47 @@ void pbd::rollback_session::practice_steps::opening_refuse(pbd::practice::start:
 	{
 		entry.refusal = reason;
 		entry.failed_at = now;
+	}
+}
+
+// With PBD_CUSTOM_LOOKS=1 and a look in the start request, the player's record gets that look on the chosen costume and the
+// dummy's record its fighter's defaults (pbd::custom_look). Written at the resource-scene boundary after the outgoing selector
+// fills the cards, before the loader reads them as the fighters load and at each match start. The records' page is one the rewind checkpoints copy whole
+// (pbd::replay_capture::pbd_static_ranges), so every checkpoint from this boundary on holds the written looks. Without the
+// switch nothing is written and the records stay as the setup left them.
+void pbd::rollback_session::practice_steps::write_opening_looks(const pbd::practice::start::state& entry)
+{
+	namespace look = pbd::custom_look;
+	const char* enabled = pbd::env::find("PBD_CUSTOM_LOOKS");
+	if (!entry.wanted || !entry.wanted->custom || !enabled || std::string_view(enabled) != "1")
+		return;
+	u32 humans = 0;
+	const bool humans_read = read_word(0x1008f0b0, humans);
+	for (u32 side = 0; side < 2; ++side)
+	{
+		look::look wanted{entry.loaded.wanted.rows[side]};
+		if (side == 0)
+		{
+			wanted = *entry.wanted->custom;
+			wanted.row = entry.loaded.wanted.rows[0];
+		}
+		const auto* row = look::catalogue_row(wanted.row);
+		if (!row)
+		{
+			pbd_session_log.error("Practice look: row %u of side %u is outside the costume table; its record was left alone.", wanted.row, side);
+			continue;
+		}
+		const bool showable = look::normalise(wanted).has_value();
+		const look::look worn = look::shown(wanted);
+		std::array<u8, look::blocks_size> saved{}, held{};
+		bool written = vm::try_access(look::save_blocks_address(row->fighter), saved.data(), look::blocks_size, false);
+		auto blocks = look::record_blocks(saved, worn);
+		written = written && vm::try_access(look::record_address(side), blocks.data(), look::blocks_size, true) &&
+		          vm::try_access(look::record_address(side), held.data(), look::blocks_size, false) && held == blocks;
+		pbd_session_log.notice("Practice look at resource boundary %u: side %u, row %u (fighter %u, costume %u) wears items %04x %04x %04x %04x and colours %d %d %d%s; "
+							   "record %s; humans word %s.",
+			index, side, worn.row, row->fighter, row->costume, worn.items[0], worn.items[1], worn.items[2], worn.items[3], worn.colours[0],
+			worn.colours[1], worn.colours[2], showable ? "" : " (the wanted look is not one the game could show)",
+			written ? "written" : "not written", humans_read ? fmt::format("0x%x", humans) : std::string("unread"));
 	}
 }

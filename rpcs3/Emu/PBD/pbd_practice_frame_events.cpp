@@ -106,7 +106,7 @@ namespace pbd::practice::native
 			const auto& reached = displayed[side];
 			auto& shown = out[side];
 			const bool current = reached.move != 0 && reached.move == reading.move;
-			shown.startup = current && reached.startup ? reached.startup : reading.startup;
+			shown.startup = current ? reached.startup : reading.startup;
 			shown.on_block = current && reached.outcome == pbd::practice::frames::contact::block ? reached.advantage : std::nullopt;
 			shown.on_hit = current && reached.outcome == pbd::practice::frames::contact::hit ? reached.advantage : std::nullopt;
 			shown.on_whiff = current && reached.contacted ? std::nullopt : current && reached.whiff ? reached.whiff :
@@ -435,18 +435,31 @@ namespace pbd::practice::native
 			// Reactions run from the attacker's bank, so the bank holding the move gives its timing whichever fighter runs it.
 			// A reaction is read as one (a stun only for it, its own inputs not counted).
 			const u32 move_bank = word((frame_allocation(actor, move) ? actor : opponent) + 0x50);
-			const auto first_active = cursor == 1 ? pbd::practice::frames::startup(halfword(move + 0x44), halfword(move + 0x46), halfword(move + 0x24), attack) : std::nullopt;
-			frame_data.calculator.commit_reading(side, move, counter, cursor,
-				pbd::move_list::readiness(move_bank, move, cursor, pbd::practice::frames::contact::unavailable, word, halfword,
-					frame_data.calculator.reacting(side, counter)),
+			const auto first_active = direction == 1 ? pbd::practice::frames::startup(halfword(move + 0x44), halfword(move + 0x46), halfword(move + 0x24), attack) : std::nullopt;
+			const u32 flags = word(move + 0x0c);
+			const auto readiness = pbd::move_list::readiness(move_bank, move, cursor, pbd::practice::frames::contact::unavailable, word, halfword,
+				frame_data.calculator.reacting(side, counter));
+			bool windup = (flags & 0x8000) && (flags & pbd::practice::frames::down_flags) != pbd::practice::frames::down_flags;
+			// Some windups are still grounded. Their automatic path identifies the later attack without treating a stance's
+			// optional attack inputs as part of the move.
+			if (!attack && readiness)
+				for (u32 index = 0; index < readiness->path_count && index < readiness->path.size(); ++index)
+				{
+					const u32 next = readiness->path[index];
+					windup = windup || pbd::practice::frames::attack_window(halfword(next + 0x44), halfword(next + 0x46), halfword(next + 0x24));
+				}
+			frame_data.calculator.commit_reading(side, move, counter, cursor, readiness,
 				attack,
 				attack && halfword(move + 0x46) ? std::optional<u32>(halfword(move + 0x46)) : std::nullopt, first_active,
-				(word(move + 0x0c) & pbd::practice::frames::wall_flag) != 0);
+				(flags & pbd::practice::frames::wall_flag) != 0,
+				direction == 1 && windup);
 			if (pbd::practice::frames::throw_hold(hit_level))
 				frame_data.calculator.throw_connected(side);
 			pbd::practice::dummy_move::committed(side, counter, move);
 			frame_data.tracker.commit(side, move, cursor == 1 ? pbd::practice::frames::startup(halfword(move + 0x44), halfword(move + 0x46), halfword(move + 0x24), attack) : std::nullopt,
 				attack, attack && frame_data.references[side].recovery ? std::optional<u32>(halfword(move + 0x46)) : std::nullopt);
+			if (frame_data.tracker.latest[side].move == frame_data.calculator.latest[side].move)
+				frame_data.tracker.latest[side].startup = frame_data.calculator.latest[side].startup;
 		}
 
 		void observe_move()

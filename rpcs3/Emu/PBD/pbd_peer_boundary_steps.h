@@ -66,8 +66,8 @@ struct pbd::rollback_session::peer_boundary_steps : tick_dispatch
 			peer_poll(index);
 			if (data.peer.fault)
 				break;
-			// A row whose remote fighter read ahead waits for those words too, in lockstep and under backpressure alike; a
-			// lockstep row, which is final once it runs, also for the word its own remote fighter may read ahead.
+			// Confirmation includes every word an earlier row read ahead. A lockstep row also waits for all possible
+			// lookahead sources because its battle update may open a new window after this boundary.
 			const u32 u = peer_first_unconfirmed(index);
 			observe_prediction(u);
 			const bool want_current = wait_for_fresh_input();

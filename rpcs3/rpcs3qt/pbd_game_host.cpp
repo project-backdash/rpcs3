@@ -34,6 +34,7 @@
 #endif
 
 #include "pbd_game_host_visibility.h"
+#include "pbd_game_host_shell.h"
 
 extern atomic_t<bool> g_game_window_focused;
 LOG_CHANNEL(game_host_log, "PBD Game Host");

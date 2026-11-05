@@ -133,6 +133,28 @@ struct pbd::rollback_session::local_input_steps : boundary_call
 		}
 	}
 
+	std::optional<pbd::costume_select::card> sample_costume(bool expired)
+	{
+		if (!data.lobby.channel || !pbd::set_channel::in_game(data.lobby.channel->identity()) || (selector_runs && selector_owns))
+			return {};
+		const auto& set = data.lobby.channel->identity();
+		if (!set.left.custom_fields && !set.right.custom_fields)
+			return {};
+		const auto seen = pbd::hidden_selection::read_native_observation(data.peer.role);
+		const auto tables = pbd::hidden_selection::read_native_tables();
+		if (!seen || !tables)
+			return {};
+		auto& menu = data.lobby.costume_rows[data.peer.role];
+		const auto& player = data.peer.role ? set.right : set.left;
+		const auto customs = pbd::custom_wire::choices(player.look_table, seen->base_character);
+		const auto choice = menu.step(*tables, *seen, raw, customs, expired);
+		if (choice.controller_setup)
+			pbd::settings_menu::request_controls_open(pbd::controllers::read_display().device);
+		raw = choice.word.value_or(raw);
+		pbd::costume_panel::publish(pbd::costume_panel::compose(data.generation, data.peer.role, menu));
+		return choice.picked;
+	}
+
 	bool sample_selection_timer()
 	{
 		if (data.lobby.select_timer && data.lobby.select_timer->selecting())
@@ -140,7 +162,15 @@ struct pbd::rollback_session::local_input_steps : boundary_call
 			auto& select_clock = *data.lobby.select_timer;
 			const auto select_now = select_view();
 			const bool had_character = select_clock.character_deadline().has_value(), had_stage = select_clock.stage_deadline().has_value();
+			const auto deadline = select_clock.character_deadline();
+			const bool expired = deadline && source >= *deadline;
+			const auto costume = sample_costume(expired);
 			raw = select_clock.sample(source, select_now, raw);
+			if (costume && raw)
+			{
+				raw = costume->confirm;
+				data.lobby.look_slot_own = costume->slot ? *costume->slot + 1 : 0;
+			}
 			if (const char* refusal = select_clock.refusal())
 			{
 				pbd::select_band::hide(data.generation);

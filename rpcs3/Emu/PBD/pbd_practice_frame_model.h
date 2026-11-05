@@ -9,7 +9,7 @@
 
 namespace pbd::practice::frames
 {
-	// Startup comes from the inclusive attack window at cursor 1. Block and hit advantage shown in Practice come from move
+	// Startup counts to the first active frame across the committed jump and attack parts. Block and hit advantage come from move
 	// data at contact (pbd_practice_frame_calculator.h); the tracker's observed standing-neutral endpoints are logged beside them as a
 	// cross-check, and its whiff recovery is what the panel shows for a move that never connected.
 	using tick = std::uint32_t;

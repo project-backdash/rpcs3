@@ -3,6 +3,7 @@
 #include "cellPad.h"
 #include "pbd_input_trace.h"
 #include "pbd_input_script_runtime.h"
+#include "Emu/PBD/pbd_fight_tape.h"
 #include "pbd_input_live.h"
 #include "Emu/Cell/PPUThread.h"
 #include "Emu/PBD/pbd_practice_presentation.h"
@@ -25,6 +26,38 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+namespace pbd
+{
+	static fight_tape_clock& input_tape_clock()
+	{
+		static fight_tape_clock clock;
+		return clock;
+	}
+	// Boundary observation must not load a legacy poll tape before its first eligible device read.
+	bool fight_tape_enabled()
+	{
+		return input_script_fight_mode.load(std::memory_order_acquire);
+	}
+	void observe_fight_tape(std::uint32_t boundary, std::uint32_t scene, std::uint32_t pending, std::uint32_t ordinal,
+		std::uint32_t delay)
+	{
+		input_tape_clock().observe(boundary, scene, pending, ordinal, delay);
+	}
+	std::optional<input_script_output> fight_tape_at(std::uint32_t port, std::uint64_t applied_boundary)
+	{
+		const auto frame = input_tape_clock().frame(applied_boundary);
+		return frame ? get_input_script().at_frame(port, *frame) : std::nullopt;
+	}
+	static std::optional<input_script_output> next_pad_tape_sample(std::uint32_t port)
+	{
+		auto& tape = get_input_script();
+		if (!tape.fight_anchored())
+			return tape.next(port);
+		const auto frame = input_tape_clock().poll_frame();
+		return frame ? tape.at_frame(port, *frame) : std::nullopt;
+	}
+} // namespace pbd
 
 namespace pbd::pad_read
 {
@@ -451,7 +484,7 @@ namespace pbd::pad_read
 					live_input(r, pads);
 					return true;
 				}
-				if (const auto scripted = pbd::get_input_script().next(r.port))
+				if (const auto scripted = pbd::next_pad_tape_sample(r.port))
 				{
 					script_input(r, pads, *scripted);
 					return true;

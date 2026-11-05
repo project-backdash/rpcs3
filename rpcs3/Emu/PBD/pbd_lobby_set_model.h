@@ -68,6 +68,7 @@ namespace pbd::lobby_set
 	{
 		std::array<std::uint16_t, 2> raw{}, applied{};
 		bool verified = false;
+		std::array<u32, 2> look_slots{};
 	};
 	// Byte-exact peer sync facts, sampled on the owner at the input boundary and replaced by corrected execution.
 	struct sync_facts

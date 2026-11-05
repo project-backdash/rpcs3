@@ -6,6 +6,16 @@ events, but is not parented to the launcher. Cross-process child parenting joins
 only a small native message thread joins that queue. Qt, rendering, settings writes and monitor-mode discovery stay on
 other threads. A delayed Qt GUI therefore does not require killing the game to restore launcher input.
 
+The hidden Qt input window and the hosted render surface explicitly carry `WS_EX_TOOLWINDOW`, with `WS_EX_APPWINDOW`
+cleared. This stays true when a child becomes an owned popup: the shell must never choose either helper as the launcher's
+Alt-Tab representative. An external-overlay game intentionally has an unowned `WS_EX_APPWINDOW` surface while visible.
+The message thread checks its launcher's HWND and PID as well as process lifetime; closing that window ends the surface
+even while the launcher process is still shutting down. The render HWND is otherwise retained until rendering has stopped.
+
+`tools/pbd/window_shell_check.cpp` is a standalone Windows check of these production style helpers. Build with C++20,
+`user32.lib` and `dwmapi.lib`, then run it only through an inactive-desktop harness. It refuses the input desktop, enumerates
+top-level windows over 30 cycles and 90 handoffs, checks an intentional external game entry, and verifies owner teardown.
+
 `PBD_GAME_HOST` carries schema `pbd-game-host-1`, decimal `hwnd`, launcher `pid`, and a positive 31-bit message `token`.
 Native verifies the window's process, root identity and Windows session. `displayMode` is `fullscreen`, `borderless` or
 `windowed`; the launcher applies the saved mode and writes the matching Vulkan fullscreen preference. `presentation`

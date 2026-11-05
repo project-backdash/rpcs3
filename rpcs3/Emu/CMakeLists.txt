@@ -126,6 +126,8 @@ set_source_files_properties("../util/yaml.cpp" "Cell/Modules/cellPad.cpp" "Cell/
     "PBD/pbd_practice_menu_navigation.cpp"
     "PBD/pbd_practice_move_observation.cpp"
     "PBD/pbd_practice_opening.cpp"
+    "PBD/pbd_custom_editor.cpp"
+    "PBD/pbd_custom_photo.cpp"
     "PBD/pbd_practice_option_commands.cpp"
     "PBD/pbd_practice_pad_actions.cpp"
     "PBD/pbd_practice_restart.cpp"
@@ -278,6 +280,8 @@ target_sources(rpcs3_emu PRIVATE
     PBD/pbd_practice_menu_navigation.cpp
     PBD/pbd_practice_move_observation.cpp
     PBD/pbd_practice_opening.cpp
+    PBD/pbd_custom_editor.cpp
+    PBD/pbd_custom_photo.cpp
     PBD/pbd_practice_option_commands.cpp
     PBD/pbd_practice_pad_actions.cpp
     PBD/pbd_practice_restart.cpp

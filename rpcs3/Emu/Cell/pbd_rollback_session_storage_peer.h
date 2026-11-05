@@ -8,6 +8,7 @@
 #include "../PBD/pbd_peer_input_trace.h"
 #include "../PBD/pbd_peer_log.h"
 #include "../PBD/pbd_peer_recovery.h"
+#include "../PBD/pbd_peer_local_route.h"
 #include "../PBD/pbd_set_publication.h"
 
 namespace pbd::session_runtime
@@ -109,14 +110,18 @@ namespace pbd::session_runtime
 			// LAN/internet: the other peer's IPv4 address or IPv6 literal, ASCII. Default loopback.
 			std::array<char, 64> address{'1', '2', '7', '.', '0', '.', '0', '.', '1'};
 			u32 local_port = 0, remote_port = 0;
+			u16 relay_local_port = 0;
 			u64 socket_handle = ~u64{0}, sent = 0, received = 0, duplicates = 0;
 #ifdef _WIN32
 			bool wsa_started = false;
+			pbd::peer_local_route::socket relay_socket;
 			std::mutex socket_mutex;
 			// Call only after the receiver and admitted owner callbacks have drained. End notices share this lock with close.
 			void release_transport() noexcept
 			{
 				std::lock_guard socket_lock(socket_mutex);
+				relay_socket.close();
+				relay_local_port = 0;
 				if (socket_handle != ~u64{0})
 				{
 					::closesocket(static_cast<SOCKET>(socket_handle));
@@ -300,6 +305,8 @@ namespace pbd::session_runtime
 			// change only to numbers both announced.
 			u32 records = 0, prev_records = 0;
 			std::array<u32, 8> peer_records{};
+			u32 look_slot = 0, prev_look_slot = 0;
+			std::array<u32, 8> peer_look_slot{};
 		} segments;
 		// The exit gate and the settle hold of the pre-battle screens.
 		struct gate_state

@@ -60,6 +60,7 @@ namespace pbd::set_channel
 		std::string next_set_id, next_match_id;
 		std::uint32_t first_to_games = 0;
 		std::array<std::optional<std::uint32_t>, 2> ranks;
+		std::array<std::optional<std::vector<rank_group>>, 2> rank_tables;
 		// rank_stakes only: what a set win and a set loss give each player (left, right), and each placing player's count.
 		pbd::rank_stakes::stakes stakes{};
 		std::array<std::optional<pbd::rank_stakes::placement>, 2> placements;
@@ -132,6 +133,8 @@ namespace pbd::set_channel
 					return "bad_next_set";
 				out.ranks[index] = held;
 			}
+			if (const auto* ranks = repeated->find("ranks"))
+				out.rank_tables[index] = read_rank_table(ranks).value_or(std::vector<rank_group>{});
 			read_records(*repeated, "next_set." + std::string(key), in_game(expected), out.records[index], out.record_tables[index], out.ignored);
 		}
 		return {};

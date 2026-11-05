@@ -247,7 +247,11 @@ namespace rsx
 				return;
 			assets::get();
 			static const fonts type = preload_fonts();
-			practice_hud_drawing draw{m_snapshot, type, atlas_ref::pick(m_output_scale, pbd_xbox_glyphs())};
+			// One device snapshot keeps every glyph and label in this frame in the same family during a takeover.
+			const auto device = ::pbd::controllers::read_display();
+			auto atlas = atlas_ref::pick(m_output_scale, device.active ? device.family == "xbox" || device.family == "steamdeck" : pbd_xbox_glyphs());
+			atlas.shown = &device;
+			practice_hud_drawing draw{m_snapshot, type, atlas};
 			draw.draw(m_compiled, band, timestamp_us);
 		}
 

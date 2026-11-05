@@ -10,6 +10,7 @@
 
 #include "pbd_json_reader.h"
 #include "pbd_session_health.h"
+#include "pbd_peer_diagnostics.h"
 #include "../Cell/pbd_peer_endpoint.h"
 
 #include <mutex>
@@ -106,6 +107,7 @@ namespace pbd::peer_recovery
 	}
 	struct status
 	{
+		pbd::peer_diagnostics::counters socket;
 		context identity;
 		std::optional<pbd::session_health::progress> progress;
 		endpoint active{}, candidate{}, previous{};
@@ -117,6 +119,7 @@ namespace pbd::peer_recovery
 		// the peer's inputs carry an echo of a send time (echoed) and of one of this side's sends under the key (answered).
 		std::uint64_t first_sent_us = 0, heard_us = 0;
 		std::uint16_t local_port = 0;
+		std::uint16_t relay_local_port = 0;
 		bool enabled = false, recovering = false, sent = false, heard = false, echoed = false, answered = false;
 		const char* command_result = "none";
 		const char* reason = "";
@@ -156,6 +159,21 @@ namespace pbd::peer_recovery
 		}
 
 	public:
+		void send_result(bool ok, std::uint32_t error)
+		{
+			std::lock_guard lock(mutex);
+			value.socket.sent(ok, error);
+		}
+		void datagram(bool matches, std::uint64_t now)
+		{
+			std::lock_guard lock(mutex);
+			value.socket.received(matches, now);
+		}
+		void rejected(pbd::peer_diagnostics::rejection reason)
+		{
+			std::lock_guard lock(mutex);
+			value.socket.rejected(reason);
+		}
 		struct traffic_status
 		{
 			bool enabled, recovering;
@@ -176,7 +194,7 @@ namespace pbd::peer_recovery
 			std::lock_guard lock(mutex);
 			value.active = target;
 		}
-		void configure(context identity, endpoint active, std::uint64_t now, std::uint16_t local_port = 0)
+		void configure(context identity, endpoint active, std::uint64_t now, std::uint16_t local_port = 0, std::uint16_t relay_local_port = 0)
 		{
 			if (identity.session_id.size() > 64 || identity.set_id.size() > 64)
 				identity = {};
@@ -195,6 +213,7 @@ namespace pbd::peer_recovery
 			value.sequence = sequence;
 			value.started_us = now;
 			value.local_port = local_port;
+			value.relay_local_port = relay_local_port;
 			value.enabled = value.identity.epoch && value.identity.peer_session && !value.identity.session_id.empty() && !value.identity.set_id.empty();
 		}
 		status get() const
@@ -433,6 +452,7 @@ namespace pbd::peer_recovery
 		const auto sent_ago = value.sent && now >= value.first_sent_us ? (now - value.first_sent_us) / 1000 : 0;
 		return "{\"keyEpoch\":" + std::to_string(value.identity.epoch) + ",\"peerSession\":" + std::to_string(value.identity.peer_session) +
 		       ",\"localPort\":" + std::to_string(value.local_port) +
+		       ",\"relayLocalPort\":" + std::to_string(value.relay_local_port) +
 		       ",\"family\":" + std::to_string(static_cast<unsigned>(value.active.kind)) +
 		       ",\"sessionId\":" + pbd::json::quoted(value.identity.session_id) + ",\"setId\":" + pbd::json::quoted(value.identity.set_id) +
 		       ",\"requestId\":" + std::to_string(value.request_id) + ",\"recovering\":" + (value.recovering ? "true" : "false") +
@@ -440,6 +460,7 @@ namespace pbd::peer_recovery
 		       ",\"peerHeard\":" + (value.heard ? "true" : "false") + ",\"lastValidReceiveAgoMs\":" + std::to_string(now >= last ? (now - last) / 1000 : 0) +
 		       ",\"commandSerial\":" + std::to_string(value.command_serial) + ",\"commandResult\":" + pbd::json::quoted(value.command_result) +
 		       ",\"proposalSerial\":" + std::to_string(value.proposal) + ",\"verifiedProposalSerial\":" + std::to_string(value.verified_proposal) +
-		       ",\"activeProposalSerial\":" + std::to_string(value.active_proposal) + ",\"reason\":" + pbd::json::quoted(value.reason) + "}";
+		       ",\"activeProposalSerial\":" + std::to_string(value.active_proposal) + ",\"reason\":" + pbd::json::quoted(value.reason) +
+		       ",\"socket\":" + pbd::peer_diagnostics::json(value.socket) + "}";
 	}
 } // namespace pbd::peer_recovery

@@ -202,7 +202,7 @@ struct pbd::rollback_session::peer_poll_steps : boundary_call
 		// kept by segment number.
 		if (const u32 segment = m.segment.number; segment)
 		{
-			const auto keep = [&](u32 n, u32 first, u32 scene, u32 counter, u32 rank_stakes, u32 records)
+			const auto keep = [&](u32 n, u32 first, u32 scene, u32 counter, u32 rank_stakes, u32 records, u32 look_slot)
 			{
 				auto& slot_n = data.session.segments.peer_number[n % 8];
 				if (slot_n == n)
@@ -213,11 +213,12 @@ struct pbd::rollback_session::peer_poll_steps : boundary_call
 				data.session.segments.peer_counter[n % 8] = counter;
 				data.session.segments.peer_rank_stakes[n % 8] = rank_stakes;
 				data.session.segments.peer_records[n % 8] = records;
+				data.session.segments.peer_look_slot[n % 8] = look_slot;
 			};
-			keep(segment, m.segment.first_index, m.segment.scene, m.segment.counter, m.segment.rank_stakes, m.segment.records);
+			keep(segment, m.segment.first_index, m.segment.scene, m.segment.counter, m.segment.rank_stakes, m.segment.records, m.segment.look_slot);
 			if (segment > 1)
 				keep(segment - 1, m.segment.prev_first_index, m.segment.prev_scene, m.segment.prev_counter, m.segment.prev_rank_stakes,
-					m.segment.prev_records);
+					m.segment.prev_records, m.segment.prev_look_slot);
 			data.session.segments.peer_newest = std::max(data.session.segments.peer_newest, segment);
 		}
 	}
@@ -403,6 +404,7 @@ struct pbd::rollback_session::peer_poll_steps : boundary_call
 			const auto& packet = data.peer.rx.queue.front();
 			if (!data.peer.link.auth.current(packet.auth_epoch))
 			{
+				data.peer.link.recovery.rejected(pbd::peer_diagnostics::rejection::epoch);
 				data.peer.rx.queue.pop_front();
 				return -2;
 			}
@@ -418,11 +420,22 @@ struct pbd::rollback_session::peer_poll_steps : boundary_call
 		const int n = ::recvfrom(static_cast<SOCKET>(data.peer.link.socket_handle), buffer.data(), static_cast<int>(buffer.size()), 0, reinterpret_cast<sockaddr*>(&from), &from_len);
 		arrival_us = static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(session_clock::now().time_since_epoch()).count());
 		source = pbd::peer_endpoint::from_sockaddr(from, from_len);
-		if (n <= 0)
+		if (n < 0 && WSAGetLastError() != WSAEMSGSIZE)
 			return n;
-		const auto authenticated = data.peer.link.auth.receive(std::span(reinterpret_cast<const u8*>(buffer.data()), static_cast<usz>(n)));
-		if (!authenticated)
+		data.peer.link.recovery.datagram(source == data.peer.link.target.load(), arrival_us);
+		if (n <= 0)
+		{
+			data.peer.link.recovery.rejected(pbd::peer_diagnostics::rejection::format);
 			return -2;
+		}
+		pbd::peer_diagnostics::rejection rejected{};
+		const auto authenticated = data.peer.link.auth.receive(std::span(reinterpret_cast<const u8*>(buffer.data()), static_cast<usz>(n)), &rejected);
+		if (!authenticated)
+		{
+			data.peer.link.recovery.rejected(rejected);
+			return -2;
+		}
+		data.peer.link.recovery.rejected(pbd::peer_message::diagnostic_check(authenticated->payload, data.peer.role, data.peer.session));
 		std::memmove(buffer.data(), authenticated->payload.data(), authenticated->payload.size());
 		return static_cast<int>(authenticated->payload.size());
 	}

@@ -41,6 +41,8 @@ namespace pbd::spectator
 		std::optional<pbd::rematch::load> m_load;
 		// The values the players' games wrote for the game's own Ranked screens (begin_game's rankScreens), written the same here.
 		std::optional<pbd::rank_stakes::game_values> m_rank_screens;
+		std::array<pbd::set_channel::fighter, 2> m_rank_profiles;
+		bool m_has_rank_profiles = false;
 		// The throw break rule this game runs with, as the players' game_started names it (pbd_throw_break_record.h): from its
 		// begin_game, or from its game_witness where a selection stream began the game before the agreed delay was applied.
 		pbd::throw_break::lookahead_setting m_throw_break;
@@ -184,6 +186,14 @@ namespace pbd::spectator
 		const std::optional<pbd::rank_stakes::game_values>& rank_screens() const
 		{
 			return m_rank_screens;
+		}
+		bool has_rank_profiles() const
+		{
+			return m_has_rank_profiles;
+		}
+		std::array<u32, 2> player_ranks(const std::array<u32, 2>& rows) const
+		{
+			return {pbd::set_channel::shown_rank(m_rank_profiles[0], rows[0]), pbd::set_channel::shown_rank(m_rank_profiles[1], rows[1])};
 		}
 		u32 origin() const
 		{

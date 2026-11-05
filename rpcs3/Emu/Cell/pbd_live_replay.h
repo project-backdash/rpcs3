@@ -7,6 +7,7 @@
 #include <string>
 #include "util/types.hpp"
 #include "pbd_game_profile.h"
+#include "../PBD/pbd_custom_wire.h"
 #include "../PBD/pbd_throw_break.h"
 
 class ppu_thread;
@@ -28,6 +29,7 @@ public:
 	};
 	// The PLAYER DATA numbers the bars show now (left, right); none for a side without a record.
 	using records_source = std::function<std::array<std::optional<pbd::game_profile::record>, 2>()>;
+	using looks_source = std::function<pbd::custom_wire::pair()>;
 	// The throw break rule's setting from the owner's tick on, at a game start (false) or a round start (true)
 	// (rollback_session::throw_break_round_start); nothing before the delay is applied, or at a round start while the rule
 	// still tracks a press it moved.
@@ -41,6 +43,7 @@ public:
 	// Where each game's start takes the PLAYER DATA numbers it records, asked on the owner thread at the initializer. Without one,
 	// a start records none.
 	void pbd_records(records_source source) noexcept;
+	void pbd_looks(looks_source source) noexcept;
 	// Where each game start and round start takes the rule's setting it records, asked on the owner thread at the initializer.
 	// Without one, they record none.
 	void pbd_throw_break(throw_break_source source) noexcept;

@@ -226,6 +226,84 @@ PBD_TEST(PbdControllerMapper, OwnershipMappingAndGlyphs)
 	check(glyph_label("start", screen) == "Enter", "the keyboard names Enter");
 }
 
+PBD_TEST(PbdControllerMapper, PromptsFollowTheActiveDeviceAndTaughtInputs)
+{
+	check(initial_owner("sdl3:ps4-stick", "keyboard", "sdl3:old-pad") == "sdl3:ps4-stick",
+		"the launch pad wins over stale keyboard settings");
+	check(initial_owner("keyboard", "sdl3:ps4-stick", "sdl3:old-pad") == "keyboard",
+		"a keyboard launch also wins over saved pads");
+	check(initial_owner("", "keyboard", "sdl3:old-pad") == "keyboard", "last-used keyboard wins over the legacy saved pad");
+	check(initial_owner("", "sdl3:ps4-stick", "sdl3:old-pad") == "sdl3:ps4-stick", "last-used pad wins over the legacy saved pad");
+	check(initial_owner("", "", "sdl3:old-pad") == "sdl3:old-pad" && initial_owner("", "", "") == "keyboard",
+		"older settings migrate only when there is no selected device");
+	const auto missing = device_display("sdl3:missing-stick", false);
+	check(!missing.active && missing.family == "playstation" && glyph_label("start", missing).empty(),
+		"a missing pad cannot publish active keyboard keycaps");
+	check(device_display("keyboard", true).family == "keyboard" && device_display("other-stick", true).family == "playstation",
+		"only the actual keyboard selects keyboard prompts");
+	layout defaults{};
+	for (unsigned i = 0; i < count; ++i)
+		defaults[i] = binding{binding::button, i};
+	layout taught{};
+	taught[cross] = defaults[l1];
+	taught[start] = defaults[r1];
+	taught[up] = defaults[triangle];
+	taught[r3] = binding{binding::button, 31};
+	display pad;
+	pad.active = true;
+	pad.family = "playstation";
+	pad.button_type = "ps4";
+	pad.bindings = prompt_bindings(defaults, taught);
+	check(prompt_tokens("cross", pad) == std::vector<std::string>{"l1"}, "Restart names the shoulder taught as Cross");
+	check(prompt_tokens("start", pad) == std::vector<std::string>{"r1"}, "Menu names the shoulder taught as Start");
+	check(prompt_tokens("l1", pad) == std::vector<std::string>{"key:Unbound"}, "a consumed default no longer claims its old job");
+	check(prompt_tokens("dpad:udlr", pad) == std::vector<std::string>{"triangle", "down", "left", "right"},
+		"Wall Restart names the taught direction and retains the other d-pad directions");
+	check(glyph_label(prompt_tokens("r3", pad).front(), pad) == "Button 32", "an unknown raw button keeps its physical number");
+	check(glyph_label("select", pad) == "SHARE" && glyph_label("circle", pad).empty(), "DS4 uses Share and face sprites");
+	check(glyph_label("touchpad", pad) == "Touchpad", "a taught touchpad button has a visible name");
+	const auto unknown = prompt_bindings({}, taught);
+	check(unknown[circle] == "key:Unbound" && unknown[cross] == "key:Button 5",
+		"Other pads name only the inputs they actually map");
+
+	std::array<source, 3> inputs{{{"keyboard", {}, true}, {"ps4-stick", {}}, {"xbox-pad", {}}}};
+	selector owner("ps4-stick");
+	owner.sample(inputs, true, false);
+	const auto show = [&]
+	{
+		auto shown = device_display(owner.owner(), true);
+		if (shown.device == "xbox-pad")
+			shown.family = "xbox";
+		if (shown.family == "playstation")
+		{
+			shown.button_type = pad.button_type;
+			shown.bindings = pad.bindings;
+		}
+		shown.keys[start] = "Return";
+		shown.keys[cross] = "K";
+		shown.keys[pbd::controllers::select] = "Tab";
+		return shown;
+	};
+	check(glyph_label("circle", show()).empty(), "an idle selected PS4 stick keeps its face glyphs");
+	inputs[0].value.buttons = bit(cross);
+	owner.sample(inputs, true, false);
+	check(glyph_label("cross", show()) == "K" && glyph_label("start", show()) == "Enter" && glyph_label("select", show()) == "Tab",
+		"a fresh keyboard press shows the bound gameplay keys");
+	inputs[1].value.buttons = bit(start);
+	owner.sample(inputs, true, false);
+	check(prompt_tokens("start", show()) == std::vector<std::string>{"r1"}, "a PS4 press restores its own taught prompts live");
+	inputs[2].value.buttons = bit(start);
+	owner.sample(inputs, true, false);
+	check(show().family == "xbox" && glyph_label("start", show()) == "Menu", "an Xbox press changes the family live");
+	inputs[2].value.buttons = 0;
+	owner.sample(inputs, true, false);
+	check(show().family == "xbox", "releasing a pad does not restore stale keyboard prompts");
+	pad.button_type = "arcade";
+	pad.bindings = prompt_bindings(defaults, {});
+	check(glyph_label("start", pad) == "START" && prompt_tokens("dpad:udlr", pad) == std::vector<std::string>{"dpad:udlr"},
+		"Other sticks keep Start, face and d-pad sprites without a keyboard fallback");
+}
+
 PBD_TEST(PbdControllerMapper, SticksOffLeaveOnlyTheDpad)
 {
 	// Up held on the d-pad, the left stick pushed right and the right stick down.

@@ -103,6 +103,7 @@ struct pbd_direct_match::state
 	std::array<std::string, 2> player_names;
 	std::array<u32, 2> player_ranks{};
 	std::array<pbd::game_profile::record, 2> player_records{};
+	pbd::custom_wire::pair player_looks;
 	std::optional<pbd::rank_stakes::game_values> rank_screens;
 	std::optional<pbd::replay_notices::placements> placements;
 	// The throw break rule as the recording ran it: the game start's setting, then each recorded round's from its first
@@ -459,6 +460,7 @@ struct pbd_direct_match::state
 		placements = start.placements;
 		player_ranks = start.ranks;
 		player_records = start.records;
+		player_looks = start.looks;
 		handicaps = start.handicaps;
 		throw_break = {};
 		throw_break.add(0, start.throw_break);

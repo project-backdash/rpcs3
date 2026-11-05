@@ -19,6 +19,76 @@ using namespace pbd::json::detail;
 #include "spectator_channel_model.h"
 // namespace
 
+PBD_TEST(PbdSpectatorChannel, TableSlotsTravelBesideTheWatchedButtons)
+{
+	auto binding = identity(true);
+	binding.custom_fields = true;
+	sample_document f(701, true, binding);
+	f.prepare();
+	f.begin();
+	f.packet(1, 1, 0, 0, 2, false, 0x40, {3, 10});
+	check(f.input.poll_input(test_hash));
+	const auto frame = f.input.reserve();
+	check(frame && frame->look_slots == std::array<u32, 2>{3, 10});
+	check(frame->pads == std::array<std::uint16_t, 2>{0x40, 0x20});
+}
+
+PBD_TEST(PbdSpectatorChannel, OrdinaryBindingsStillRequireTheOriginalPadBytes)
+{
+	sample_document f(702);
+	f.prepare();
+	f.begin();
+	f.packet(1, 1, 0, 0, 2, false, 0x40, {3, 0});
+	check(!f.input.poll_input(test_hash));
+	check(f.input.reason() == "noncanonical_pad");
+}
+
+PBD_TEST(PbdSpectatorChannel, BroadcastControlsFollowTheCurrentWatchGeneration)
+{
+	presentation shown;
+	shown.broadcast = true;
+	publish_presentation(901, shown);
+	check(broadcast_active(901));
+	check(!broadcast_active(0) && !broadcast_active(902));
+	shown.active = false;
+	publish_presentation(901, shown);
+	check(!broadcast_active(901));
+	shown.active = true;
+	shown.broadcast = false;
+	publish_presentation(902, shown);
+	check(!broadcast_active(901) && !broadcast_active(902));
+}
+
+PBD_TEST(PbdSpectatorChannel, AdoptedWatchOwnsTheHudOnlyForItsNativeGeneration)
+{
+	check(!active(903) && !load_presentation(903).active);
+	presentation shown;
+	publish_presentation(903, shown);
+	check(active(903) && load_presentation(903).hidden);
+	shown.hidden = false;
+	publish_presentation(903, shown);
+	check(active(903) && !load_presentation(903).hidden);
+	check(!active(904) && !load_presentation(904).active && !active(0));
+	shown.active = false;
+	publish_presentation(903, shown);
+	check(!active(903) && !load_presentation(903).active);
+}
+
+PBD_TEST(PbdSpectatorChannel, StandbyPresentationCanEnterAndLeaveBroadcast)
+{
+	sample_document f(313, true);
+	f.prepare();
+	check(!broadcast_active(9));
+	const std::string fields = R"(,"hidden":false,"catchUp":false,"leftName":"Left","rightName":"Right","score":{"left":0,"right":0},"delayFrames":180)";
+	f.control(R"("type":"presentation","mode":"broadcast")" + fields);
+	check(broadcast_active(9));
+	check(!broadcast_active(10));
+	f.control(R"("type":"presentation","mode":"watch")" + fields);
+	check(!broadcast_active(9));
+	f.control(R"("type":"presentation","mode":"broadcast")" + fields);
+	check(broadcast_active(9));
+}
+
 PBD_TEST(PbdSpectatorChannel, InitialResourceLoadingStaysHidden)
 {
 	auto m = identity();
@@ -1004,4 +1074,18 @@ PBD_TEST(PbdSpectatorChannel, Checks)
 	rematch_load_and_game_number();
 	round_state_required_per_game();
 	repick_readback_matches_source();
+}
+
+PBD_TEST(PbdSpectatorChannel, RecordedRankProfilesFollowTheWatchedCharacter)
+{
+	sample_document f(930);
+	f.prepare();
+	f.begin(1, 0, nullptr, true, fixed_picks + R"("rankProfiles":{"left":{"ranks":[{"rows":[12,13],"rank":19},{"rows":[7,8],"rank":34}]},"right":{"rank":10}},)");
+	check(f.input.player_ranks({13, 32}) == std::array<u32, 2>{19, 10});
+	check(f.input.player_ranks({8, 12}) == std::array<u32, 2>{34, 10});
+	check(f.input.player_ranks({32, 12}) == std::array<u32, 2>{0, 10});
+	sample_document legacy(931);
+	legacy.prepare();
+	legacy.begin();
+	check(legacy.input.player_ranks({12, 32}) == std::array<u32, 2>{0, 0});
 }

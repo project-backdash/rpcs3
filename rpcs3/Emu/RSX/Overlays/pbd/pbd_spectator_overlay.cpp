@@ -104,29 +104,27 @@ namespace rsx
 			static constexpr f32 canvas_w = 1280.f, canvas_h = 720.f, bar_centre = 693.f;
 			static constexpr f32 chat_left = 40.f, chat_top = 196.f, chat_width = 480.f, chat_height = 412.f, chat_pad = 14.f, chat_inner = chat_width - 2.f * chat_pad;
 
-			void score(f32& score_left)
+			void score()
 			{
 				const std::string score = ui::score_line(screen);
 				if (screen.bar || !score.empty())
 					out.image(layer::b_under, &assets::get().scrim, white, 0.f, 628.f, canvas_w, canvas_h);
-				// The score line, right-aligned on the bar's line.
-				score_left = 1224.f;
+				// The score has its own row above the controls, so long names cannot remove chat or profiles from the bar.
 				if (!score.empty())
 				{
-					const auto line = utf8_to_u32string(score);
-					score_left = 1224.f - text_width(type.caption, line);
-					out.text(type.caption, text_1, score_left, baseline(type.caption, bar_centre), line);
+					const auto line = fit_text(type.caption, utf8_to_u32string(score), 1168.f);
+					const f32 score_left = 1224.f - text_width(type.caption, line);
+					out.text(type.caption, text_1, score_left, baseline(type.caption, screen.bar ? 665.f : bar_centre), line);
 				}
 			}
 
-			void bar(f32 score_left)
+			void bar()
 			{
-				// The bar: glyphs and a label per group from the left, a gold count after a label that has one; groups that would
-				// reach the score line are left out.
+				// The bar: glyphs and a label per group from the left, with a gold unread count beside Chat.
 				if (screen.bar)
 				{
 					const rich_style keys{type.caption, text_1, 16.f};
-					const f32 limit = score_left - 32.f;
+					const f32 limit = 1224.f;
 					f32 cursor = 56.f;
 					bool first = true;
 					for (const auto& item : ui::bar_items(screen))
@@ -289,9 +287,8 @@ namespace rsx
 
 			void draw()
 			{
-				f32 score_left;
-				score(score_left);
-				bar(score_left);
+				score();
+				bar();
 				preview();
 				if (screen.chat)
 				{
@@ -319,7 +316,7 @@ namespace rsx
 				m_output_scale = std::min(width / 1280.f, height / 720.f);
 		}
 
-		static void draw_watch_preparation(layer& out, const fonts& type, const ::pbd::spectator::presentation& display)
+		static void draw_watch_preparation(layer& out, const fonts& type, const ::pbd::spectator::presentation& display, f32 output_scale)
 		{
 			const auto centred = [&](font* f, color4f ink, f32 centre_y, std::string_view text)
 			{
@@ -345,6 +342,13 @@ namespace rsx
 			{
 				centred(type.title, text_1, 352.f, display.catch_up ? "CATCHING UP" : "PREPARING TO WATCH");
 				centred(type.body, text_2, 384.f, display.catch_up ? "Catching up with the live match." : "The match appears here in a moment.");
+			}
+			if (!display.broadcast)
+			{
+				const auto atlas = atlas_ref::pick(output_scale, pbd_xbox_glyphs());
+				const std::array<prompt_item, 2> items{{{"{circle}", "Stop Watching"}, {"{start}", "Skip to Live"}}};
+				prompt_bar(out, atlas, type.caption, 56.f, 693.f, 1224.f,
+					std::span<const prompt_item>(items.data(), display.catch_up ? 2 : 1));
 			}
 		}
 
@@ -429,7 +433,7 @@ namespace rsx
 			layer out;
 			if (m_cover)
 			{
-				draw_watch_preparation(out, type, display);
+				draw_watch_preparation(out, type, display, m_output_scale);
 				out.flush(m_compiled);
 				return;
 			}
@@ -448,7 +452,7 @@ namespace rsx
 					draw.draw();
 				}
 			}
-			else
+			else if (!display.broadcast)
 				draw_watcher_status(out, type, display);
 			if (m_analyze)
 				draw_analysis_history(out, atlas_ref::pick(m_output_scale, pbd_xbox_glyphs()), display);

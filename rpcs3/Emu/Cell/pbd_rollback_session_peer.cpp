@@ -3,6 +3,7 @@
 #include "stdafx.h"
 #include "pbd_rollback_session_boundary.h"
 #include "Emu/PBD/pbd_settings_runtime.h"
+#include "Emu/PBD/pbd_fight_tape.h"
 #include "Emu/PBD/pbd_json.h"
 #include "util/sysinfo.hpp"
 
@@ -97,10 +98,9 @@ bool pbd::rollback_session::boundary_call::peer_lookahead_wrong(u32 t, u32 now)
 		});
 }
 
-// Lockstep runs row `index` only on final words: when the other PC's fighter may read ahead there (its record at the row
-// before), the words L ticks past the row and past its previous step must have arrived too. The other PC fixes and sends
-// them by its boundary `index`, before it waits, so neither PC waits for the other's wait. A word beyond the history is
-// left to the word load, which refuses.
+// A lockstep row is final once it runs. Wait for the words L past this row and its previous step even when the
+// previous step had no window: the battle update may open one after this boundary. The other PC fixes and sends
+// these words before waiting at its own boundary, so neither PC depends on the other executing the tick first.
 bool pbd::rollback_session::boundary_call::peer_lookahead_arrived(u32 index)
 {
 	if (!data.throw_break.on || !index || !data.history_contains(index - 1))
@@ -114,6 +114,7 @@ bool pbd::rollback_session::boundary_call::peer_lookahead_arrived(u32 index)
 }
 
 // One local admission point. Its result is frozen before queuing/sending/recording; the remote value is never rewritten.
+#include "../PBD/pbd_costume_panel.h"
 #include "../PBD/pbd_local_input.h"
 
 u16 pbd::rollback_session::boundary_call::filter_local_sample(u16 raw, u32 source)
@@ -201,7 +202,8 @@ void pbd::rollback_session::boundary_call::peer_send(u32 boundary)
 	// the other has seen its announcement.
 	m.segment = {data.session.segments.number, data.session.segments.index, data.session.segments.scene, data.session.segments.prev_index,
 		data.session.segments.prev_scene, data.session.segments.counter, data.session.segments.prev_counter, data.session.segments.rank_stakes,
-		data.session.segments.prev_rank_stakes, data.session.segments.records, data.session.segments.prev_records};
+		data.session.segments.prev_rank_stakes, data.session.segments.records, data.session.segments.prev_records,
+		data.session.segments.look_slot, data.session.segments.prev_look_slot};
 	// The exit gate (session_state::gate_state::enabled): the gated segment, its first ready index + 1, and the index below which this
 	// peer's readiness tests are all recorded.
 	m.gate = {data.session.gate.seg, data.session.gate.ready, data.session.gate.through};
@@ -223,9 +225,15 @@ void pbd::rollback_session::boundary_call::peer_send(u32 boundary)
 	const auto epoch = data.peer.link.auth.epoch();
 	data.peer.link.recovery.sent(epoch, now_us);
 	sockaddr_storage target{};
-	const int target_len = pbd::peer_endpoint::to_sockaddr(data.peer.link.target.load(), target);
-	::sendto(static_cast<SOCKET>(data.peer.link.socket_handle), reinterpret_cast<const char*>(authenticated.data()), static_cast<int>(sent_size), 0,
+	const auto active = data.peer.link.target.load();
+	const int target_len = pbd::peer_endpoint::to_sockaddr(active, target);
+	const auto sender = [&](const auto& endpoint)
+	{
+		return data.peer.link.relay_socket.sender(static_cast<SOCKET>(data.peer.link.socket_handle), pbd::peer_endpoint::is_loopback(endpoint));
+	};
+	const int result = ::sendto(sender(active), reinterpret_cast<const char*>(authenticated.data()), static_cast<int>(sent_size), 0,
 		reinterpret_cast<sockaddr*>(&target), target_len);
+	data.peer.link.recovery.send_result(result == static_cast<int>(sent_size), result == SOCKET_ERROR ? WSAGetLastError() : 0);
 	data.peer.link.sent++;
 	if (const auto candidate = pbd::peer_recovery::resend_target(data.peer.link.recovery.probe(epoch),
 			data.peer.link.recovery.previous(epoch, now_us), data.peer.link.path_probe_turn))
@@ -235,8 +243,9 @@ void pbd::rollback_session::boundary_call::peer_send(u32 boundary)
 		if (probe_size)
 		{
 			const int length = pbd::peer_endpoint::to_sockaddr(*candidate, target);
-			::sendto(static_cast<SOCKET>(data.peer.link.socket_handle), reinterpret_cast<const char*>(authenticated.data()), static_cast<int>(probe_size), 0,
+			const int probe_result = ::sendto(sender(*candidate), reinterpret_cast<const char*>(authenticated.data()), static_cast<int>(probe_size), 0,
 				reinterpret_cast<sockaddr*>(&target), length);
+			data.peer.link.recovery.send_result(probe_result == static_cast<int>(probe_size), probe_result == SOCKET_ERROR ? WSAGetLastError() : 0);
 			data.peer.link.sent++;
 		}
 	}
@@ -257,7 +266,7 @@ void pbd::rollback_session::boundary_call::peer_path_commands()
 	const auto epoch = link.auth.epoch();
 	if (!link.recovery.matches(identity.session_id, identity.set_id, data.peer.session, epoch))
 		link.recovery.configure({identity.session_id, identity.set_id, data.peer.session, epoch}, link.target.load(), now,
-			static_cast<u16>(link.local_port));
+			static_cast<u16>(link.local_port), link.relay_local_port);
 	const auto next = link.recovery.traffic().command_serial + 1;
 	const auto text = link.path_reader->poll(next);
 	if (!text.value)
@@ -408,13 +417,13 @@ void pbd::rollback_session::boundary_call::append_outgoing_inputs(pbd::peer_mess
 									   (data.lobby.select_timer && data.lobby.select_timer->selecting())))
 		last = std::min(last, boundary);
 	// Under the phase delay the window ends at the newest tick the push model has fixed (never below the boundary).
-	const bool pushed = data.peer.live.enabled && data.peer.phase_delay && data.peer.live.assigned_any;
+	const bool pushed = data.peer.live.enabled && (data.peer.phase_delay || pbd::fight_tape_enabled()) && data.peer.live.assigned_any;
 	if (pushed)
 		last = std::min<u32>(std::max(boundary, data.peer.live.assigned_through), data.input_sequence.empty() ? 0 : static_cast<u32>(data.extent()) - 1);
 	u32 first = last >= 15 ? last - 15 : 0;
 	// The options/map barrier sends transport metadata before boundary 0 has sampled the physical controller, so
 	// those packets deliberately contain no owned-input entries (the format permits count == 0).
-	const bool bootstrap_pending = data.peer.live.enabled && data.peer.phase_delay && data.peer.live.bootstrap_sample && !data.peer.live.assigned_any;
+	const bool bootstrap_pending = data.peer.live.enabled && (data.peer.phase_delay || pbd::fight_tape_enabled()) && (data.peer.live.bootstrap_sample || pbd::fight_tape_enabled()) && !data.peer.live.assigned_any;
 	// A tick lost in all 16 datagrams that carried it (an outage of about 270 ms) would never be sent
 	// again and both peers would hold until the timeout. The other peer reports the newest of this peer's ticks it has confirmed;
 	// when that report has not moved for 250 ms and its next tick has already left the window, every other datagram

@@ -39,7 +39,7 @@ PBD_TEST(PbdVsCards, Checks)
 	check(!compose(stray, 10).visible);
 
 	// A fighter's cards draw over the game's own VS screen; a watcher's over its cover only while the cover is up. A watch
-	// in view shows the game's VS screen, and a game held ready for a match has no cover overlay at all.
+	// in view shows the game's VS screen, including a game adopted from the held match checkpoint.
 	check(!shown.over_cover);
 	check(watch_over_cover(true, false));
 	check(!watch_over_cover(true, true));

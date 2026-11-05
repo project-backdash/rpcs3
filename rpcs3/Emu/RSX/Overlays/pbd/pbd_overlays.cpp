@@ -84,7 +84,7 @@ namespace rsx
 				std::lock_guard lock(manager);
 				clip_overlay->init();
 			}
-			const bool spectator = ::pbd::spectator::requested_directory().has_value();
+			const bool spectator = ::pbd::spectator::watch_capable();
 			if ((::pbd::corner_chat::requested() || spectator) && !manager.get<rsx::overlays::pbd_corner_chat_overlay>())
 			{
 				auto chat_overlay = manager.create<rsx::overlays::pbd_corner_chat_overlay>();

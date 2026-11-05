@@ -149,7 +149,7 @@ namespace pbd::replay_game_file
 		const auto& build = field(root, "build");
 		if (!is(root, "format", "pbd-replay-v2") || integer(root, "version") != 2 || integer(root, "draftRevision") != 2 ||
 			!is(build, "gameExecutableSha256", "b56e25e9210ed3c4fc19f3dfae686b7246aef386cdd4f88c80e0b89141ff887d") ||
-			!(is(build, "capsuleSchema", pbd::throw_break::capsule_schema_stock) || is(build, "capsuleSchema", pbd::throw_break::capsule_schema_rule)))
+			!(is(build, "capsuleSchema", pbd::throw_break::capsule_schema_stock) || is(build, "capsuleSchema", pbd::throw_break::capsule_schema_rule) || is(build, "capsuleSchema", pbd::custom_wire::capsule_schema)))
 			return std::nullopt;
 		const auto& emulator = field(build, "emulatorSha256");
 		hex<32>(emulator); // 64 lower-case hex digits, or the file is refused.
@@ -317,6 +317,8 @@ namespace pbd::replay_game_file
 			out.emulator = std::move(*emulator);
 			out.number = integer(row, "number", 65535);
 			out.capsule = field(row, "capsule");
+			if (const auto* schema = out.capsule.find("schema"); schema && field(field(root, "build"), "capsuleSchema").text != schema->text)
+				return {{}, "private_capsule_schema"};
 			const auto& match = field(row, "match");
 			const auto& rounds = field(row, "roundCapsules");
 			const auto& timeline = field(row, "timeline");

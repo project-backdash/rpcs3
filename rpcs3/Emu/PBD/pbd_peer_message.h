@@ -1,4 +1,5 @@
 #pragma once
+#include "pbd_peer_diagnostics.h"
 
 #include <algorithm>
 #include <array>
@@ -36,8 +37,9 @@ namespace pbd::peer_message
 		return starts_with(data, size, end_magic) || starts_with(data, size, old_end_magic);
 	}
 
-	// The input message's layout. A receiver refuses any other version, so both PCs must send this one.
+	// Ordinary sessions retain version 12 exactly. Version 13 adds two slot words after its tail only while a custom is picked.
 	inline constexpr std::uint32_t input_version = 12;
+	inline constexpr std::uint32_t custom_input_version = 13;
 	// An input message carries at most this many of the sender's own inputs: one window of ticks, so a lost datagram's
 	// inputs arrive in the next ones.
 	inline constexpr std::uint32_t max_inputs = 16;
@@ -93,8 +95,8 @@ namespace pbd::peer_message
 	} // namespace input_tail
 
 	inline constexpr std::size_t input_fixed_bytes = input_head::entries + input_tail::size;
-	inline constexpr std::size_t max_input_bytes = input_fixed_bytes + entry_bytes * max_inputs;
-	static_assert(input_fixed_bytes == 204 && max_input_bytes == 332);
+	inline constexpr std::size_t max_input_bytes = input_fixed_bytes + entry_bytes * max_inputs + 8;
+	static_assert(input_fixed_bytes == 204 && max_input_bytes == 340);
 
 	// The size of an input message with `count` entries.
 	constexpr std::size_t input_bytes(std::uint32_t count) noexcept
@@ -141,6 +143,7 @@ namespace pbd::peer_message
 		std::uint32_t prev_first_index = 0, prev_scene = 0, counter = 0, prev_counter = 0;
 		std::uint32_t rank_stakes = 0, prev_rank_stakes = 0;
 		std::uint32_t records = 0, prev_records = 0;
+		std::uint32_t look_slot = 0, prev_look_slot = 0;
 		bool operator==(const segment_fields&) const = default;
 	};
 
@@ -262,10 +265,11 @@ namespace pbd::peer_message
 	{
 		if (m.count > max_inputs)
 			return 0;
-		const std::size_t size = input_bytes(m.count);
+		const bool custom = m.segment.look_slot || m.segment.prev_look_slot;
+		const std::size_t size = input_bytes(m.count) + (custom ? 8 : 0);
 		std::memset(out.data(), 0, size);
 		std::memcpy(out.data(), input_magic.data(), input_magic.size());
-		detail::store(out, input_head::version, input_version);
+		detail::store(out, input_head::version, custom ? custom_input_version : input_version);
 		detail::store(out, input_head::role, m.role);
 		detail::store(out, input_head::confirmed, static_cast<std::uint32_t>(m.confirmed));
 		for (std::size_t k = 0; k < m.combat.size(); k++)
@@ -277,6 +281,11 @@ namespace pbd::peer_message
 			detail::store(out, input_head::entries + entry_bytes * k + 4, m.inputs[k].value);
 		}
 		detail::store_tail(m, out, input_head::entries + entry_bytes * m.count);
+		if (custom)
+		{
+			detail::store(out, size - 8, m.segment.look_slot);
+			detail::store(out, size - 4, m.segment.prev_look_slot);
+		}
 		return size;
 	}
 
@@ -295,15 +304,39 @@ namespace pbd::peer_message
 		std::uint32_t session) noexcept
 	{
 		if (in.size() < input_fixed_bytes || !is_input(in.data(), in.size()) ||
-			detail::load<std::uint32_t>(in, input_head::version) != input_version ||
+			(detail::load<std::uint32_t>(in, input_head::version) != input_version && detail::load<std::uint32_t>(in, input_head::version) != custom_input_version) ||
 			detail::load<std::uint32_t>(in, input_head::role) != 1 - receiver_role)
 			return input_check::bad_message;
 		const auto count = detail::load<std::uint32_t>(in, input_head::count);
-		if (count > max_inputs || in.size() != input_bytes(count))
+		if (count > max_inputs || in.size() != input_bytes(count) + (detail::load<std::uint32_t>(in, input_head::version) == custom_input_version ? 8 : 0))
 			return input_check::bad_length;
 		if (detail::load<std::uint32_t>(in, input_head::entries + entry_bytes * count + input_tail::session) != session)
 			return input_check::other_session;
 		return input_check::valid;
+	}
+
+	// Inspect game fields only after authentication; these labels never alter the codec's admission result.
+	inline pbd::peer_diagnostics::rejection diagnostic_check(std::span<const std::uint8_t> in, std::uint32_t role, std::uint32_t session) noexcept
+	{
+		using pbd::peer_diagnostics::rejection;
+		if (in.size() == end_bytes && is_end(in.data(), in.size()))
+		{
+			if (detail::load<std::uint32_t>(in, end_field::format) != end_format)
+				return rejection::format;
+			if (detail::load<std::uint32_t>(in, end_field::role) != 1 - role)
+				return rejection::role;
+			return detail::load<std::uint32_t>(in, end_field::session) == session ? rejection::none : rejection::session;
+		}
+		const auto check = check_input(in, role, session);
+		if (check == input_check::valid)
+			return rejection::none;
+		if (check == input_check::other_session)
+			return rejection::session;
+		if (in.size() >= input_fixed_bytes && is_input(in.data(), in.size()) &&
+			(detail::load<std::uint32_t>(in, input_head::version) == input_version || detail::load<std::uint32_t>(in, input_head::version) == custom_input_version) &&
+			detail::load<std::uint32_t>(in, input_head::role) != 1 - role)
+			return rejection::role;
+		return rejection::format;
 	}
 
 	// The sender's echo of the newest send time it has received from this receiver (sync_fields::echo_us), read from a message
@@ -331,6 +364,12 @@ namespace pbd::peer_message
 			m.inputs[k] = {detail::load<std::uint32_t>(in, input_head::entries + entry_bytes * k),
 				detail::load<std::uint16_t>(in, input_head::entries + entry_bytes * k + 4)};
 		detail::load_tail(in, input_head::entries + entry_bytes * m.count, m);
+		if (detail::load<std::uint32_t>(in, input_head::version) == custom_input_version)
+		{
+			const auto slot = detail::load<std::uint32_t>(in, in.size() - 8), previous = detail::load<std::uint32_t>(in, in.size() - 4);
+			m.segment.look_slot = slot <= 10 ? slot : 0;
+			m.segment.prev_look_slot = previous <= 10 ? previous : 0;
+		}
 		out = m;
 		return result;
 	}

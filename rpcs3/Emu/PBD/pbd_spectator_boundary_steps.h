@@ -21,7 +21,7 @@ struct pbd::rollback_session::spectator_boundary_steps : boundary_call
 			if (!data.lobby.direct_match.begun())
 			{
 				if (pbd::rank_screens::configured().screens)
-					pbd::rank_screens::arm(data.lobby.direct_match.pbd_rank_screens().value_or(pbd::rank_stakes::game_values{}), {0u, 0u});
+					pbd::rank_screens::arm(data.lobby.direct_match.pbd_rank_screens().value_or(pbd::rank_stakes::game_values{}), data.lobby.direct_match.pbd_player_ranks());
 				return false;
 			}
 			const auto anchor = data.lobby.direct_match.pbd_start_boundary();
@@ -226,6 +226,9 @@ struct pbd::rollback_session::spectator_boundary_steps : boundary_call
 		// Peer alignment holes are explicit native coordinates, never neutral filler rows.
 		data.next_index = native_boundary;
 		data.replay.sync[frame.segment] = frame.counter;
+		data.lobby.look_slots = frame.look_slots;
+		if (scene == 2)
+			write_custom_looks(data.next_index, scene);
 		pbd::fn_hook::gate_hold.store(frame.gate_hold, std::memory_order_release);
 		if (data.spectator.game != spectator.game())
 		{
@@ -240,15 +243,18 @@ struct pbd::rollback_session::spectator_boundary_steps : boundary_call
 			spectator.observe_fight(read_word(0x10093230, pending) && pbd::spectator_ui::fight_on_screen(scene, pending));
 		}
 		// The watched players' names under the life bars and on the VS screen, drawn by the game from its records
-		// (pbd::game_profile), as the launcher's presentation names them; a watcher is given no ranks, so the plates show
-		// Beginner, and no PLAYER DATA numbers, so the bars show zeros. Display only: the records feed no watched input and no
-		// hashed state.
-		store_game_profiles({spectator.display().left_name, spectator.display().right_name}, with_kept_promotions({0u, 0u}));
+		// (pbd::game_profile), with the recorded ranks resolved against the actual rows, including costume changes.
+		// Display only: the records feed no watched input and no hashed state.
+		std::array<u32, 2> rows{~0u, ~0u};
+		read_word(0x10093f50, rows[0]);
+		read_word(0x10093f54, rows[1]);
+		const auto ranks = spectator.player_ranks(rows);
+		store_game_profiles({spectator.display().left_name, spectator.display().right_name}, with_kept_promotions(ranks));
 		store_game_records({});
 		// The game's own Ranked screens write what the players' games wrote in this game (pbd::rank_screens); a promotion the
 		// game showed stays in the records until the next game's setup.
 		if (pbd::rank_screens::configured().screens && pbd::rank_stakes::values_may_change(scene))
-			pbd::rank_screens::arm(spectator.rank_screens().value_or(pbd::rank_stakes::game_values{}), {0u, 0u});
+			pbd::rank_screens::arm(spectator.rank_screens().value_or(pbd::rank_stakes::game_values{}), ranks);
 		publish_vs_cards(scene);
 		// Confirmed character-select frames need the same catch-up pacing as combat; loading keeps its I/O cadence.
 		const bool fast = spectator.display().catch_up && (scene == 3u || scene == 16u || scene == 17u);
@@ -261,7 +267,7 @@ struct pbd::rollback_session::spectator_boundary_steps : boundary_call
 	void publish_vs_cards(u32 scene)
 	{
 		// The watcher's VS cards (pbd::vs_cards) while the watched game passes its VS screen: the names from the launcher's
-		// presentation and the set length from its watch_ui. A watcher holds no ranks or score, so the cards carry neither.
+		// presentation, ranks from the frozen game start, and the set length from watch_ui. It carries no unverified score.
 		// Display only, as in a fighter's game; only the boundary that leaves the VS screens publishes the hidden cards.
 		if (const auto& watch_screen = spectator.screen(); watch_screen && watch_screen->first_to)
 		{
@@ -271,11 +277,20 @@ struct pbd::rollback_session::spectator_boundary_steps : boundary_call
 				data.lobby.vs_cards_shown = vs;
 				pbd::vs_cards::set_view set;
 				set.names = {spectator.display().left_name, spectator.display().right_name};
+				if (spectator.has_rank_profiles())
+				{
+					std::array<u32, 2> rows{~0u, ~0u};
+					read_word(0x10093f50, rows[0]);
+					read_word(0x10093f54, rows[1]);
+					const auto ranks = with_kept_promotions(spectator.player_ranks(rows));
+					for (u32 side = 0; side < 2; ++side)
+						set.plates[side] = {pbd::game_overlay::plate::kind::rank, ranks[side], 0, 0};
+				}
 				set.local = 0;
 				set.game_number = spectator.game();
 				set.first_to = watch_screen->first_to;
 				// Over a cover the cards keep the names; over the game's own VS screen its portraits show them.
-				set.over_cover = pbd::vs_cards::watch_over_cover(pbd::spectator::requested_directory().has_value(), spectator.visible());
+				set.over_cover = pbd::vs_cards::watch_over_cover(pbd::spectator::watch_capable(), spectator.visible());
 				pbd::vs_cards::publish(data.generation, pbd::vs_cards::compose(set, scene));
 			}
 		}

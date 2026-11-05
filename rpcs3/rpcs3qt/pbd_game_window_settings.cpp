@@ -11,6 +11,7 @@
 #include "Emu/system_config.h"
 #include "Emu/localized_string.h"
 #include "Emu/PBD/pbd_practice_presentation.h"
+#include "Emu/PBD/pbd_spectator_channel_model.h"
 #include "Emu/Cell/pbd_practice_mouse.h"
 #include "Emu/Cell/pbd_player_volume.h"
 #include "Emu/PBD/pbd_controller_settings.h"
@@ -132,6 +133,24 @@ namespace pbd::game_window
 		menu::claim.store(false, std::memory_order_release);
 	}
 
+	bool settings_menu::suppress_for_broadcast()
+	{
+		if (!pbd::spectator::broadcast_active(static_cast<u64>(Emu.GetEmulationIdentifier())))
+			return false;
+		namespace menu = pbd::settings_menu;
+		if (m_state.menu.open)
+			close();
+		stop_polling();
+		menu::pointer_captured.store(false, std::memory_order_release);
+		// Discard presses made during Broadcast so changing back to Watch cannot reopen a queued menu.
+		menu::take_open_request();
+		menu::take_top_open_request();
+		menu::take_controls_open_request();
+		menu::take_leave_request();
+		m_timer.setInterval(settings_idle_interval_ms);
+		return true;
+	}
+
 	void settings_menu::poll_closed(const std::optional<u16>& held)
 	{
 		namespace menu = pbd::settings_menu;
@@ -218,6 +237,8 @@ namespace pbd::game_window
 			stop_polling();
 			return;
 		}
+		if (suppress_for_broadcast())
+			return;
 		const auto held = pbd_menu_pad_word_try();
 		if (!s.menu.open)
 		{
@@ -258,6 +279,8 @@ namespace pbd::game_window
 
 	void settings_menu::escape()
 	{
+		if (suppress_for_broadcast())
+			return;
 		auto& s = m_state;
 		// The Esc shortcut does not auto-repeat (shortcut_settings.cpp), so a held Esc acts once. It goes back as Circle does: out
 		// of an open list, otherwise out of the menu.
@@ -317,14 +340,17 @@ namespace pbd::game_window
 			menu->take_values();
 		const int volume = std::clamp(pbd::player_volume::get() + step, 0, 100);
 		pbd::player_volume::set(volume);
-		rsx::overlays::queue_message(localized_string(localized_string_id::AUDIO_CHANGED, "%d%%", volume), 3'000'000, {},
-			rsx::overlays::message_pin_location::top_left, {}, true, true);
+		if (!pbd::spectator::broadcast_active(static_cast<u64>(Emu.GetEmulationIdentifier())))
+			rsx::overlays::queue_message(localized_string(localized_string_id::AUDIO_CHANGED, "%d%%", volume), 3'000'000, {},
+				rsx::overlays::message_pin_location::top_left, {}, true, true);
 		if (menu)
 			menu->m_state.model.current.volume = menu->m_state.model.applied.volume = volume;
 	}
 
 	void settings_menu::open(bool from_escape)
 	{
+		if (suppress_for_broadcast())
+			return;
 		namespace menu = pbd::settings_menu;
 		auto& s = m_state;
 		if (s.menu.open || Emu.IsStopped())
@@ -555,6 +581,8 @@ namespace pbd::game_window
 
 	bool settings_menu::pointer_event(QEvent* ev)
 	{
+		if (suppress_for_broadcast())
+			return false;
 		namespace menu = pbd::settings_menu;
 		auto& s = m_state;
 		const auto type = ev->type();

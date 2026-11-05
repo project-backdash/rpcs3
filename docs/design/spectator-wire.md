@@ -39,6 +39,14 @@ The existing peer clean-start options barrier appends the actual keyed boolean t
 
 ## Standby and bind
 
+Held match games (`PBD_MATCH_STANDBY_CHANNEL`) can adopt the same watch without a second process. They reserve the
+spectator, chat and VS-card overlay layers and the watcher controller reader at boot even though `PBD_SPECTATOR_CHANNEL` is absent. Reserving them does
+not bind a spectator channel. A presentation published for the current native generation activates the spectator
+surface; an absent or stale generation leaves it inactive and clears the watcher controller word. While that surface is active, including preparation and
+catch-up, the player's connection and leave HUD stays hidden. The watcher HUD replaces the older spectator status band
+once `watch_ui` arrives. Its score is above the controls so long names cannot displace Chat or Profiles. Broadcast hides
+both watcher controls and the fallback status band. An adopted watch's VS cards use the same cover rule as a cold watch.
+
 A watcher can start before there is a set to watch, so that a player waiting in line is watching within moments of the set starting. The launcher starts it as any watcher (the same profile, checkpoint, recipe, start-state and input policy switches, `PBD_SPECTATOR_CHANNEL` naming an empty channel directory) with `PBD_SPECTATOR_STANDBY=1` and without `PBD_MATCH_SEED`. The standby runs the standard policy: `PBD_SESSION_START_SKIP=1`, `PBD_SESSION_EXIT_GATE=1`, `PBD_BATTLE_CLOCK=2`, `PBD_SESSION_MENU_HASH=0`, keyed draws off. A seed in its environment, or any mode a watcher may not run, is a setup failure (`spectator_standby_conflict`).
 
 At its first boundary, before the session start sync, the standby proves this install's clean character select: the checkpoint this process booted, the pinned game code and native tables, the recipe, scene 3/44, three rounds and both button maps. It then writes `spectator-standby.json` and holds that boundary, as a fighter's session start holds it while the other player loads:

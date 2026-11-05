@@ -115,6 +115,7 @@ namespace pbd::set_notices
 		screen now = screen::other;
 		bool first_intro = false;
 		u32 intro_side = no_side;
+		bool rank_profiles = false;
 	};
 
 	inline snapshot compose(const set_view& set)
@@ -123,7 +124,7 @@ namespace pbd::set_notices
 		out.active = true;
 		out.mode = set.mode;
 		for (u32 player = 0; player < 2; ++player)
-			out.sides[player] = {set.names[player], set.characters[player], plate_for(set.mode, set.placements[player], set.ranks[player])};
+			out.sides[player] = {set.names[player], set.characters[player], plate_for(set.mode == set_mode::lobby && set.rank_profiles ? set_mode::quick : set.mode, set.placements[player], set.ranks[player])};
 		out.local = std::min<u32>(set.local, 1);
 		out.game_number = set.game_number;
 		out.first_to = set.first_to;

@@ -95,6 +95,7 @@ struct pbd::rollback_session::boundary_call
 	std::array<std::optional<pbd::game_profile::record>, 2> shown_game_records();
 	std::array<std::optional<pbd::game_profile::record>, 2> agreed_game_records(std::optional<u32> segment);
 	void write_game_profiles(u32 boundary, u32 scene, std::optional<u32> segment = std::nullopt);
+	void write_custom_looks(u32 boundary, u32 scene);
 	pbd::rank_stakes::game_values plan_rank_screens(const pbd::set_channel::command& command, bool next_set);
 	void arm_rank_screens(const pbd::rank_stakes::game_values& values);
 	void settle_rank_stakes(u32 segment);
@@ -200,7 +201,7 @@ struct pbd::rollback_session::boundary_call
 	void practice_slot_moves_refresh();
 
 	// Practice menus and saved game options hold input and pause (pbd_rollback_session_practice.cpp).
-	u16 practice_select_word(u16 raw);
+	u16 practice_select_word(u32 port, u16 raw);
 	bool practice_memory_pause();
 
 	// Practice's dummy playback (pbd_rollback_session_practice_dummy.cpp).
@@ -401,6 +402,7 @@ struct pbd::rollback_session::practice_steps : boundary_call
 	void prepare_opening_selection(pbd::practice::start::state& entry, session_clock::time_point now, bool context, u32 mode, u32 scene, u32 pending);
 	void advance_opening_selection(pbd::practice::start::state& entry, session_clock::time_point now, bool context, u32 mode, u32 scene, u32 pending);
 	void publish_opening_result(pbd::practice::start::state& entry, u32 mode);
+	void write_opening_looks(const pbd::practice::start::state& entry);
 	void opening_refuse(pbd::practice::start::state& entry, session_clock::time_point now, const char* reason);
 	void observe_frame();
 	void update_movement_streak();

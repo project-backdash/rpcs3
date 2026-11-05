@@ -46,6 +46,21 @@ namespace
 	}
 } // namespace
 
+PBD_TEST(PbdSpectatorStandby, WatchingWhileInLineReservesLayersAndControlsWithoutBindingAWatch)
+{
+	put("PBD_SPECTATOR_CHANNEL", nullptr);
+	put("PBD_MATCH_STANDBY_CHANNEL", nullptr);
+	check(!pbd::spectator::watch_capable());
+	put("PBD_MATCH_STANDBY_CHANNEL", "held-game");
+	check(pbd::spectator::watch_capable());
+	check(!pbd::spectator::requested_directory(), "a held player must still wait for its spectator manifest");
+	check(!pbd::spectator::active(811) && !pbd::spectator::load_presentation(811).active);
+	put("PBD_MATCH_STANDBY_CHANNEL", nullptr);
+	put("PBD_SPECTATOR_CHANNEL", "watch-game");
+	check(pbd::spectator::watch_capable() && pbd::spectator::requested_directory());
+	put("PBD_SPECTATOR_CHANNEL", nullptr);
+}
+
 PBD_TEST(PbdSpectatorStandby, TheReadyReportCarriesIdentityAndInputPolicy)
 {
 	ready value;

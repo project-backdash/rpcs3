@@ -18,6 +18,7 @@ bool pbd::rollback_session::tick_dispatch::tick_record(bool round_reset, const s
 			data.history.lockstep_ticks[index] = 1;
 		tick.scene = {u32{scene_now[0]}, u32{scene_now[1]}};
 		tick.session_segment = data.session.segments.number;
+		tick.look_slots = data.lobby.look_slots;
 		tick.gate_hold = pbd::fn_hook::gate_hold.load(std::memory_order_acquire);
 		read_word(0x1008f07c, tick.frame_counter);
 		if (read_tick_counters(tick, soft_mode))

@@ -318,7 +318,7 @@ PBD_TEST(PbdPeerMessage, AnInputMessageOutsideTheLayoutIsRejectedByTheRuleItBrea
 {
 	const bytes full = from_hex(full_input_hex);
 	check(status(full) == input_check::valid, "the golden message is valid for role 0");
-	check(status(with32(full, 8, 11)) == input_check::bad_message && status(with32(full, 8, 13)) == input_check::bad_message,
+	check(status(with32(full, 8, 11)) == input_check::bad_message && status(with32(full, 8, 14)) == input_check::bad_message,
 		"another version is a bad message");
 	check(status(full, 1) == input_check::bad_message, "a message from the receiver's own role is a bad message");
 	bytes renamed = full;

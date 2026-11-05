@@ -1795,3 +1795,29 @@ PBD_TEST(PbdLobbySetDriver, NextSetCarriesTheGameRecordsWithTheDecidingGame)
 	shown = test.events.shown_records({12, 32});
 	check(shown[0] == game_record{42, 30} && shown[1] == game_record{0, 1});
 }
+
+PBD_TEST(PbdLobbySet, RankProfilesAreFrozenAcrossSelectionAndRoundStart)
+{
+	sample_document test(940, 1, true, false, {}, [](manifest& m)
+		{
+			m.rank_profiles = true;
+			m.left.ranks = std::vector<rank_group>{{{12, 13}, 19}};
+			m.right.rank = 10;
+		});
+	check(test.begin(true, true, true, false, true));
+	const auto preparing = test.read(1);
+	test.events.select_ranks({13, 32});
+	auto actual = applied(17, 13, 32);
+	actual.pending_phase = 4;
+	actual.round_ordinal = 1;
+	actual.round_random = {0x1234, 0xabcd};
+	actual.round_verified = true;
+	check(test.record(0, phase::vs, 0, 0, winner::none, actual));
+	check(test.record(1, phase::character_intro, 0, 0, winner::none, actual));
+	check(test.record(2, phase::round_intro, 0, 0, winner::none, actual));
+	check(test.publish(3));
+	const auto started = test.read(2);
+	const auto* profiles = started.find("start")->find("rankProfiles");
+	check(preparing.find("start")->find("rankProfiles")->find("left")->find("ranks"));
+	check(profiles && profiles->find("left")->find("ranks") && profiles->find("right")->find("rank")->text == "10");
+}

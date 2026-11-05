@@ -159,15 +159,13 @@ namespace pbd::controllers
 		m->seated = !standalone && pbd::session_mode::offline_play();
 		if (!standalone)
 			m->controls_revision = settings::current_revision();
-		if (!standalone)
-			if (const char* initial = pbd::env::find("PBD_CONTROLLER_INITIAL"); initial && *initial)
-				m->selection = selector(initial);
 		m->reload();
-		if (!standalone && !pbd::env::find("PBD_CONTROLLER_INITIAL"))
+		// The device used to launch takes precedence over an older last-used value in the settings file.
+		if (!standalone)
 		{
+			const char* initial = pbd::env::find("PBD_CONTROLLER_INITIAL");
 			const auto saved = m->settings.value("savedPad").toObject().value("deviceName").toString().toStdString();
-			if (saved.starts_with("sdl3:"))
-				m->selection = selector(saved);
+			m->selection = selector(initial_owner(initial ? initial : "", m->requested, saved));
 		}
 #ifdef HAVE_SDL3
 		if (standalone)
@@ -273,16 +271,16 @@ namespace pbd::controllers
 		}
 		const std::string_view selected_lock = !locked.empty() && m->controls_override ? std::string_view(m->controls_override->device) : locked;
 		auto value = m->seated ? m->sample_first(focused, typing) : m->selection.sample(m->sources, focused, typing, selected_lock);
-		display d;
-		d.active = true;
-		d.device = m->selection.owner();
-		d.family = "keyboard";
+		auto d = device_display(m->selection.owner(), m->present(m->selection.owner()));
 		for (const auto& pad : m->pads)
 			if (pad.toObject().value("id").toString().toStdString() == d.device)
 			{
 				d.family = pad.toObject().value("family").toString().toStdString();
 				d.button_type = pad.toObject().value("buttonType").toString().toStdString();
 				d.clip_button = pad.toObject().value("clipButton").toString().toStdString();
+				const auto bindings = pad.toObject().value("promptBindings").toArray();
+				for (unsigned a = 0; a < count && a < static_cast<unsigned>(bindings.size()); ++a)
+					d.bindings[a] = bindings[a].toString().toStdString();
 			}
 		for (unsigned i = 0; i < count; ++i)
 			if (!m->keys[i].empty())

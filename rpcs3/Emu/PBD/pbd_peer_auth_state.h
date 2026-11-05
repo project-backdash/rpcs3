@@ -112,18 +112,30 @@ namespace pbd::peer_auth
 			return m_epoch;
 		}
 
-		std::optional<received> receive(std::span<const std::uint8_t> bytes)
+		std::optional<received> receive(std::span<const std::uint8_t> bytes, pbd::peer_diagnostics::rejection* rejected = nullptr)
 		{
 			std::lock_guard lock(m_mutex);
+			if (rejected)
+				*rejected = pbd::peer_diagnostics::rejection::none;
 			if (!m_receive_key)
 			{
 				if (m_required)
+				{
+					if (rejected)
+						*rejected = pbd::peer_diagnostics::rejection::epoch;
 					return {};
+				}
 				return received{bytes, m_epoch};
 			}
-			const auto message = open(*m_receive_key, bytes);
-			if (!message || !m_received.accept(message->sequence))
+			const auto message = open(*m_receive_key, bytes, rejected);
+			if (!message)
 				return {};
+			if (!m_received.accept(message->sequence))
+			{
+				if (rejected)
+					*rejected = pbd::peer_diagnostics::rejection::replay;
+				return {};
+			}
 			return received{message->payload, m_epoch};
 		}
 

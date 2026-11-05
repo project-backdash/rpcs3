@@ -92,6 +92,21 @@ compare; an invalid optional field reads as absent and is logged once. `PBD_NOTI
 emulator refuses the new menu and search keys, so the launcher sends every addition only to an executable that contains
 the text `ranked-notices-1`.
 
+`character-ranks-1` adds each manifest and `next_set` side's optional `ranks` table:
+`[{"rows":[12,13],"rank":19}]`. Up to 64 groups cover rows 0-84 without duplicates; ranks are 0-36.
+A table takes precedence over the scalar rank, resolves the actual selected row at shared scene boundaries,
+and shows Beginner for a character absent from the table. All costume rows of one character share its entry.
+`next_set` replaces each supplied table, including an empty table; without a table the scalar behavior is unchanged.
+Malformed tables resolve to empty tables, so a previous character's plate cannot leak into an unranked pick.
+
+A manifest with `rankProfiles:true` publishes `start.rankProfiles` with absolute `left` and `right` sides,
+each either `{"ranks":[...]}` or `{"rank":19}`. The service freezes and compares that display metadata
+with the start, and a capable watcher's `begin_game` carries it verbatim. Selection streams resolve their
+actual rows from this frozen table. Capsule watchers and saved replays use the ranks recorded with their players.
+The launcher sends the manifest additions, next-set tables and watcher fields only when the executable
+advertises `character-ranks-1`; an older launcher supplies none and retains its scalar behavior.
+These fields never create stakes: Quick Match and lobby plates remain display-only.
+
 `opponent-results-1` adds `PBD-MENU-1`'s `opponent=<plate>|<MMR or ->` for Set complete. It needs `post_set`, a score and
 `you=`. A rank plate `r0`-`r34` requires MMR 0-99999; a placement plate `p<done>/<total>` requires `-` (total 1-10,
 done at most total). The opposite side shows this settled standing at the result's large size instead of its small HUD

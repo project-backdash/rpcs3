@@ -22,7 +22,7 @@ namespace pbd::pads
 	class spectator_watch
 	{
 	public:
-		// The watch when this run spectates (PBD_SPECTATOR_CHANNEL), never in the VSH; null otherwise.
+		// A reader for a watcher or a held match that may adopt one, never in the VSH; null otherwise.
 		static std::unique_ptr<spectator_watch> create();
 
 		// Reads the watcher's controllers while the game window has the focus.

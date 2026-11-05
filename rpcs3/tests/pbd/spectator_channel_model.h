@@ -126,7 +126,8 @@ namespace
 		{
 			check(input.prepare(9, 0x01000000, 0, 0x8000004d, identity().checkpoint, identity().emulator));
 		}
-		void packet(u32 serial, u32 game, u32 first, u32 boundary, u32 count = 2, bool corrupt = false, u32 raw_left = 0x40)
+		void packet(u32 serial, u32 game, u32 first, u32 boundary, u32 count = 2, bool corrupt = false, u32 raw_left = 0x40,
+			const std::array<u32, 2>& look_slots = {})
 		{
 			std::vector<std::uint8_t> bytes(header_bytes + count * applied_frame_bytes);
 			constexpr std::array<std::uint8_t, 8> magic{'P', 'B', 'D', 'S', 'P', 'C', '1', 0};
@@ -143,7 +144,9 @@ namespace
 			{
 				const auto offset = header_bytes + i * applied_frame_bytes;
 				put(bytes, offset, raw_left, 2);
+				put(bytes, offset + 2, look_slots[0], 1);
 				put(bytes, offset + 8, 0x20, 2);
+				put(bytes, offset + 10, look_slots[1], 1);
 				put(bytes, offset + 16, boundary + i, 4);
 				put(bytes, offset + 20, 1, 4);
 				put(bytes, offset + 24, 0x8000004d + boundary + i, 4);

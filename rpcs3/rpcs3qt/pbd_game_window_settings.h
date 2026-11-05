@@ -71,6 +71,7 @@ namespace pbd::game_window
 		void tick();
 		void grant_launcher_foreground();
 		void stop_polling();
+		bool suppress_for_broadcast();
 		void poll_closed(const std::optional<u16>& held);
 		void refresh_inputs();
 		void list_outputs();

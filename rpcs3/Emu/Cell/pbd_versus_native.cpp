@@ -4,6 +4,7 @@
 #include "../PBD/pbd_player_seats.h"
 #include "../PBD/pbd_t5dr_memory.h"
 #include "../PBD/pbd_versus_input.h"
+#include "../PBD/pbd_custom_editor.h"
 #include "pbd_practice_native.h"
 #include "PPUThread.h"
 #include "Emu/pbd_session_mode.h"
@@ -182,6 +183,12 @@ namespace pbd::versus
 
 	port_word at_read(u32 port) noexcept
 	{
+		if (pbd::custom_editor::blocks_saves(static_cast<u64>(Emu.GetEmulationIdentifier())))
+		{
+			if (pbd::custom_editor::trial_pad.load(std::memory_order_acquire))
+				return {port == 0 ? pbd::custom_editor::trial_word.load(std::memory_order_acquire) : u16{0}};
+			return {};
+		}
 		try
 		{
 			if (port >= sides)

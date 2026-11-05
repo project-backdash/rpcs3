@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/PBD/pbd_custom_editor.h"
 #include "Emu/System.h"
 #include "Emu/VFS.h"
 #include "Emu/IdManager.h"
@@ -716,6 +717,10 @@ static NEVER_INLINE error_code savedata_op(ppu_thread& ppu, u32 operation, u32 v
 	u32 errDialog, PSetList setList, PSetBuf setBuf, PFuncList funcList, PFuncFixed funcFixed, PFuncStat funcStat,
 	PFuncFile funcFile, u32 container, u32 unk_op_flags /*TODO*/, vm::ptr<void> userdata, u32 userId, PFuncDone funcDone)
 {
+	if (pbd::custom_editor::blocks_saves(static_cast<u64>(Emu.GetEmulationIdentifier())) &&
+		operation != SAVEDATA_OP_AUTO_LOAD && operation != SAVEDATA_OP_LIST_AUTO_LOAD &&
+		operation != SAVEDATA_OP_LIST_LOAD && operation != SAVEDATA_OP_FIXED_LOAD)
+		return CELL_SAVEDATA_ERROR_BUSY;
 	if (setList)
 	{
 		if (const auto& [ok, list] = setList.try_read(); ok)

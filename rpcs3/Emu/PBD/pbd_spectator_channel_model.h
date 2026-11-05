@@ -105,6 +105,11 @@ namespace pbd::spectator
 			return {};
 		return std::filesystem::path(text);
 	}
+	// A held player's game can bind a watch after its overlays and pad readers were created. Reserve both at boot too.
+	inline bool watch_capable()
+	{
+		return requested_directory().has_value() || !pbd::env::path("PBD_MATCH_STANDBY_CHANNEL").empty();
+	}
 	// The fighters' rows and the stage one game was played with, as the game applied them.
 	struct picks
 	{
@@ -132,6 +137,9 @@ namespace pbd::spectator
 		// binds none: each game's picks come from the game being replayed, read at its first intro.
 		u32 seed = 0, stage = 0, left = 0, right = 0, rounds = 0;
 		bool in_game = false;
+		pbd::custom_wire::pair looks;
+		std::array<std::vector<std::uint8_t>, 2> look_tables;
+		bool custom_fields = false;
 		std::string build, compat, title, emulator, checkpoint, recipe;
 		digest binding{};
 		bool applied = false, policy_present = false, start_skip = true, exit_gate = true, phase_delay = false, keyed_draws = false;
@@ -233,6 +241,10 @@ namespace pbd::spectator
 			if (!throw_break)
 				return "spectator_capsule_invalid";
 			out.pbd_capsule_throw_break = *throw_break;
+			if (!out.in_game && !pbd::custom_wire::capsule_matches(*payload, {out.left, out.right}, out.looks))
+				return "spectator_capsule_look_mismatch";
+			if (out.in_game && out.custom_fields && !pbd::custom_wire::capsule_matches_tables(*payload, out.look_tables))
+				return "spectator_capsule_look_mismatch";
 			out.pbd_capsule = pbd::set_channel::detail::serialize(*payload);
 		}
 		return {};
@@ -244,7 +256,7 @@ namespace pbd::spectator
 		const auto text = pbd::set_channel::detail::read_text(directory / "spectator-session.json");
 		if (!text.value)
 			return {{}, text.error};
-		const auto parsed = pbd::set_channel::detail::json_parser(*text.value, 16384, pbd::json::max_file_bytes, 65536).parse();
+		const auto parsed = pbd::set_channel::detail::json_parser(*text.value, 16384, pbd::json::max_file_bytes, pbd::json::max_file_bytes).parse();
 		if (!parsed.value)
 			return {{}, parsed.error};
 		const auto& root = *parsed.value;
@@ -276,14 +288,21 @@ namespace pbd::spectator
 			!pbd::set_channel::detail::number32(root.find("roundsPerGame"), 3, 3, out.rounds) ||
 			!pbd::set_channel::detail::is(root.find("syncEncoding"), "pbd-sync-facts-v1") || !pbd::set_channel::detail::is(root.find("syncDefinition"), "pbd-peer-sync-v3"))
 			return {{}, "spectator_session_invalid"};
+		out.custom_fields = root.find("leftLook") || root.find("rightLook") || root.find("leftLookTable") || root.find("rightLookTable");
 		if (fixed)
 		{
 			out.stage = fixed->stage;
 			out.left = fixed->left;
 			out.right = fixed->right;
+			out.looks = {root.find("leftLookTable") ? std::nullopt : pbd::custom_wire::read_drawn(root.find("leftLook"), out.left),
+				root.find("rightLookTable") ? std::nullopt : pbd::custom_wire::read_drawn(root.find("rightLook"), out.right)};
 		}
 		else
+		{
 			out.in_game = true;
+			out.look_tables = {root.find("leftLook") ? std::vector<std::uint8_t>{} : pbd::custom_wire::table_field(root.find("leftLookTable")),
+				root.find("rightLook") ? std::vector<std::uint8_t>{} : pbd::custom_wire::table_field(root.find("rightLookTable"))};
+		}
 		if (const auto error = read_manifest_policy(root, out); !error.empty())
 			return {{}, std::string(error)};
 		if (const auto error = read_manifest_capsule(root, out); !error.empty())
@@ -298,6 +317,7 @@ namespace pbd::spectator
 	struct frame
 	{
 		std::array<std::uint16_t, 2> pads{};
+		std::array<u32, 2> look_slots{};
 		u32 boundary = 0, segment = 0, counter = 0, scene = 0, mask = 0, gate_hold = 0;
 		std::array<u64, 3> combat{};
 		std::array<std::uint16_t, 2> applied{};
@@ -336,7 +356,19 @@ namespace pbd::spectator
 	inline presentation load_presentation(u64 generation)
 	{
 		std::lock_guard lock(surface_mutex);
-		return surface_generation == generation ? surface : presentation{};
+		return generation && surface_generation == generation ? surface : presentation{.active = false};
+	}
+	// Hidden preparation still owns the screen; a parked or returned player's generation does not.
+	inline bool active(u64 generation)
+	{
+		std::lock_guard lock(surface_mutex);
+		return generation && surface_generation == generation && surface.active;
+	}
+	// Standby watchers receive their mode after boot. Only the current, active watch can hide local controls.
+	inline bool broadcast_active(u64 generation)
+	{
+		std::lock_guard lock(surface_mutex);
+		return generation && surface_generation == generation && surface.active && surface.broadcast;
 	}
 
 	// How long the owner waits for the next input with nothing arriving. A watch is legitimately idle between two games of a set and

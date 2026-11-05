@@ -6,6 +6,7 @@
 #include "pbd_clip_drawing.h"
 #include "Emu/Cell/pbd_controller_takeover.h"
 #include "Emu/PBD/pbd_player_seats.h"
+#include "Emu/PBD/pbd_spectator_channel_model.h"
 #include "Emu/System.h"
 
 #include <algorithm>
@@ -49,7 +50,7 @@ namespace rsx
 		compiled_resource pbd_settings_overlay::get_compiled()
 		{
 			// Rebuilt here rather than in update(), which the renderer calls after drawing: a choice shows on the next frame.
-			if (Emu.IsStopped())
+			if (Emu.IsStopped() || ::pbd::spectator::broadcast_active(static_cast<u64>(Emu.GetEmulationIdentifier())))
 			{
 				visible = false;
 				m_revision = 0;

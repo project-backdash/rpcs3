@@ -4,6 +4,7 @@
 // (pbd_rollback_session_storage.h).
 
 #include "pbd_rollback_session_common.h"
+#include "../PBD/pbd_costume_select.h"
 
 namespace pbd::session_runtime
 {
@@ -48,6 +49,10 @@ namespace pbd::session_runtime
 		// announced the same at the last barrier that could change them. An invalid record in a command is logged once, apart
 		// from the other display fields.
 		std::array<std::optional<pbd::game_profile::record>, 2> records_plan, records_shown;
+		pbd::custom_wire::pair looks_shown;
+		std::array<u32, 2> look_slots{};
+		u32 look_slot_own = 0;
+		std::array<pbd::costume_select::row, 2> costume_rows;
 		bool records_agreed = true, records_ignored_logged = false;
 		bool start_attempted = false;
 		bool battle_seen = false;

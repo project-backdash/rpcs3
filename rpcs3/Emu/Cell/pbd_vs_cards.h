@@ -70,10 +70,8 @@ namespace pbd::vs_cards
 		bool over_cover = false;
 	};
 
-	// Whether a watcher's cards draw over its cover. Only a game launched to watch (PBD_SPECTATOR_CHANNEL) has the
-	// spectator overlay that draws the cover, and it covers the game exactly while the watch is not visible: the presentation
-	// it draws is hidden whenever local_channel::visible() is false. A watch shown from the select (a lobby room, a repick
-	// game) or taken by a game held ready for a match leaves the game's own VS screen in view, as a fighter's game does.
+	// The spectator overlay covers both a launched watcher and an adopted held game while its verified picture is hidden.
+	// Cards over that cover carry the names; a visible watch uses the game's own VS portraits behind the cards.
 	inline constexpr bool watch_over_cover(bool cover_overlay, bool watch_visible)
 	{
 		return cover_overlay && !watch_visible;

@@ -8,6 +8,7 @@
 #include "Emu/RSX/Overlays/overlay_debug_overlay.h"
 #include "Emu/Cell/Modules/cellVideoOut.h"
 #include "Emu/PBD/pbd_held_presentation.h"
+#include "Emu/PBD/pbd_custom_photo.h"
 
 #include "upscalers/bilinear_pass.hpp"
 #include "upscalers/fsr_pass.h"
@@ -1169,7 +1170,9 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 	const bool pbd_identity_capture = info.emu_flip && ::pbd::frame_presentation::identity_capture::get().wants_frame(pbd_flip,
 														   info.pbd_context, info.pbd_sequence, info.pbd_boundary, info.pbd_live, info.pbd_token);
 	const bool pbd_target_capture = info.emu_flip && ::pbd::frame_presentation::target_capture::get().wants_frame(pbd_flip, info.pbd_token);
-	const bool need_media_capture = user_asked_for_screenshot || user_is_recording || pbd_capture || pbd_identity_capture || pbd_target_capture;
+	const u64 pbd_photo_generation = static_cast<u64>(Emu.GetEmulationIdentifier());
+	const u64 pbd_photo_ticket = info.emu_flip ? ::pbd::custom_photo::pending.wants_frame(pbd_photo_generation, pbd_flip) : 0;
+	const bool need_media_capture = user_asked_for_screenshot || user_is_recording || pbd_capture || pbd_identity_capture || pbd_target_capture || pbd_photo_ticket;
 
 	const auto render_overlays = [&](vk::framebuffer_holder* fbo, const areau& area, bool capture)
 	{
@@ -1212,8 +1215,8 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 
 		vk::image* image_to_copy = image_to_flip;
 
-		const bool asynchronous = user_is_recording && m_frame->asynchronous_capture() && !user_asked_for_screenshot && !pbd_capture && !pbd_identity_capture && !pbd_target_capture;
-		if (!pbd_capture && !pbd_identity_capture && !pbd_target_capture && (g_cfg.video.record_with_overlays || asynchronous) && has_overlay)
+		const bool asynchronous = user_is_recording && m_frame->asynchronous_capture() && !user_asked_for_screenshot && !pbd_capture && !pbd_identity_capture && !pbd_target_capture && !pbd_photo_ticket;
+		if (!pbd_capture && !pbd_identity_capture && !pbd_target_capture && !pbd_photo_ticket && (g_cfg.video.record_with_overlays || asynchronous) && has_overlay)
 		{
 			const auto key = vk::get_renderpass_key(m_swapchain->get_surface_format());
 			single_target_pass = vk::get_renderpass(*m_device, key);
@@ -1269,7 +1272,7 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 		image_to_copy->push_layout(*m_current_command_buffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 		vk::copy_image_to_buffer(*m_current_command_buffer, image_to_copy, &sshot_vkbuf, copy_info);
 		// PBD: make the transfer write available to the host read below (coherence removes only the invalidate).
-		if (pbd_identity_capture || pbd_target_capture)
+		if (pbd_identity_capture || pbd_target_capture || pbd_photo_ticket)
 			vk::insert_buffer_memory_barrier(*m_current_command_buffer, sshot_vkbuf.value, 0, sshot_size, VK_PIPELINE_STAGE_TRANSFER_BIT,
 				VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
 		image_to_copy->pop_layout(*m_current_command_buffer);
@@ -1286,6 +1289,9 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 		sshot_vkbuf.unmap();
 
 		const bool is_bgra = image_to_copy->format() == VK_FORMAT_B8G8R8A8_UNORM;
+		if (pbd_photo_ticket)
+			::pbd::custom_photo::pending.deliver(pbd_photo_ticket, pbd_photo_generation, pbd_flip, sshot_frame,
+				buffer_width, buffer_height, is_bgra, pbd_fence == VK_SUCCESS && (is_bgra || image_to_copy->format() == VK_FORMAT_R8G8B8A8_UNORM));
 		if (pbd_identity_capture && ::pbd::frame_presentation::queue_tags_enabled())
 			::pbd::frame_presentation::tag_trace::get().token_state("readback_complete", info.pbd_token, pbd_flip,
 				pbd_fence == VK_SUCCESS ? "captured" : "fence_failed", buffer_width, buffer_height, buffer_pitch, buffer_width * 4,

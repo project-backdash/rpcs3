@@ -208,6 +208,16 @@ namespace pbd::controllers
 		bool keyboard = false;
 	};
 
+	// A launch knows the device just used; saved last-used state is the fallback, and the old saved pad is only a migration.
+	inline std::string initial_owner(std::string_view launch_device, std::string_view last_used, std::string_view saved_pad)
+	{
+		if (!launch_device.empty())
+			return std::string(launch_device);
+		if (last_used == "keyboard" || last_used.starts_with("sdl3:"))
+			return std::string(last_used);
+		return saved_pad.starts_with("sdl3:") ? std::string(saved_pad) : "keyboard";
+	}
+
 	// The caller replaces one complete pad report while holding the pad lock. Releases never change ownership.
 	class selector
 	{

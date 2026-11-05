@@ -14,7 +14,8 @@
 // vs_cards.left.character and vs_cards.right.character, and rank_stakes.left.placement and rank_stakes.right.placement; and
 // the PBD_NOTICE_ART folder of pictures the launcher makes from the player's own game files.
 // opponent-results-1: PBD-MENU-1 opponent=, the opponent's settled rank/MMR or placement on Set complete.
+// character-ranks-1: per-side ranks groups in manifests and next_set, and recorded ranks in watcher controls.
 namespace pbd::features
 {
-	inline constexpr std::string_view answer = R"({"schema":"pbd-features-1","features":["rank-stakes-1","ranked-notices-1","opponent-results-1"]})";
+	inline constexpr std::string_view answer = R"({"schema":"pbd-features-1","features":["rank-stakes-1","ranked-notices-1","opponent-results-1","character-ranks-1"]})";
 } // namespace pbd::features

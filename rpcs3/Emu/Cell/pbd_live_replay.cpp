@@ -106,6 +106,7 @@ struct pbd_live_replay::state
 	std::filesystem::path directory;
 	std::array<player, 2> players;
 	records_source records;
+	looks_source looks;
 	throw_break_source throw_break;
 	pbd::replay::journal journal;
 	std::atomic<bool> failed{false};
@@ -178,6 +179,7 @@ struct pbd_live_replay::state
 		// VS screen to the end of the fight (pbd::game_profile::records_may_change), so the replay and the watchers' capsule
 		// name what the players saw.
 		const auto shown = records ? records() : std::array<std::optional<pbd::game_profile::record>, 2>{};
+		const auto worn = looks ? looks() : pbd::custom_wire::pair{};
 		for (u32 side = 0; side < 2; ++side)
 		{
 			const u32 row = side ? right : left;
@@ -188,7 +190,7 @@ struct pbd_live_replay::state
 			if (!vm::try_access(pbd::game_profile::rank_address(side), &rank, sizeof(rank), false))
 				return false;
 			selected.push_back(pbd::replay_start::capsule_player(players[side].id, players[side].name, u16{definition[0]}, u16{definition[1]},
-				row, pbd::game_profile::rank_byte(rank), shown[side]));
+				row, pbd::game_profile::rank_byte(rank), shown[side], worn[side]));
 		}
 		const auto epoch = pbd::fn_hook::takeover_counters();
 		auto rng = generators(owner, read);
@@ -222,7 +224,7 @@ struct pbd_live_replay::state
 			{"syncEncoding", json::string("pbd-sync-facts-v1")}, {"syncDefinition", json::string("pbd-peer-sync-v3")},
 			{"game", json::number(game)}, {"generation", json::number(generation)}, {"boundary", json::number(anchor)},
 			{"gameExecutableSha256", json::string(elf_sha)},
-			{"capsule", json::object({{"schema", json::string(std::string(pbd::throw_break::capsule_schema(*lookahead)))},
+			{"capsule", json::object({{"schema", json::string(std::string(worn[0] || worn[1] ? pbd::custom_wire::capsule_schema : pbd::throw_break::capsule_schema(*lookahead)))},
 							{"anchor", json::string("before-native-match-initializer")}, {"initializer", json::number(kind)},
 							{"sessionSeed", json::number(seed)}, {"players", json::array(std::move(selected))},
 							{"selection", json::object({{"leftRow", json::number(left)}, {"rightRow", json::number(right)},
@@ -369,6 +371,19 @@ void pbd_live_replay::pbd_records(records_source source) noexcept
 			return;
 		std::lock_guard lock(data->mutex);
 		data->records = std::move(source);
+	}
+	catch (...)
+	{
+	}
+}
+void pbd_live_replay::pbd_looks(looks_source source) noexcept
+{
+	try
+	{
+		if (!data)
+			return;
+		std::lock_guard lock(data->mutex);
+		data->looks = std::move(source);
 	}
 	catch (...)
 	{

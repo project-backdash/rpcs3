@@ -119,7 +119,7 @@ void pbd::rollback_session::boundary_call::publish_lobby_through(u32 through)
 								  const auto& row = data.sample_at(boundary);
 								  return pbd::lobby_set::input_records{row.raw,
 									  {static_cast<u16>(row.ports[0].injected_r3), static_cast<u16>(row.ports[1].injected_r3)},
-									  row.completed && !row.failure && row.ports[0].injected && row.ports[0].posted && row.ports[1].injected && row.ports[1].posted};
+									  row.completed && !row.failure && row.ports[0].injected && row.ports[0].posted && row.ports[1].injected && row.ports[1].posted, data.tick_at(boundary).look_slots};
 							  },
 							  [&](u32 boundary)
 							  {

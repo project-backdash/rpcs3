@@ -89,7 +89,10 @@ namespace rsx
 		{
 			pbd::assets::get();
 			static const pbd::fonts type = pbd::preload_fonts();
-			pbd::practice_menu_drawing draw{m_snapshot, practice, type, pbd::atlas_ref::pick(m_output_scale, pbd_xbox_glyphs())};
+			const auto device = ::pbd::controllers::read_display();
+			auto atlas = pbd::atlas_ref::pick(m_output_scale, device.active ? device.family == "xbox" || device.family == "steamdeck" : pbd_xbox_glyphs());
+			atlas.shown = &device;
+			pbd::practice_menu_drawing draw{m_snapshot, practice, type, atlas};
 			draw.draw(m_native_compiled);
 		}
 

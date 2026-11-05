@@ -2,6 +2,7 @@
 
 #include "Emu/PBD/pbd_env.h"
 #include "pbd_input_script.h"
+#include "Emu/PBD/pbd_fight_tape.h"
 #include "Emu/System.h"
 #include "Utilities/File.h"
 #include "util/logs.hpp"
@@ -46,7 +47,7 @@ namespace pbd
 				if (file.size() != size)
 					throw input_script_error{"Input tape size changed during read"};
 				auto result = pad_input_script::parse(text);
-				pbd_input_script_log.notice("Diagnostic input tape enabled. Indices count successful pad polls, NOT simulation frames.");
+				pbd_input_script_log.notice("%s", result.fight_anchored() ? "Diagnostic input tape enabled, anchored to round one update frames." : "Diagnostic input tape enabled. Indices count successful pad polls, NOT simulation frames.");
 				return result;
 			}
 			catch (const input_script_error& error)
@@ -60,6 +61,7 @@ namespace pbd
 				return pad_input_script{};
 			}
 		}();
+		input_script_fight_mode.store(input_sequence.fight_anchored(), std::memory_order_release);
 		return input_sequence;
 	}
 } // namespace pbd

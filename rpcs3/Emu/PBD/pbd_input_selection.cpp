@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "../Cell/pbd_rollback_session_boundary.h"
+#include "pbd_fight_tape.h"
 
 bool pbd::rollback_session::boundary_call::choose_inputs(u32 index, update_sample& row, session_clock::time_point start)
 {
@@ -8,6 +9,14 @@ bool pbd::rollback_session::boundary_call::choose_inputs(u32 index, update_sampl
 		pbd::stall_metrics::boundary(index);
 		pbd::stall_metrics::scope measure_entry("update_entry");
 		data.update_active = true;
+		if (!data.roundtrip.repeat_active && pbd::fight_tape_enabled())
+		{
+			u32 scene = 0, pending = ~0u, ordinal = ~0u;
+			read_word(pbd::t5dr::scene_address, scene);
+			read_word(0x10093230, pending);
+			read_word(0x1008f0e4, ordinal);
+			pbd::observe_fight_tape(index, scene, pending, ordinal, data.peer.enabled ? data.peer.input_delay : 0);
+		}
 		row.throw_break = {};
 		if (data.session.enabled && !data.roundtrip.repeat_active)
 		{
@@ -198,6 +207,13 @@ void pbd::rollback_session::boundary_call::choose_peer_input(u32 index, update_s
 					got_ns ? static_cast<s32>((now_ns - got_ns) / 1000) : -1, poll_ns ? static_cast<s32>((now_ns - poll_ns) / 1000) : -1);
 				data.peer.file.write(text.data(), text.size());
 			}
+			if (!data.roundtrip.repeat_active && !data.history.live_fixed[index] && pbd::fight_tape_enabled())
+				if (const auto scripted = pbd::fight_tape_at(data.peer.role, index))
+				{
+					data.history.live_inputs[index] = filter_local_sample(
+						static_cast<u16>((u16{scripted->sample.digital1} << 8) | scripted->sample.digital2), index);
+					data.history.live_fixed[index] = 1;
+				}
 			if (!data.roundtrip.repeat_active && !data.history.live_fixed[index])
 			{
 				// With a scheduled input delay D the owned input of tick t is the device read of tick t-1-D,

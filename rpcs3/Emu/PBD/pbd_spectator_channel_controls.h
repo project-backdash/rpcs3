@@ -115,6 +115,24 @@ namespace pbd::spectator
 		m_expected_round = round;
 		m_reported_picks = reported;
 		m_applied_picks.reset();
+		m_rank_profiles = {};
+		m_has_rank_profiles = false;
+		if (const auto* profiles = root.find("rankProfiles"); profiles && profiles->kind == json_kind::object)
+		{
+			m_has_rank_profiles = true;
+			std::size_t index = 0;
+			for (const auto side : {"left", "right"})
+			{
+				auto& player = m_rank_profiles[index++];
+				if (const auto* profile = profiles->find(side))
+				{
+					if (const auto* ranks = profile->find("ranks"))
+						player.ranks = read_rank_table(ranks).value_or(std::vector<rank_group>{});
+					else
+						detail::number32(profile->find("rank"), 0, max_rank, player.rank);
+				}
+			}
+		}
 		m_rank_screens = rank_screens;
 		m_throw_break = *throw_break;
 		m_game = game;

@@ -130,11 +130,16 @@ void pbd::rollback_session::send_session_end(u32 reason)
 			std::array<u8, pbd::peer_auth::maximum_bytes> authenticated;
 			const auto size = d.peer.link.auth.send(message, authenticated);
 			sockaddr_storage target{};
-			const int target_len = pbd::peer_endpoint::to_sockaddr(d.peer.link.target.load(), target);
+			const auto endpoint = d.peer.link.target.load();
+			const int target_len = pbd::peer_endpoint::to_sockaddr(endpoint, target);
+			const auto sender = d.peer.link.relay_socket.sender(static_cast<SOCKET>(d.peer.link.socket_handle), pbd::peer_endpoint::is_loopback(endpoint));
 			for (u32 attempt = 0; attempt < 5; attempt++)
 				if (size)
-					::sendto(static_cast<SOCKET>(d.peer.link.socket_handle), reinterpret_cast<const char*>(authenticated.data()),
+				{
+					const int result = ::sendto(sender, reinterpret_cast<const char*>(authenticated.data()),
 						static_cast<int>(size), 0, reinterpret_cast<const sockaddr*>(&target), target_len);
+					d.peer.link.recovery.send_result(result == static_cast<int>(size), result == SOCKET_ERROR ? WSAGetLastError() : 0);
+				}
 		}
 	}
 #endif
@@ -430,6 +435,10 @@ void pbd::rollback_session::configure_live_recording()
 	s.match_replay.live.pbd_records([&s]
 		{
 			return s.lobby.records_shown;
+		});
+	s.match_replay.live.pbd_looks([&s]
+		{
+			return s.lobby.looks_shown;
 		});
 	s.match_replay.live.pbd_throw_break([this](bool round)
 		{

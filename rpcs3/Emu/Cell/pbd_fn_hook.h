@@ -120,8 +120,8 @@ namespace pbd::fn_hook
 	// Keyed-draw check: libc rand() calls of the owner thread inside the keyed window during a RE-EXECUTED frame.
 	// Lockstep menus should keep this at 0; anything else is reported loudly (the keyed state would not be reproduced by the live pass).
 	inline std::atomic<u64> keyed_in_replay{0};
-	// Audio orphan detector: sys_ppu_thread_detach calls since boot (the game's only detach is
-	// the voice-end callback at 0x33f8d0; a nonzero count means a feeder thread may be orphaned and a later join can hang).
+	// Guest sys_ppu_thread_detach attempts, including failed calls; cleared on resident game reset. Caller and target identify the thread
+	// lifetime being changed; this count alone does not establish a voice fault or a session termination.
 	inline std::atomic<u32> thread_detaches{0};
 	inline std::map<std::pair<u32, u32>, std::pair<u32, u64>> draw_statistics;
 	void note_boundary(u32 tick, bool replay) noexcept;

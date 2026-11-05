@@ -5,8 +5,14 @@
 #include "Emu/PBD/pbd_held_presentation.h"
 #include <cstring>
 #include <cmath>
+#include "WindowsAudioSessionIdentity.h"
 
-AudioBackend::AudioBackend() {}
+AudioBackend::AudioBackend()
+{
+#ifdef _WIN32
+	pbd::audio_session::start();
+#endif
+}
 
 void AudioBackend::SetWriteCallback(std::function<u32(u32 /* byte_cnt */, void* /* buffer */)> cb)
 {

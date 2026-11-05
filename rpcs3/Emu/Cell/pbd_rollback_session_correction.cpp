@@ -3,6 +3,7 @@
 #include "stdafx.h"
 #include "pbd_rollback_session_boundary.h"
 #include "Emu/PBD/pbd_peer_boundary_steps.h"
+#include "Emu/PBD/pbd_fight_tape.h"
 #include "Emu/PBD/pbd_phase_input_steps.h"
 
 bool pbd::rollback_session::tick_dispatch::correction()

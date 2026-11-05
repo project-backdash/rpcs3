@@ -3,6 +3,9 @@
      (see pbd_test.h); the rest of the project builds without them. -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)costume_select_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)window_geometry_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
@@ -17,6 +20,9 @@
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)peer_auth_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)direct_fallback_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)peer_log_test.cpp">
@@ -68,8 +74,16 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)input_taps_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)input_taps_direction_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)corner_chat_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)custom_online_test.cpp"><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)custom_look_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <AdditionalIncludeDirectories>$(SolutionDir)3rdparty\stblib\stb;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)env_parse_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -312,6 +326,9 @@
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)practice_punish_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_startup_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)practice_restart_test.cpp">

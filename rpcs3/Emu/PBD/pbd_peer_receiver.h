@@ -33,35 +33,56 @@ struct pbd::rollback_session::peer_receiver
 			fd_set set;
 			FD_ZERO(&set);
 			FD_SET(sock, &set);
+			const auto local = d.peer.link.relay_socket.handle();
+			if (local != INVALID_SOCKET)
+				FD_SET(local, &set);
 			timeval tv{0, 20000};
 			if (::select(0, &set, nullptr, nullptr, &tv) <= 0)
 				continue;
-			receive_available();
+			if (FD_ISSET(sock, &set))
+				receive_available(sock);
+			if (local != INVALID_SOCKET && FD_ISSET(local, &set))
+				receive_available(local);
 		}
 		pbd::session_wait::recovering().store(false, std::memory_order_release);
 	}
 
-	void receive_available()
+	void receive_available(SOCKET receiving)
 	{
 		for (; !d.peer.rx.stop.load(std::memory_order_acquire);)
 		{
 			rx_packet packet;
 			sockaddr_storage from{};
 			int from_len = sizeof(from);
-			const int n = ::recvfrom(sock, packet.bytes.data(), static_cast<int>(packet.bytes.size()), 0, reinterpret_cast<sockaddr*>(&from), &from_len);
-			if (n <= 0)
+			const int n = ::recvfrom(receiving, packet.bytes.data(), static_cast<int>(packet.bytes.size()), 0, reinterpret_cast<sockaddr*>(&from), &from_len);
+			const auto arrival_us = static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(session_clock::now().time_since_epoch()).count());
+			const auto source = pbd::peer_endpoint::from_sockaddr(from, from_len);
+			if (n < 0 && WSAGetLastError() != WSAEMSGSIZE)
 				break; // Nothing pending (WSAEWOULDBLOCK) or the other peer is not bound yet (WSAECONNRESET).
-			const auto authenticated = d.peer.link.auth.receive(std::span(reinterpret_cast<const u8*>(packet.bytes.data()), static_cast<usz>(n)));
+			d.peer.link.recovery.datagram(source == d.peer.link.target.load(), arrival_us);
+			if (n <= 0)
+			{
+				d.peer.link.recovery.rejected(pbd::peer_diagnostics::rejection::format);
+				continue;
+			}
+			pbd::peer_diagnostics::rejection rejected{};
+			const auto authenticated = d.peer.link.auth.receive(std::span(reinterpret_cast<const u8*>(packet.bytes.data()), static_cast<usz>(n)), &rejected);
 			if (!authenticated)
-				continue; // No counters, endpoint changes, liveness, faults or diagnostic output for wrong tags or replays.
+			{
+				d.peer.link.recovery.rejected(rejected);
+				continue; // Rejected traffic changes bounded evidence only, never liveness or admission.
+			}
 			packet.auth_epoch = authenticated->epoch;
 			std::memmove(packet.bytes.data(), authenticated->payload.data(), authenticated->payload.size());
-			packet.arrival_us = static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(session_clock::now().time_since_epoch()).count());
-			packet.source = pbd::peer_endpoint::from_sockaddr(from, from_len);
+			packet.arrival_us = arrival_us;
+			packet.source = source;
 			packet.size = static_cast<u16>(authenticated->payload.size());
 			std::lock_guard lock(d.peer.rx.mutex);
 			if (!d.peer.link.auth.current(packet.auth_epoch))
+			{
+				d.peer.link.recovery.rejected(pbd::peer_diagnostics::rejection::epoch);
 				continue;
+			}
 			if (watch_peer)
 			{
 				const std::span bytes(reinterpret_cast<const u8*>(packet.bytes.data()), packet.size);
@@ -74,13 +95,19 @@ struct pbd::rollback_session::peer_receiver
 				                       (!local_route && d.peer.link.learn_endpoint && d.peer.link.auth.can_learn() && (d.peer.link.learn_always || !d.peer.link.target_confirmed.load(std::memory_order_relaxed) || (last_valid_us && packet.arrival_us > last_valid_us + 500000)));
 				if (pbd::peer_message::is_end_message(bytes))
 				{
+					d.peer.link.recovery.rejected(pbd::peer_message::diagnostic_check(bytes, d.peer.role, d.peer.session));
+					if (!source_ok)
+						d.peer.link.recovery.rejected(pbd::peer_diagnostics::rejection::source);
 					if (const auto end = pbd::peer_message::read_end(bytes, d.peer.role, d.peer.session);
 						source_ok && end && !d.peer.link.terminal_idle.load(std::memory_order_acquire))
 						peer_notice("peer_session_ended", end->reason, end->tick);
 					continue; // An end message is never interpreted as inputs.
 				}
-				if (source_ok &&
-					pbd::peer_message::check_input(bytes, d.peer.role, d.peer.session) == pbd::peer_message::input_check::valid)
+				const auto check = pbd::peer_message::diagnostic_check(bytes, d.peer.role, d.peer.session);
+				d.peer.link.recovery.rejected(check);
+				if (!source_ok)
+					d.peer.link.recovery.rejected(pbd::peer_diagnostics::rejection::source);
+				if (source_ok && check == pbd::peer_diagnostics::rejection::none)
 				{
 					last_valid_us = packet.arrival_us;
 					d.peer.link.last_valid_us.store(last_valid_us, std::memory_order_release);

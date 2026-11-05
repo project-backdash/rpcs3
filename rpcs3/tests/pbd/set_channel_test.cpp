@@ -241,6 +241,19 @@ namespace
 	}
 } // namespace
 
+PBD_TEST(PbdSetChannel, AnOversizeCosmeticFieldDoesNotRefuseTheSet)
+{
+	using namespace pbd::set_channel;
+	auto parsed = detail::json_parser(sample_document).parse();
+	check(parsed.value);
+	for (auto& [name, player] : parsed.value->fields)
+		if (name == "left")
+			player.fields.emplace_back("lookTable", json_value::string(std::string(40000, 'A')));
+	const auto set = parse_manifest(detail::serialize(*parsed.value), supported);
+	check(set.value && set.value->left.custom_fields);
+	check(!set.value->left.look && set.value->left.look_table.empty());
+}
+
 PBD_TEST(PbdSetChannel, BackgroundChannelDrainsExactEnvelopesAndRefusesACollision)
 {
 	using namespace pbd::set_channel;
@@ -1522,4 +1535,49 @@ PBD_TEST(PbdSetChannel, MatchLateBinding)
 	check(ready.value);
 	const auto* route = ready.value->find("routeAtBind");
 	check(route && route->kind == json_kind::boolean && route->truth);
+}
+
+PBD_TEST(PbdSetChannel, CharacterRankTablesFollowPicksAndReplaceAtNextSet)
+{
+	using namespace pbd::set_channel;
+	check(pbd::features::answer.find("character-ranks-1") != std::string_view::npos);
+	auto document = changed(sample_document, R"("name":"Left")", R"("name":"Left","ranks":[{"rows":[12,13],"rank":19},{"rows":[7,8],"rank":34}])");
+	document = changed(document, R"("name":"Left")", R"("name":"Left","look":{"slot":3,"bytes":"0cffffffffffffffffffffff"})");
+	document = changed(document, R"("spectator":)", R"("rankProfiles":true,"spectator":)");
+	auto parsed = parse_manifest(document, supported);
+	check(parsed.value && parsed.value->rank_profiles && parsed.value->left.ranks);
+	const auto& player = parsed.value->left;
+	check(player.look && player.look->slot == 3 && player.look->value[0] == 12 && player.custom_fields);
+	check(shown_rank(player, 12) == 19 && shown_rank(player, 13) == 19);
+	check(shown_rank(player, 7) == 34 && shown_rank(player, 32) == 0 && shown_rank(player, ~0u) == 0);
+	fighter distinct;
+	distinct.ranks = std::vector<rank_group>{{{30}, 19}, {{31}, 10}};
+	check(shown_rank(distinct, 30) == 19 && shown_rank(distinct, 31) == 10);
+	distinct.ranks = std::vector<rank_group>{{{30}, 19}};
+	check(shown_rank(distinct, 31) == 0);
+	for (const auto malformed : {R"([{"rows":[12,12],"rank":19}])", R"([{"rows":[85],"rank":19}])", R"([{"rows":[12],"rank":37}])", R"([{"rows":[],"rank":19}])"})
+	{
+		const auto value = detail::json_parser(malformed).parse();
+		check(value.value && !read_rank_table(&*value.value));
+	}
+	const auto next = parse_command(envelope(R"("type":"next_set","nextSetId":"set-2","matchId":"match-2","gameNumber":1,"score":{"left":0,"right":0},"rules":{"firstToGames":2,"roundsPerGame":3},"left":{"ranks":[{"rows":[12,13],"rank":20}]},"right":{"ranks":[]})"), *parsed.value, 1, 1);
+	check(next.value && next.value->rank_tables[0] && next.value->rank_tables[1]);
+	const auto directory = std::filesystem::temp_directory_path() / ("pbd-character-ranks-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	check(std::filesystem::create_directory(directory));
+	{
+		channel output(directory, *parsed.value);
+		output.select_ranks({13, 32});
+		check(output.identity().left.rank == 19 && output.identity().right.rank == 0);
+		output.select_ranks({32, 12});
+		check(output.identity().left.rank == 0);
+		check(output.next_set(*next.value));
+		output.select_ranks({12, 32});
+		check(output.identity().left.rank == 20 && output.identity().right.rank == 0);
+		check(output.identity().left.look == player.look && output.identity().left.custom_fields,
+			"replacing the rank table preserves the frozen custom look");
+	}
+	check(std::filesystem::equivalent(directory.parent_path(), std::filesystem::temp_directory_path()) && directory.filename().string().starts_with("pbd-character-ranks-"));
+	std::filesystem::remove_all(directory);
+	const auto legacy = parse_manifest(sample_document, supported);
+	check(legacy.value && !legacy.value->rank_profiles && !legacy.value->left.ranks && shown_rank(legacy.value->left, 12) == 0);
 }

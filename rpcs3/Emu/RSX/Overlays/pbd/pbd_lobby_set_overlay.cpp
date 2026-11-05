@@ -2,6 +2,7 @@
 #include "pbd_overlays.h"
 #include "overlay_pbd_draw.h"
 #include "overlay_pbd_notices.h"
+#include "overlay_pbd_costume.h"
 #include "Emu/System.h"
 
 #include <algorithm>
@@ -135,6 +136,9 @@ namespace rsx
 		{
 			pbd::preload_fonts();
 			pbd::assets::get();
+			pbd::costume::art::get();
+			f32 glyph_x = 0.f, glyph_y = 0.f;
+			fontmgr::get("Barlow-700.ttf", 10)->get_char(U'A', glyph_x, glyph_y);
 			m_compiled.clear();
 			m_revision = ~u64{0};
 			visible = false;
@@ -157,9 +161,11 @@ namespace rsx
 			}
 			// The latch publishes a new band only when a drawn value changed, so the draw list is rebuilt at most once a boundary.
 			const u64 revision = ::pbd::select_band::revision();
-			if (revision == m_revision && m_compiled_scale == m_output_scale)
+			const u64 costume_revision = ::pbd::costume_panel::revision();
+			if (revision == m_revision && costume_revision == m_costume_revision && m_compiled_scale == m_output_scale)
 				return;
 			m_revision = revision;
+			m_costume_revision = costume_revision;
 			refresh(::pbd::select_band::load());
 		}
 
@@ -168,7 +174,11 @@ namespace rsx
 			using namespace pbd;
 			m_compiled.clear();
 			m_compiled_scale = m_output_scale;
-			visible = band.visible && band.generation == static_cast<u64>(Emu.GetEmulationIdentifier());
+			auto costume = ::pbd::costume_panel::load();
+			const u64 generation = static_cast<u64>(Emu.GetEmulationIdentifier());
+			costume.visible = costume.visible && costume.generation == generation;
+			const bool band_visible = band.visible && band.generation == generation;
+			visible = band_visible || costume.visible;
 			if (!visible)
 				return;
 			static const fonts type = preload_fonts();
@@ -177,8 +187,9 @@ namespace rsx
 			// second band under it with the stage select's controls. No game art: the game's own select stays visible around it.
 			layer out;
 			const f32 share = band.total ? static_cast<f32>(std::min(band.frames, band.total)) / static_cast<f32>(band.total) : 0.f;
-			countdown_band(out, type, utf8_to_u32string(band.title), two_digits(band.seconds), utf8_to_u32string(band.detail), band.detail_waiting, share);
-			if (!band.hint.empty())
+			if (band_visible && !costume.open)
+				countdown_band(out, type, utf8_to_u32string(band.title), two_digits(band.seconds), utf8_to_u32string(band.detail), band.detail_waiting, share);
+			if (band_visible && !band.hint.empty())
 			{
 				constexpr f32 hint_top = 98.f, hint_bottom = 126.f, hint_centre = (hint_top + hint_bottom) / 2.f;
 				const rich_style hint_style{type.body, text_2, 16.f};
@@ -187,6 +198,7 @@ namespace rsx
 				band_strip(out, layer::b_under, rgb(0x0B0304, .74f), hint_left, hint_left + hint_w + 144.f, hint_top, hint_bottom);
 				rich_text(&out, atlas, hint_style, hint_left + 72.f, hint_centre, band.hint);
 			}
+			pbd::costume::draw(out, atlas, type, costume);
 			out.flush(m_compiled);
 		}
 
@@ -195,7 +207,7 @@ namespace rsx
 			if (Emu.IsStopped())
 				return {};
 			// A changed band is rebuilt before it is composed, so a band hidden after the last update never shows another frame.
-			if (::pbd::select_band::revision() != m_revision)
+			if (::pbd::select_band::revision() != m_revision || ::pbd::costume_panel::revision() != m_costume_revision)
 				update(0);
 			if (!visible)
 				return {};

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pbd_practice_frame_model.h"
+#include "pbd_practice_startup.h"
 
 namespace pbd::practice::frames
 {
@@ -124,6 +125,7 @@ namespace pbd::practice::frames
 		// The side was free on `frame`, earlier than its reading said (it attacked out of a stance before that).
 		void observed_free(unsigned side, std::int64_t frame)
 		{
+			startups[side].reset();
 			readings[side].ready = frame;
 			if (drives[side])
 			{
@@ -149,6 +151,7 @@ namespace pbd::practice::frames
 		// whether the side's latest commit was an attack.
 		std::array<bool, 2> drives{}, defends{}, attacking{};
 		std::array<motion, 2> motions{};
+		std::array<startup_sequence, 2> startups{};
 		// Indexed by attacker: a contact whose reaction has not started yet.
 		std::array<waiting, 2> pending{};
 		// Indexed by fighter: hit since its own last attack, so a wall reaction it enters belongs to the opponent's result.
@@ -242,13 +245,8 @@ namespace pbd::practice::frames
 			auto& own = latest[c.side];
 			pending[c.side] = {};
 			struck[c.side] = false;
-			// An attack entered before the previous one can act again is the same string or multi-hit move (a follow-up
-			// input or a hit the move hands over to by itself): it keeps the first hit's startup and shows the latest
-			// hit's result.
-			const bool continues = own.move && own.ready && c.at < *own.ready;
-			const auto first = continues ? own.startup : startup;
 			own = {c.move, 0, ++revision};
-			own.startup = first;
+			own.startup = startup;
 			own.ready = c.ready;
 			own.alt = c.alt;
 			own.state = c.state;
@@ -307,6 +305,7 @@ namespace pbd::practice::frames
 		void reset()
 		{
 			motions = {};
+			startups = {};
 			pending = {};
 			struck = {};
 			latest = {};
@@ -373,15 +372,18 @@ namespace pbd::practice::frames
 			return wait.active && now >= wait.at && now - wait.at <= reaction_delay;
 		}
 		// A fighter commits `move` at `cursor` on frame `now`; its move-data readiness gives ready = origin + free,
-		// its state and escapes. An attack supplies its last active cursor and startup; `wall` marks a wall reaction.
+		// its state and escapes. An attack supplies its last active cursor and startup; `wall` marks a wall reaction,
+		// and `windup` a non-attack jump or an automatic path leading to an attack.
 		void commit_reading(unsigned side, std::uint32_t move, tick now, std::uint32_t cursor, const std::optional<readiness_reading>& data,
-			bool attack, std::optional<std::uint32_t> last_active = {}, std::optional<std::uint32_t> startup = {}, bool wall = false)
+			bool attack, std::optional<std::uint32_t> last_active = {}, std::optional<std::uint32_t> startup = {}, bool wall = false,
+			bool windup = false)
 		{
 			if (side > 1)
 				return;
 			clear_preview(side);
 			const std::int64_t at = now, origin = at - cursor;
 			const bool reaction = reacting(side, now);
+			const auto& prior = latest[side];
 			// A non-attack the fighter entered by itself (a cancel into a sway, a sidestep or a stance) frees it where its own
 			// inputs open; a reaction's inputs do not.
 			std::optional<readiness_reading> reading = data;
@@ -398,12 +400,20 @@ namespace pbd::practice::frames
 			attacking[side] = attack;
 			const move_commit c{side, move, cursor, at, origin, reading, ready, alt, state};
 			const bool chose = choose_reading(c, attack, after_attack);
+			// An attack out of a stance can prove the preceding move was already free. Use that observed frame before
+			// deciding whether the attack continues its startup sequence.
+			if (reaction)
+				startups[side].reset();
+			const auto measured = startups[side].commit(now, cursor, attack, windup && !reaction,
+				!reaction && !struck[side] && prior.move && prior.ready && at < *prior.ready, startup, last_active);
+			if (startups[side].skipped())
+				latest[side].startup.reset();
 			const bool reacted = apply_reaction(c, reaction);
 			if (wall && struck[side])
 				apply_wall(side);
 			if (attack)
 			{
-				start_attack(c, last_active, startup);
+				start_attack(c, last_active, measured);
 				return;
 			}
 			continue_move(c, reacted, chose);
@@ -415,6 +425,8 @@ namespace pbd::practice::frames
 			if (side > 1 || !latest[side].move)
 				return;
 			auto& own = latest[side];
+			if (!own.startup)
+				own.startup = startups[side].connected();
 			own.contacted = true;
 			own.label = outcome_label::throw_hit;
 			own.level = throw_level;
@@ -457,6 +469,7 @@ namespace pbd::practice::frames
 			out.label = label;
 			out.level = level;
 			struck[1 - attacker] = true;
+			startups[1 - attacker].reset();
 			out.reaction = 0;
 			out.advantage.reset();
 			out.attacker_ready.reset();

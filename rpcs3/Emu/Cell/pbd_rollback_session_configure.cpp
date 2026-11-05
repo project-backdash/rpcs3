@@ -103,7 +103,7 @@ void pbd::rollback_session::configure_lobby_channel(const std::filesystem::path&
 		const auto& identity = s.lobby.channel->identity();
 		const auto now = static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(session_clock::now().time_since_epoch()).count());
 		s.peer.link.recovery.configure({identity.session_id, identity.set_id, s.peer.session, s.peer.link.auth.epoch()},
-			s.peer.link.target.load(), now, static_cast<u16>(s.peer.link.local_port));
+			s.peer.link.target.load(), now, static_cast<u16>(s.peer.link.local_port), s.peer.link.relay_local_port);
 	}
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pbd_json_reader.h"
+#include "pbd_throw_break.h"
 #include <optional>
 
 namespace pbd::match_bind
@@ -19,6 +20,8 @@ namespace pbd::match_bind
 		bool relayed = false;
 		bool activate = false, spectator_from_start = false;
 		std::optional<std::uint32_t> prediction_bound, input_delay;
+		// The set enables the rule; its lookahead follows the applied delay, including an automatic delay announced later.
+		std::optional<bool> throw_break;
 	};
 	inline json::result<configuration> parse(std::string_view text, const identity& expected)
 	{
@@ -34,6 +37,7 @@ namespace pbd::match_bind
 		const auto* stream = value.find("spectatorFromStart");
 		const auto* delay = peer && peer->kind == json_kind::object ? peer->find("inputDelay") : nullptr;
 		const auto* prediction = peer && peer->kind == json_kind::object ? peer->find("predictionBound") : nullptr;
+		const auto* rule = peer && peer->kind == json_kind::object ? peer->find("throwBreak") : nullptr;
 		configuration out;
 		out.relayed = detail::is(route, "relay");
 		out.activate = stream != nullptr;
@@ -45,7 +49,7 @@ namespace pbd::match_bind
 			!detail::is(value.find("emulatorSha256"), expected.emulator) ||
 			!detail::is(value.find("recipeSha256"), expected.recipe) ||
 			!detail::identifier(value.find("setId")) || !detail::number32(value.find("seed"), 1, 0xffffffffu, out.seed) ||
-			!peer || peer->kind != json_kind::object || peer->fields.size() != 5u + (route ? 1u : 0u) + (delay || prediction ? 2u : 0u) ||
+			!peer || peer->kind != json_kind::object || peer->fields.size() != 5u + (route ? 1u : 0u) + (delay || prediction ? 2u : 0u) + (rule ? 1u : 0u) ||
 			(route && !out.relayed && !detail::is(route, "direct")) ||
 			!detail::number32(peer->find("role"), 0, 1, out.role) ||
 			!detail::number32(peer->find("session"), 1, 0xffffffffu, out.session) ||
@@ -53,6 +57,16 @@ namespace pbd::match_bind
 			!detail::number32(peer->find("remotePort"), 1024, 65535, out.remote_port) ||
 			!detail::plain_text(peer->find("address"), 2, 63))
 			return {{}, "match_bind_identity_or_peer_invalid"};
+		if (rule)
+		{
+			std::uint32_t version = 0;
+			const auto* enabled = rule->find("enabled");
+			if (!stream || rule->kind != json_kind::object || rule->fields.size() != 2 ||
+				!detail::number32(rule->find("version"), throw_break::rule_version, throw_break::rule_version, version) ||
+				!enabled || enabled->kind != json_kind::boolean)
+				return {{}, "match_bind_throw_break_invalid"};
+			out.throw_break = enabled->truth;
+		}
 		if (delay || prediction)
 		{
 			std::uint32_t limit = 0, frames = 0;
@@ -76,7 +90,8 @@ namespace pbd::match_bind
 		return "{\"schema\":\"pbd-match-standby-1\",\"nativeGeneration\":" + json::quoted(std::to_string(value.generation)) +
 		       ",\"checkpointSha256\":" + json::quoted(value.checkpoint) + ",\"emulatorSha256\":" + json::quoted(value.emulator) +
 		       ",\"recipeSha256\":" + json::quoted(value.recipe) + ",\"origin\":0,\"scene\":3,\"subscene\":44,\"assignedSideAtBind\":" +
-		       (assigned_side_at_bind ? "true" : "false") + ",\"routeAtBind\":true,\"activationAtBind\":true,\"delayAtBind\":true,\"returnAtEnd\":true,\"watchAtBind\":true}\n";
+		       (assigned_side_at_bind ? "true" : "false") + ",\"routeAtBind\":true,\"activationAtBind\":true,\"delayAtBind\":true,\"throwBreakAtBind\":" +
+		       std::to_string(throw_break::rule_version) + ",\"returnAtEnd\":true,\"watchAtBind\":true}\n";
 	}
 	inline std::string bound_text(const identity& value, std::string_view set, const configuration* peer = nullptr)
 	{
@@ -87,6 +102,9 @@ namespace pbd::match_bind
 		       (peer && peer->prediction_bound ? ",\"inputDelay\":" + (peer->input_delay ? std::to_string(*peer->input_delay) : "\"auto\"") +
 													 ",\"predictionBound\":" + std::to_string(*peer->prediction_bound) :
 												 "") +
+		       (peer && peer->throw_break ? ",\"throwBreak\":{\"version\":" + std::to_string(throw_break::rule_version) +
+												",\"enabled\":" + (*peer->throw_break ? "true" : "false") + "}" :
+											"") +
 		       "}\n";
 	}
 	inline bool activates(std::string_view text, const identity& expected, std::string_view set)

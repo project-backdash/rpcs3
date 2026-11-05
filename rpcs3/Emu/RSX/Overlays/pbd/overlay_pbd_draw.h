@@ -55,25 +55,42 @@ namespace rsx::overlays::pbd
 					if (held)
 						token.remove_prefix(5);
 					const auto device = atlas.shown ? *atlas.shown : ::pbd::controllers::read_display();
-					const auto label = ::pbd::controllers::glyph_label(token, device);
-					if (!label.empty())
+					const auto parts = ::pbd::controllers::prompt_tokens(token, device);
+					for (usz part = 0; part < parts.size(); ++part)
 					{
-						if (device.family == "xbox" && (token == "start" || token == "select"))
+						if (part)
 						{
-							glyph(glyph_sprite(token, atlas.xbox, style.rings), held);
-							x += 4.f;
+							x += 3.f;
+							glyph(slash);
+							x += 3.f;
 						}
-						const auto wide = utf8_to_u32string(label);
-						const f32 width = text_width(style.f, wide) + 8.f;
-						if (out)
+						const std::string_view physical = parts[part];
+						const auto label = ::pbd::controllers::glyph_label(physical, device);
+						if (!label.empty())
 						{
-							out->rect(layer::b_bars, rgb(0x30343b), x, centre_y - style.glyph_h / 2.f - 2.f, width, style.glyph_h + 4.f);
-							out->text(style.f, held ? style.held_tint : style.glyph_tint, x + 4.f, base, wide);
+							if (device.family == "xbox" && (physical == "start" || physical == "select"))
+							{
+								glyph(glyph_sprite(physical, atlas.xbox, style.rings), held);
+								x += 4.f;
+							}
+							const auto wide = utf8_to_u32string(label);
+							const f32 width = text_width(style.f, wide) + 8.f;
+							if (out)
+							{
+								out->rect(layer::b_bars, rgb(0x30343b), x, centre_y - style.glyph_h / 2.f - 2.f, width, style.glyph_h + 4.f);
+								out->text(style.f, held ? style.held_tint : style.glyph_tint, x + 4.f, base, wide);
+							}
+							x += width;
 						}
-						x += width;
+						else
+						{
+							const auto direction = physical == "up" ? "dpad:u" : physical == "down" ? "dpad:d" :
+							                                                 physical == "left"     ? "dpad:l" :
+							                                                 physical == "right"    ? "dpad:r" :
+							                                                                          physical;
+							glyph(glyph_sprite(direction, atlas.xbox, style.rings), held);
+						}
 					}
-					else
-						glyph(glyph_sprite(token, atlas.xbox, style.rings), held);
 					i = close + 1;
 					// A chord or pair continues straight into the next token.
 					if (i + 1 < s.size() && (s[i] == '+' || s[i] == '/') && s[i + 1] == '{')

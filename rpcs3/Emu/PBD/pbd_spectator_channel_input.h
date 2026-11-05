@@ -13,8 +13,9 @@ namespace pbd::spectator
 			for (u32 port = 0; port < 2; ++port)
 			{
 				item.pads[port] = static_cast<std::uint16_t>(data[8 * port] | (u32{data[8 * port + 1]} << 8));
+				item.look_slots[port] = m_identity.in_game && m_identity.custom_fields && data[8 * port + 2] <= 10 ? data[8 * port + 2] : 0;
 				for (u32 j = 2; j < 8; ++j)
-					if (data[8 * port + j])
+					if (data[8 * port + j] && !(j == 2 && m_identity.in_game && m_identity.custom_fields))
 						return refuse("noncanonical_pad");
 			}
 			item.boundary = le32(data + 16);

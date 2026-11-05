@@ -750,22 +750,12 @@ namespace pbd::throw_break
 		return settled(next);
 	}
 
-	// Whether the port's next step may read ahead, from its record of the tick before: the fighter runs a move of the
-	// opponent's moveset, or its last step read ahead (a break window in its own moveset). A lockstep row is final once it
-	// runs, so the boundary also waits for the other PC's word L ticks past the row then; a hold that starts on a lockstep
-	// tick has no such wait, and its word load refuses there unless the words it reads have arrived.
-	constexpr bool may_read_ahead(const port_record& record) noexcept
-	{
-		return record.in_hold || (record.stepped ? record.use.reads() : record.previous_read);
-	}
-
-	// The lockstep wait for row `tick`, from the port's record of the row before: a step that reads ahead reads the word L
-	// past its tick and the word L past its previous step, against which its presses count, so both must have arrived
-	// (`arrived(source)`).
+	// A lockstep row runs only once. A new window can open during its battle update even if the previous step had no
+	// hold or window, so wait for the word L past every row and its previous step before admitting the row.
 	template <typename Arrived>
 	constexpr bool lookahead_arrived(const port_record& before, u32 tick, u32 ahead, Arrived&& arrived)
 	{
-		if (!ahead || !may_read_ahead(before))
+		if (!ahead)
 			return true;
 		const std::optional<u32> previous = before.stepped ? std::optional<u32>{tick - 1} : before.previous_known ? std::optional<u32>{before.previous_step} :
 		                                                                                                            std::nullopt;
@@ -1125,8 +1115,15 @@ namespace pbd::throw_break
 
 		// A delay fixed at configure applies at once; an automatic one, or a fixed one below 4 (which opens at 4), applies
 		// at input_delay_applied. Local words beyond the applied delay are not fixed before that.
-		void configure_peer(setting value, setting tech, bool fixed_ahead, std::optional<u32> fixed_delay) noexcept
+		void configure_peer(setting value, setting tech, bool fixed_ahead, std::optional<u32> fixed_delay,
+			std::optional<bool> admitted_rule = std::nullopt) noexcept
 		{
+			// Admission replaces the provisional boot switches. An older admission has the stock rule and no tech rolls.
+			if (admitted_rule)
+			{
+				value = *admitted_rule ? setting::on : setting::off;
+				tech = setting::off;
+			}
 			on = value == setting::on;
 			peer = true;
 			tech_rolls = tech == setting::on;

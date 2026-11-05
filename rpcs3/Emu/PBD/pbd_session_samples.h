@@ -152,6 +152,7 @@ namespace pbd::session_runtime
 		std::array<u32, 2> scene{}; // Scene selectors read at this boundary (17/44 is the in-battle pair).
 		u32 frame_counter = 0;      // Game-flow frame counter 0x1008f07c at this boundary (the match / round reseed source).
 		u32 session_segment = 0, gate_hold = 0;
+		std::array<u32, 2> look_slots{};
 		std::array<u32, 5> battle_counters{};
 		bool combat_read = false;
 		std::array<u64, 3> combat{}; // FNV-1a 64 of each combat_regions entry at this boundary (final execution), excluding audio spans.

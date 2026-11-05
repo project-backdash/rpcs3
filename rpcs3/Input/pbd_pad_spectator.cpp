@@ -4,6 +4,7 @@
 #include "Emu/Io/PadHandler.h"
 #include "Emu/Io/pad_config.h"
 #include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/pbd_spectator_channel_model.h"
 #include "Emu/System.h"
 #include "Emu/Cell/pbd_controller_takeover.h"
 
@@ -16,11 +17,6 @@ namespace
 	// The watcher's controllers as one canonical word (digital1 << 8 | digital2); 0 outside spectating.
 	std::atomic<u16> g_pbd_spectator_word{0};
 
-	bool pbd_spectator_requested()
-	{
-		const char* text = pbd::env::find("PBD_SPECTATOR_CHANNEL");
-		return text && *text;
-	}
 } // namespace
 
 u16 pbd_spectator_pad_word() noexcept
@@ -33,7 +29,7 @@ namespace pbd::pads
 	std::unique_ptr<spectator_watch> spectator_watch::create()
 	{
 		// The watcher's own controllers drive its screen, never the watched game.
-		if (Emu.IsVsh() || !pbd_spectator_requested())
+		if (Emu.IsVsh() || !pbd::spectator::watch_capable())
 			return nullptr;
 		input_log.notice("PBD spectating: the watcher's controller drives its own screen (button bar and chat)");
 		return std::make_unique<spectator_watch>();
@@ -41,7 +37,7 @@ namespace pbd::pads
 
 	void spectator_watch::publish(u16 word)
 	{
-		g_pbd_spectator_word.store(word, std::memory_order_release);
+		g_pbd_spectator_word.store(pbd::spectator::active(static_cast<u64>(Emu.GetEmulationIdentifier())) ? word : 0, std::memory_order_release);
 	}
 
 	void spectator_watch::prepare_handlers()
@@ -182,6 +178,12 @@ namespace pbd::pads
 	void spectator_watch::poll()
 	{
 		auto& watch = m_watch;
+		if (!pbd::spectator::active(static_cast<u64>(Emu.GetEmulationIdentifier())))
+		{
+			watch.focused = false;
+			g_pbd_spectator_word.store(0, std::memory_order_release);
+			return;
+		}
 		const u64 now = pbd::controller_takeover::steady_ms();
 
 		if (now < watch.next_poll_ms)

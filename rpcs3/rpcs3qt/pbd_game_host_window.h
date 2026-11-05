@@ -61,6 +61,8 @@ namespace pbd::game_host
 			if (force_hidden)
 				game_host_log.warning("Hardware test: every on-screen check finds the game picture missing.");
 			qt_window = reinterpret_cast<HWND>(game.winId());
+			if (hosted && !exclude_from_shell(qt_window))
+				throw std::runtime_error("The hidden game input window could not be configured.");
 			launcher.value = OpenProcess(SYNCHRONIZE, FALSE, launcher_pid);
 			stop_event.value = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 			refresh_event.value = CreateEventW(nullptr, FALSE, FALSE, nullptr);
@@ -320,7 +322,7 @@ namespace pbd::game_host
 				return false;
 			}
 			SetWindowLongPtrW(child, GWL_STYLE, WS_POPUP | WS_CLIPSIBLINGS);
-			SetWindowLongPtrW(child, GWL_EXSTYLE, 0);
+			SetWindowLongPtrW(child, GWL_EXSTYLE, surface_ex_style(false));
 			// On a top-level window this sets the owner.
 			SetWindowLongPtrW(child, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(parent));
 			detached.store(true);
@@ -947,7 +949,7 @@ namespace pbd::game_host
 			// its own taskbar button. Any other top-level game window is owned by the launcher: no taskbar button, always
 			// above it. The same first-frame, paint-before-return and private control protocol govern when either appears.
 			detached.store(external_overlay || owned_popup.load());
-			const auto child = CreateWindowExW(external_overlay ? WS_EX_APPWINDOW : 0, type.lpszClassName, L"PROJECT BACKDASH",
+			const auto child = CreateWindowExW(surface_ex_style(external_overlay), type.lpszClassName, L"PROJECT BACKDASH",
 				(detached ? WS_POPUP : WS_CHILD) | WS_CLIPSIBLINGS,
 				0, 0, 160, 90, external_overlay ? nullptr : parent, nullptr, type.hInstance, this);
 			render_window.store(child);
@@ -984,6 +986,10 @@ namespace pbd::game_host
 			bool quit = false;
 			while (!quit && !stop.stop_requested())
 			{
+				// The window can close while its process is still shutting down. Do not keep a surface or accept another
+				// show against that dead owner, even if its numeric handle is reused by a different process.
+				if (!launcher_window_exists(parent, launcher_pid))
+					break;
 				// A parked game must not claim the launcher's input or replace a visible Practice window.
 				if (!announced && pbd::held_presentation::output().can_show())
 				{
@@ -1027,6 +1033,10 @@ namespace pbd::game_host
 				screen_check_step(child, now);
 				try_hand_back(child);
 			}
+			// Owner destruction can destroy the surface while dispatching a message, which exits through WM_QUIT rather
+			// than the next loop check. Both routes must also close the hidden Qt window.
+			if (!launcher_window_exists(parent, launcher_pid))
+				PostMessageW(qt_window, WM_CLOSE, 0, 0);
 			if (follow_hook)
 				UnhookWinEvent(follow_hook);
 			follow_hook = nullptr;

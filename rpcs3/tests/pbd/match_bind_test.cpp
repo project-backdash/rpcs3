@@ -6,6 +6,40 @@
 #include "../../Emu/PBD/pbd_match_pad.h"
 using pbd::test::check;
 
+PBD_TEST(PbdMatchBind, ThrowBreakRule)
+{
+	const pbd::match_bind::identity identity{42, std::string(64, 'a'), std::string(64, 'b'), std::string(64, 'c')};
+	const auto make = [&](std::string rule, bool activation = true)
+	{
+		return "{\"schema\":\"pbd-match-bind-1\",\"nativeGeneration\":\"42\",\"checkpointSha256\":" + pbd::json::quoted(identity.checkpoint) +
+		       ",\"emulatorSha256\":" + pbd::json::quoted(identity.emulator) + ",\"recipeSha256\":" + pbd::json::quoted(identity.recipe) +
+		       ",\"setId\":\"set-1\",\"seed\":1" + (activation ? ",\"spectatorFromStart\":false" : "") +
+		       ",\"peer\":{\"role\":0,\"session\":7,\"localPort\":5000,\"remotePort\":5001,\"address\":\"127.0.0.1\"" + rule + "}}";
+	};
+	for (const bool enabled : {false, true})
+	{
+		const auto result = pbd::match_bind::parse(make(std::string(",\"throwBreak\":{\"version\":2,\"enabled\":") + (enabled ? "true" : "false") + "}"), identity);
+		check(result.value && result.value->throw_break == enabled);
+		const auto bound = pbd::json::detail::json_parser(pbd::match_bind::bound_text(identity, "set-1", &*result.value)).parse();
+		check(bound.value && bound.value->find("throwBreak"));
+		const auto* rule = bound.value->find("throwBreak");
+		check(rule->find("enabled")->truth == enabled);
+		std::uint32_t version = 0;
+		check(pbd::json::detail::number32(rule->find("version"), 2, 2, version));
+	}
+	for (const auto rule : {"null", "true", "{}", "{\"version\":1,\"enabled\":true}", "{\"version\":3,\"enabled\":true}",
+			 "{\"version\":2,\"enabled\":1}", "{\"version\":2,\"enabled\":null}", "{\"version\":2}",
+			 "{\"enabled\":true}", "{\"version\":2,\"enabled\":true,\"lookahead\":7}", "{\"version\":2,\"enabled\":true,\"enabled\":false}"})
+		check(!pbd::match_bind::parse(make(std::string(",\"throwBreak\":") + rule), identity).value);
+	check(!pbd::match_bind::parse(make(",\"throwBreak\":{\"version\":2,\"enabled\":true}", false), identity).value);
+	const auto legacy = pbd::match_bind::parse(make("", false), identity);
+	check(legacy.value && !legacy.value->throw_break);
+	check(pbd::match_bind::bound_text(identity, "set-1", &*legacy.value).find("throwBreak") == std::string::npos);
+	const auto ready = pbd::json::detail::json_parser(pbd::match_bind::ready_text(identity)).parse();
+	std::uint32_t version = 0;
+	check(ready.value && pbd::json::detail::number32(ready.value->find("throwBreakAtBind"), 2, 2, version));
+}
+
 PBD_TEST(PbdMatchBind, ControllerReconnectBeforeActivation)
 {
 	using namespace pbd::match_pad;

@@ -10,6 +10,11 @@ struct pbd::rollback_session::phase_input_steps : tick_dispatch
 	phase_input_steps(tick_dispatch& call, bool locked) : tick_dispatch(call), lockstep(locked) {}
 	void run()
 	{
+		if (data.peer.live.enabled && pbd::fight_tape_enabled())
+		{
+			assign_fight_tape();
+			return;
+		}
 		// Phase delay (see peer_state::phase_delay): fix the tick this boundary's entry sample feeds, from
 		// the authoritative lockstep classification, before the datagram of this boundary goes out.
 		if (data.peer.live.enabled && data.peer.phase_delay && data.peer.input_delay >= 1 && data.history.entry_sampled[index] && !data.history.entry_assigned[index])
@@ -48,6 +53,26 @@ struct pbd::rollback_session::phase_input_steps : tick_dispatch
 				data.peer.input_trace->push({pbd::peer_input_trace::kind::assign, index, for_tick, sample, physical,
 					data.peer.live.suppress, edge_deferred, edge_carried, delay_here, lockstep, predicted, how});
 		}
+	}
+
+	void assign_fight_tape()
+	{
+		// Before the anchor, publish only the current word: no future device sample may claim round one's frame zero.
+		// Once known, queue the tape by its applied boundary rather than adding delay to its recorded coordinates.
+		const bool anchored = pbd::fight_tape_at(data.peer.role, index).has_value();
+		const u32 last = std::min<u32>(index + (anchored ? data.peer.input_delay : 0), static_cast<u32>(data.extent()) - 1);
+		const auto physical_word = data.history.entry_sampled[index] ? data.history.entry_sample[index] : row.raw[data.peer.role];
+		for (u32 t = index; t <= last; ++t)
+		{
+			if (data.history.live_fixed[t])
+				continue;
+			const auto scripted = pbd::fight_tape_at(data.peer.role, t);
+			const auto word = scripted ? static_cast<u16>((u16{scripted->sample.digital1} << 8) | scripted->sample.digital2) : physical_word;
+			data.history.live_inputs[t] = filter_local_sample(word, t);
+			data.history.live_fixed[t] = 1;
+		}
+		data.peer.live.assigned_through = std::max(data.peer.live.assigned_through, last);
+		data.peer.live.assigned_any = true;
 	}
 
 	// Lockstep delay covers transit time so each tick need not wait for its input. Round intros and transitions

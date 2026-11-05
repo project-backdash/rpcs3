@@ -52,6 +52,7 @@ struct pbd::controllers::backend::impl
 		SDL_Gamepad* gamepad = nullptr;
 		std::string id, key, name, family, button_type;
 		layout defaults;
+		std::array<std::string, count> prompts{};
 		std::optional<binding> misc1;
 		std::array<std::optional<binding>, 4> stick_bindings;
 		pbd::practice::controls::touchpad_click click;
@@ -90,11 +91,13 @@ struct pbd::controllers::backend::impl
 			identity = std::to_string(instance);
 		d.id = d.key + "@" + QCryptographicHash::hash(QByteArray::fromStdString(identity), QCryptographicHash::Sha256).toHex().left(16).toStdString();
 		d.name = text(SDL_GetJoystickName(d.joystick));
-		d.family = "xbox";
+		d.family = "playstation";
 		if (d.gamepad)
 		{
 			switch (SDL_GetGamepadType(d.gamepad))
 			{
+			case SDL_GAMEPAD_TYPE_XBOX360:
+			case SDL_GAMEPAD_TYPE_XBOXONE: d.family = "xbox"; break;
 			case SDL_GAMEPAD_TYPE_PS3: d.button_type = "ps3"; break;
 			case SDL_GAMEPAD_TYPE_PS4: d.button_type = "ps4"; break;
 			case SDL_GAMEPAD_TYPE_PS5: d.button_type = "ps5"; break;
@@ -127,7 +130,7 @@ struct pbd::controllers::backend::impl
 			d.defaults[left] = binding{binding::hat, 0, SDL_HAT_LEFT};
 			d.defaults[right] = binding{binding::hat, 0, SDL_HAT_RIGHT};
 		}
-		if (SDL_GetJoystickType(d.joystick) == SDL_JOYSTICK_TYPE_ARCADE_STICK)
+		if (d.button_type.empty() && SDL_GetJoystickType(d.joystick) == SDL_JOYSTICK_TYPE_ARCADE_STICK)
 			d.button_type = "arcade";
 		devices.emplace(instance, std::move(d));
 	}
@@ -191,6 +194,7 @@ struct pbd::controllers::backend::impl
 		else
 			value = map(value, raw, d.defaults);
 		const auto taught = apply_device_layout(d, raw, value);
+		d.prompts = prompt_bindings(d.defaults, taught);
 		// The launcher's own menus keep the sticks; the setting is for the games.
 		if (!standalone)
 			value = movement_input(value, movement, d.left_stick_is_dpad, d.has_left_stick);
@@ -218,6 +222,13 @@ struct pbd::controllers::backend::impl
 		}
 		const auto mode = settings.value("gameSettings").toObject().value("controls").toObject().value("touchpadClick").toString("split").toStdString();
 		d.click.mode = pbd::practice::controls::parse_touchpad_mode(mode);
+		if (d.defaults[touchpad])
+		{
+			if (!d.defaults[select] && !taught[select] && d.click.mode != pbd::practice::controls::touchpad_mode::start)
+				d.prompts[select] = "touchpad";
+			if (!d.defaults[start] && !taught[start] && d.click.mode == pbd::practice::controls::touchpad_mode::start)
+				d.prompts[start] = "touchpad";
+		}
 		bool finger = false;
 		float x = 0.f, y = 0.f, pressure = 0.f;
 		if (d.gamepad)
@@ -361,13 +372,16 @@ struct pbd::controllers::backend::impl
 	{
 		auto family = settings.value("controllerGlyphs").toObject().value(QString::fromStdString(d.key)).toString(QString::fromStdString(d.family)).toStdString();
 		QJsonArray logical;
+		QJsonArray prompts;
+		for (const auto& prompt : d.prompts)
+			prompts.append(QString::fromStdString(prompt));
 		for (unsigned i = 0; i < count; ++i)
 			logical.append((value.buttons & bit(i)) != 0);
 		QJsonArray sticks;
 		for (const float v : value.sticks)
 			sticks.append(v);
 		QJsonObject pad{{"id", QString::fromStdString(d.id)}, {"key", QString::fromStdString(d.key)}, {"name", QString::fromStdString(d.name)},
-			{"index", static_cast<int>(instance)}, {"family", QString::fromStdString(family)}, {"logical", logical}, {"axes", sticks}, {"raw", json_raw(raw)}};
+			{"index", static_cast<int>(instance)}, {"family", QString::fromStdString(family)}, {"logical", logical}, {"axes", sticks}, {"raw", json_raw(raw)}, {"promptBindings", prompts}};
 		if (!d.button_type.empty())
 			pad.insert("buttonType", QString::fromStdString(d.button_type));
 		if (!d.clip_name.empty())
@@ -512,14 +526,15 @@ struct pbd::controllers::backend::impl
 			}
 			if (id.empty())
 				continue;
-			shown[i].active = true;
-			shown[i].device = id;
-			shown[i].family = "keyboard";
+			shown[i] = device_display(id, present(id));
 			for (const auto& pad : pads)
 				if (pad.toObject().value("id").toString().toStdString() == id)
 				{
 					shown[i].family = pad.toObject().value("family").toString().toStdString();
 					shown[i].button_type = pad.toObject().value("buttonType").toString().toStdString();
+					const auto bindings = pad.toObject().value("promptBindings").toArray();
+					for (unsigned a = 0; a < count && a < static_cast<unsigned>(bindings.size()); ++a)
+						shown[i].bindings[a] = bindings[a].toString().toStdString();
 				}
 			for (unsigned k = 0; k < count; ++k)
 				if (!keys[k].empty())

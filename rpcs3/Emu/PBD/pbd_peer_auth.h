@@ -2,6 +2,7 @@
 
 #include "Crypto/sha256.h"
 #include "Crypto/utils.h"
+#include "pbd_peer_diagnostics.h"
 
 #include <algorithm>
 #include <array>
@@ -117,8 +118,10 @@ namespace pbd::peer_auth
 		std::span<const std::uint8_t> payload;
 	};
 
-	inline std::optional<opened> open(const key& secret, std::span<const std::uint8_t> bytes)
+	inline std::optional<opened> open(const key& secret, std::span<const std::uint8_t> bytes, pbd::peer_diagnostics::rejection* rejected = nullptr)
 	{
+		if (rejected)
+			*rejected = pbd::peer_diagnostics::rejection::format;
 		if (bytes.size() < header_bytes + tag{}.size() || bytes.size() > maximum_bytes ||
 			!std::equal(magic.begin(), magic.end(), bytes.begin()) || detail::load<std::uint32_t>(bytes, 8) != version)
 			return {};
@@ -127,6 +130,8 @@ namespace pbd::peer_auth
 		if (!sequence || !size || bytes.size() != header_bytes + size + tag{}.size())
 			return {};
 		const auto signed_tag = authenticate(secret, bytes.first(header_bytes + size));
+		if (rejected)
+			*rejected = pbd::peer_diagnostics::rejection::tag;
 		if (!signed_tag)
 			return {};
 		std::uint8_t difference = 0;
@@ -134,6 +139,8 @@ namespace pbd::peer_auth
 			difference |= (*signed_tag)[i] ^ bytes[header_bytes + size + i];
 		if (difference)
 			return {};
+		if (rejected)
+			*rejected = pbd::peer_diagnostics::rejection::none;
 		return opened{sequence, bytes.subspan(header_bytes, size)};
 	}
 

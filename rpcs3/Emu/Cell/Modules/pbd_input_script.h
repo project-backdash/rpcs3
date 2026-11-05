@@ -1,7 +1,7 @@
 #pragma once
 
-// Diagnostic input indexed by successful cellPadGetData calls for each port.
-// These counters are not game frames and do not establish deterministic replay.
+// Diagnostic input uses per-port pad polls, or update frames when anchored to round one.
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cstdint>
@@ -51,6 +51,7 @@ namespace pbd
 			// One-based only on the neutral transition completing a non-neutral input.
 			std::size_t completed_action = 0;
 		};
+		bool m_fight_anchor = false;
 		std::array<std::vector<event>, 2> m_events;
 		std::array<std::uint64_t, 2> m_polls{};
 		std::array<std::size_t, 2> m_indices{};
@@ -76,8 +77,17 @@ namespace pbd
 				throw input_script_error{"Invalid input tape header"};
 			pad_input_script input_sequence;
 			std::size_t count = 0;
+			std::size_t line_number = 1;
 			while (std::getline(stream, line))
 			{
+				++line_number;
+				if (!line.empty() && line.back() == '\r')
+					line.pop_back();
+				if (line_number == 2 && line == "anchor fight")
+				{
+					input_sequence.m_fight_anchor = true;
+					continue;
+				}
 				line.resize(line.find('#') == std::string::npos ? line.size() : line.find('#'));
 				std::istringstream fields(line);
 				std::vector<std::uint64_t> values;
@@ -120,13 +130,15 @@ namespace pbd
 			for (const auto& events : input_sequence.m_events)
 				if (!events.empty() && !events.back().sample.neutral())
 					throw input_script_error{"Each input tape port must end with a neutral event"};
+			if (input_sequence.m_fight_anchor && !input_sequence.m_events[0].empty() && !input_sequence.m_events[1].empty())
+				throw input_script_error{"A fight-anchored tape must supply exactly one port"};
 			return input_sequence;
 		}
 
 		// Called under the existing pad mutex, only after the device checks succeed.
 		std::optional<input_script_output> next(std::uint32_t port)
 		{
-			if (port >= m_events.size() || m_events[port].empty() || m_finished[port])
+			if (m_fight_anchor || port >= m_events.size() || m_events[port].empty() || m_finished[port])
 				return std::nullopt;
 			const auto& events = m_events[port];
 			const auto poll = m_polls[port]++;
@@ -140,6 +152,28 @@ namespace pbd
 			// The required trailing neutral event observes the last action without injecting another button.
 			const auto completed_action = index != previous_index ? events[previous_index].completed_action : 0;
 			return input_script_output{events[index].sample, poll, final, index, completed_action, m_completed_actions[port]};
+		}
+
+		bool fight_anchored() const noexcept
+		{
+			return m_fight_anchor;
+		}
+
+		// Frame lookup is immutable: repeated polls and rollback reads cannot advance or consume the tape.
+		std::optional<input_script_output> at_frame(std::uint32_t port, std::uint64_t frame) const
+		{
+			if (!m_fight_anchor || port >= m_events.size() || m_events[port].empty())
+				return std::nullopt;
+			const auto& events = m_events[port];
+			if (frame > events.back().poll)
+				return std::nullopt;
+			const auto after = std::upper_bound(events.begin(), events.end(), frame,
+				[](std::uint64_t at, const event& value)
+				{
+					return at < value.poll;
+				});
+			const auto index = static_cast<std::size_t>(after - events.begin() - 1);
+			return input_script_output{events[index].sample, frame, frame == events.back().poll, index, 0, m_completed_actions[port]};
 		}
 
 		// A default-constructed tape has no events.

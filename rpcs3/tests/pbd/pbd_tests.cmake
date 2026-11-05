@@ -22,9 +22,13 @@ set(PBD_TESTS
     ${CMAKE_CURRENT_LIST_DIR}/player_seats_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/versus_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/input_taps_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/input_taps_direction_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/clip_buffer_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/clip_hud_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/corner_chat_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/custom_online_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/custom_look_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/costume_select_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/env_parse_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/install_argument_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/package_path_test.cpp
@@ -101,6 +105,7 @@ set(PBD_TESTS
     ${CMAKE_CURRENT_LIST_DIR}/practice_lesson_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_readiness_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_punish_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/practice_startup_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_restart_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_input_delay_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/throw_break_test.cpp
@@ -108,6 +113,7 @@ set(PBD_TESTS
 
 # The peer address test uses Winsock; the clip encoder frame test uses Direct3D 11 and Media Foundation.
 if(WIN32)
+    list(APPEND PBD_TESTS ${CMAKE_CURRENT_LIST_DIR}/direct_fallback_test.cpp)
     list(APPEND PBD_TESTS ${CMAKE_CURRENT_LIST_DIR}/peer_endpoint_test.cpp)
     list(APPEND PBD_TESTS ${CMAKE_CURRENT_LIST_DIR}/clip_frames_test.cpp)
 endif()

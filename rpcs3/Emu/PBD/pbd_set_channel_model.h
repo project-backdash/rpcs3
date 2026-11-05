@@ -4,6 +4,7 @@
 // launcher command from changing match rules or advancing play before the lobby service has agreed on the previous game.
 
 #include "pbd_env.h"
+#include "pbd_custom_wire.h"
 
 #include <algorithm>
 #include <array>
@@ -87,6 +88,11 @@ namespace pbd::set_channel
 	// game's rank index the fight shows beside the name (a Ranked set's rank; 0, Beginner, when the manifest names none). The
 	// records are the player's games in this mode from before this set, display only: one for a fixed fighter, a table by
 	// character rows for one who picks in the game's select. None means unknown, and the bar shows zeros.
+	struct rank_group
+	{
+		std::vector<std::uint32_t> rows;
+		std::uint32_t rank = 0;
+	};
 	struct fighter
 	{
 		std::string member_id;
@@ -94,9 +100,13 @@ namespace pbd::set_channel
 		std::string character_id;
 		std::uint32_t row = 0;
 		std::uint32_t rank = 0;
+		std::optional<std::vector<rank_group>> ranks;
 		bool has_character = true;
 		std::optional<game_record> record;
 		std::optional<std::vector<record_group>> records;
+		std::optional<pbd::custom_wire::drawn> look;
+		std::vector<std::uint8_t> look_table;
+		bool custom_fields = false;
 	};
 	struct score
 	{
@@ -125,6 +135,7 @@ namespace pbd::set_channel
 		std::uint32_t game_number = 0, stage_id = 0, first_to_games = 0, rounds_per_game = 0;
 		score games;
 		bool publish_confirmed_inputs = false;
+		bool rank_profiles = false;
 		bool allow_jinpachi = false;
 		std::uint32_t contract = 1;
 		selection_rules selection;
@@ -308,6 +319,47 @@ namespace pbd::set_channel
 		}
 	}
 
+	// Display-only rank groups cover all costumes of a verified character. Duplicate rows or invalid ranks discard the table.
+	inline std::optional<std::vector<rank_group>> read_rank_table(const json_value* value)
+	{
+		if (!value || value->kind != json_kind::array || value->items.size() > max_record_groups)
+			return {};
+		std::array<bool, max_character_row + 1> taken{};
+		std::vector<rank_group> out;
+		for (const auto& item : value->items)
+		{
+			rank_group group;
+			const auto* rows = item.find("rows");
+			if (!detail::number32(item.find("rank"), 0, max_rank, group.rank) || !rows || rows->kind != json_kind::array || rows->items.empty() || rows->items.size() > taken.size())
+				return {};
+			for (const auto& row : rows->items)
+			{
+				std::uint32_t at = 0;
+				if (!detail::number32(&row, 0, max_character_row, at) || taken[at])
+					return {};
+				taken[at] = true;
+				group.rows.push_back(at);
+			}
+			out.push_back(std::move(group));
+		}
+		return out;
+	}
+
+	// Rank groups use the service's character rows: shared native fighter IDs must not merge distinct Ranked characters.
+	// With a table, an unranked character is Beginner even after another character's ranked plate was shown.
+	inline std::uint32_t shown_rank(const fighter& player, std::uint32_t row)
+	{
+		if (!player.ranks)
+			return player.rank;
+		if (row > max_character_row)
+			return 0;
+		for (const auto& group : *player.ranks)
+			for (const auto other : group.rows)
+				if (other == row)
+					return group.rank;
+		return 0;
+	}
+
 	// An in-game fighter carries no character: "character" is null or left out, and anything else is refused, because a fixed
 	// character in an in-game set would never be entered.
 	inline bool parse_fighter(const json_value* value, fighter& out, const capabilities& supported, bool in_game_selection = false)
@@ -326,8 +378,12 @@ namespace pbd::set_channel
 		out.rank = 0;
 		if (const auto* rank = value->find("rank"); rank && rank->kind != json_kind::null && !detail::number32(rank, 0, max_rank, out.rank))
 			return false;
+		if (const auto* ranks = value->find("ranks"))
+			out.ranks = read_rank_table(ranks).value_or(std::vector<rank_group>{});
 		if (in_game_selection)
 		{
+			out.custom_fields = value->find("lookTable") || value->find("look");
+			out.look_table = value->find("look") ? std::vector<std::uint8_t>{} : pbd::custom_wire::table_field(value->find("lookTable"));
 			out.has_character = false;
 			out.character_id.clear();
 			out.row = 0;
@@ -338,6 +394,8 @@ namespace pbd::set_channel
 			std::find(supported.character_rows.begin(), supported.character_rows.end(), out.row) == supported.character_rows.end())
 			return false;
 		out.character_id = character->find("id")->text;
+		out.custom_fields = value->find("look") || value->find("lookTable");
+		out.look = value->find("lookTable") ? std::nullopt : pbd::custom_wire::read_drawn(value->find("look"), out.row);
 		return std::all_of(out.character_id.begin(), out.character_id.end(), [](unsigned char c)
 			{
 				return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
@@ -379,7 +437,7 @@ namespace pbd::set_channel
 
 	inline result<manifest> parse_manifest(std::string_view text, const capabilities& supported)
 	{
-		auto parsed = detail::json_parser(text).parse();
+		auto parsed = detail::json_parser(text, max_json_nodes, max_file_bytes, max_file_bytes).parse();
 		if (!parsed.value)
 			return {{}, parsed.error};
 		const auto& value = *parsed.value;
@@ -412,6 +470,7 @@ namespace pbd::set_channel
 		if (!parse_fighter(value.find("left"), out.left, supported, chosen_in_game) || !parse_fighter(value.find("right"), out.right, supported, chosen_in_game) ||
 			out.left.member_id == out.right.member_id || out.local_member_id != (out.local_side == side::left ? out.left.member_id : out.right.member_id))
 			return {{}, "bad_fighters"};
+		out.rank_profiles = value.find("rankProfiles") && value.find("rankProfiles")->kind == json_kind::boolean && value.find("rankProfiles")->truth;
 		read_records(*value.find("left"), "left", chosen_in_game, out.left.record, out.left.records, out.ignored);
 		read_records(*value.find("right"), "right", chosen_in_game, out.right.record, out.right.records, out.ignored);
 		const auto* stage = value.find("stage");

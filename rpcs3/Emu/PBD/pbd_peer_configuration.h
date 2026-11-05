@@ -39,12 +39,13 @@ struct pbd::rollback_session::peer_configuration
 	// (PBD_PEER_USE_ARRIVED, which the launcher sets). A delay announced at start + 40 sets L when it is applied.
 	void configure_throw_break()
 	{
-		const auto value = pbd::throw_break::read_setting(pbd::env::find("PBD_THROW_BREAK"));
+		const auto value = bound ? pbd::throw_break::setting::off : pbd::throw_break::read_setting(pbd::env::find("PBD_THROW_BREAK"));
 		require(value != pbd::throw_break::setting::invalid, "throw_break_switch_invalid");
-		const auto tech = pbd::throw_break::read_setting(pbd::env::find("PBD_THROW_BREAK_TECH_ROLLS"));
+		const auto tech = bound ? pbd::throw_break::setting::off : pbd::throw_break::read_setting(pbd::env::find("PBD_THROW_BREAK_TECH_ROLLS"));
 		require(tech != pbd::throw_break::setting::invalid, "throw_break_switch_invalid");
 		s.throw_break.configure_peer(value, tech, s.peer.phase_delay && s.peer.use_arrived,
-			s.peer.delay_auto ? std::nullopt : std::optional<u32>{s.peer.input_delay});
+			s.peer.delay_auto ? std::nullopt : std::optional<u32>{s.peer.input_delay},
+			bound ? std::optional<bool>{bound->throw_break.value_or(false)} : std::nullopt);
 	}
 
 	bool configure_standby()
@@ -338,6 +339,8 @@ struct pbd::rollback_session::peer_configuration
 		require(remote.has_value(), "peer_address_invalid");
 		const bool loopback_only = pbd::peer_endpoint::is_loopback(*remote);
 		bind_socket(sock, remote, remote_v6, loopback_only);
+		if (remote_v6 && !loopback_only && s.peer.link.relay_socket.open())
+			s.peer.link.relay_local_port = s.peer.link.relay_socket.port();
 		// The socket is not connected; datagrams go to the current target (sendto) and arrive from
 		// anywhere (recvfrom). A required key authenticates every payload before its codec or source can change state.
 		s.peer.link.target.store(*remote);

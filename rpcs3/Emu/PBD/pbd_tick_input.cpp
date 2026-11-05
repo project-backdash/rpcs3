@@ -242,7 +242,7 @@ void pbd::rollback_session::tick_dispatch::apply_practice_pause_input(u32 port, 
 	// controller in Practice, so the word read above is neutral. This whole block is Practice's: a replay's fighters
 	// and a watcher's two ports carry recorded input and never pass through it (pbd::settings_menu::blanks_port).
 	else
-		raw = practice_select_word(static_cast<u16>(raw));
+		raw = practice_select_word(port, static_cast<u16>(raw));
 }
 
 // The throw break rule at its probes, on the owner thread inside the battle update that follows a tick's input update. Only
@@ -346,8 +346,8 @@ void pbd::rollback_session::throw_break_probe(ppu_thread& ppu, u32 pc) noexcept
 	// The held mask a port's input update stores at tick `source`. A peer session's own port reads the frozen local word,
 	// which the push model fixes D ticks ahead; the other port reads what has arrived as of the tick's boundary, or the
 	// prediction, except on a lockstep tick, which is final once it runs and so takes only a word that has arrived (the
-	// boundary waits for it while the fighter is held; a window that opens there without it refuses). Practice reads the
-	// player's word before the delay, at the step L ticks earlier, from the tick's row. A replay reads its recorded word, and
+	// boundary waits for every possible source before admitting the tick). Practice reads the player's word before the
+	// delay, at the step L ticks earlier, from the tick's row. A replay reads its recorded word, and
 	// a watched game the stream's frame for that tick, which the watcher holds before it runs a tick (local_channel::reserve).
 	u32 stage = pc;
 	boundary_call call{*this, data, ppu, stage};
@@ -362,8 +362,8 @@ void pbd::rollback_session::throw_break_probe(ppu_thread& ppu, u32 pc) noexcept
 				return std::nullopt;
 			if (port == data.peer.role)
 				word = data.history.live_fixed[source] ? std::optional<u16>{data.history.live_inputs[source]} : std::nullopt;
-			else if (lockstep && data.history.peer_remote_arrival[source] < 0)
-				return std::nullopt;
+			else if (lockstep)
+				word = data.history.peer_remote_arrival[source] >= 0 ? std::optional<u16>{data.history.peer_remote_value[source]} : std::nullopt;
 			else
 				word = call.peer_remote_for(source, state.now);
 		}
@@ -377,7 +377,14 @@ void pbd::rollback_session::throw_break_probe(ppu_thread& ppu, u32 pc) noexcept
 	const rule::step_plan plan =
 		rule::at_word_load(byte, address, static_cast<u32>(ppu.gpr[30]), tick, lookahead_of, row.throw_break, state.tech_rolls, spans, held_at);
 	if (plan.refusal)
+	{
+		pbd_session_log.error("Throw break source at tick %u: port %u, move 0x%x frame %u, movesets 0x%x/0x%x, L %u, boundary %u, "
+							  "lockstep %u; source %u available %u, previous step %u source %u available %u",
+			tick, fighter.port, fighter.move, fighter.frame, fighter.moveset, fighter.move_moveset, plan.ahead, state.now, u32{lockstep},
+			plan.use.source, u32{held_at(fighter.port, plan.use.source).has_value()}, record.previous_step, plan.use.previous_source,
+			u32{held_at(fighter.port, plan.use.previous_source).has_value()});
 		return refuse(plan.refusal);
+	}
 	rule::take_plan(record, plan);
 	if (plan.slot && !write(rule::slot_of(fighter.port), *plan.slot))
 		return refuse("throw_break_write_failed");

@@ -274,9 +274,10 @@ error_code sys_ppu_thread_detach(ppu_thread& ppu, u32 thread_id)
 	ppu.state += cpu_flag::wait;
 
 	sys_ppu_thread.trace("sys_ppu_thread_detach(thread_id=0x%x)", thread_id);
-	// PBD: audio orphan detector, see pbd::fn_hook::thread_detaches.
+	// Count attempts before validation, retaining caller and tick context to attribute thread lifetime changes.
 	if (const u32 n = ++pbd::fn_hook::thread_detaches; n <= 16)
-		sys_ppu_thread.warning("PBD: sys_ppu_thread_detach(thread_id=0x%x) by %s (detach #%u since boot; an orphaned feeder can hang a later join)", thread_id, ppu.get_name(), n);
+		sys_ppu_thread.warning("PBD: sys_ppu_thread_detach(thread_id=0x%x) by %s at 0x%x lr 0x%x (attempt #%u for this guest; tick %u replay %u)",
+			thread_id, ppu.get_name(), ppu.cia, ppu.lr, n, pbd::fn_hook::current_tick.load(), pbd::fn_hook::current_pass.load());
 
 	CellError result = CELL_ESRCH;
 

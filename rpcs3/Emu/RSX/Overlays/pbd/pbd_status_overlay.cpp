@@ -416,7 +416,9 @@ namespace rsx
 			const bool in_viewer = running && view.enabled;
 			// Practice lists Exit (Hold) on its own control bar, so only the hold countdown shows here.
 			const bool leave_line = leaving && (!practice_active || snap.leave_hold_ms);
-			const bool show = leave_line || replay || in_viewer || practice_dummy || (running && snap.in_match && !practice);
+			const bool watching = ::pbd::spectator::active(static_cast<u64>(Emu.GetEmulationIdentifier()));
+			// Adoption keeps the player's stats publisher alive, but the watcher's own HUD owns this generation's screen.
+			const bool show = !watching && (leave_line || replay || in_viewer || practice_dummy || (running && snap.in_match && !practice));
 			m_show = show;
 			visible = show;
 			m_compiled.clear();
@@ -454,6 +456,8 @@ namespace rsx
 
 		compiled_resource pbd_net_overlay::get_compiled()
 		{
+			if (::pbd::spectator::active(static_cast<u64>(Emu.GetEmulationIdentifier())))
+				return {};
 			// Renderers normally update overlays after drawing. A paused viewer must compose its current host menu and hit areas.
 			if (::pbd::replay_viewer::presentation.enabled.load(std::memory_order_relaxed))
 				refresh_now();

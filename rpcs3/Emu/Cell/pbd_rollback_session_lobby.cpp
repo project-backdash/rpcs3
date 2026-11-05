@@ -296,6 +296,7 @@ void pbd::rollback_session::boundary_call::publish_set_notices(u32 scene)
 	set.names = {identity.left.name, identity.right.name};
 	set.characters = data.lobby.vs_characters;
 	set.ranks = with_kept_promotions({identity.left.rank, identity.right.rank});
+	set.rank_profiles = identity.rank_profiles;
 	set.placements = data.lobby.placements;
 	set.local = identity.local_side == pbd::set_channel::side::left ? 0u : 1u;
 	set.game_number = identity.game_number;
@@ -427,8 +428,16 @@ std::array<std::optional<pbd::game_profile::record>, 2> pbd::rollback_session::b
 // game draws each plate and what the PLAYER DATA bars show.
 void pbd::rollback_session::boundary_call::write_game_profiles(u32 boundary, u32 scene, std::optional<u32> segment)
 {
+	write_custom_looks(boundary, scene);
 	if (!data.lobby.channel)
 		return;
+	// Loading and VS barriers follow selection on both PCs; refresh after every repick and continued set.
+	if (scene != 3u)
+	{
+		std::array<u32, 2> rows{~0u, ~0u};
+		if (read_word(0x10093f50, rows[0]) && read_word(0x10093f54, rows[1]))
+			data.lobby.channel->select_ranks(rows);
+	}
 	keep_promoted_ranks(boundary);
 	const auto& set = data.lobby.channel->identity();
 	const bool named = store_game_profiles({set.left.name, set.right.name}, {set.left.rank, set.right.rank});
@@ -462,6 +471,83 @@ void pbd::rollback_session::boundary_call::write_game_profiles(u32 boundary, u32
 	pbd_session_log.notice("Lobby set: game %u shows %s (%s, %s, plate %s) and %s (%s, %s, plate %s) under the life bars from boundary %u.",
 		set.game_number, set.left.name, pbd::game_profile::rank_names[pbd::game_profile::rank_byte(set.left.rank)], numbers(0), plate(0),
 		set.right.name, pbd::game_profile::rank_names[pbd::game_profile::rank_byte(set.right.rank)], numbers(1), plate(1), boundary);
+}
+
+// Fixed looks follow the shared profile barriers. Table picks wait for scene 2, after the selector refills both cards and
+// before model loading. Rebuilding defaults too prevents the previous game's costume leaking into a repick.
+void pbd::rollback_session::boundary_call::write_custom_looks(u32 boundary, u32 scene)
+{
+	bool active = false, selected_in_game = false;
+	pbd::custom_wire::pair picks;
+	if (data.lobby.channel)
+	{
+		const auto& set = data.lobby.channel->identity();
+		active = set.left.custom_fields || set.right.custom_fields;
+		selected_in_game = pbd::set_channel::in_game(set);
+		picks = {set.left.look, set.right.look};
+		if (selected_in_game)
+		{
+			const std::array<const pbd::set_channel::fighter*, 2> players{&set.left, &set.right};
+			for (u32 side = 0; side < 2; ++side)
+			{
+				u32 row = 0;
+				if (read_word(0x10093f50 + side * 4, row))
+					picks[side] = pbd::custom_wire::resolve({data.lobby.look_slots[side], players[side]->look_table}, row);
+			}
+		}
+	}
+	else if (data.lobby.direct_match.enabled())
+	{
+		picks = data.lobby.direct_match.pbd_player_looks();
+		active = picks[0] || picks[1];
+	}
+	else if (data.spectator.channel)
+	{
+		const auto& binding = data.spectator.channel->identity();
+		active = binding.custom_fields;
+		selected_in_game = binding.in_game;
+		picks = binding.looks;
+		if (selected_in_game)
+			for (u32 side = 0; side < 2; ++side)
+			{
+				u32 row = 0;
+				if (read_word(0x10093f50 + side * 4, row))
+					picks[side] = pbd::custom_wire::resolve({data.lobby.look_slots[side], binding.look_tables[side]}, row);
+			}
+	}
+	if (!active)
+	{
+		data.lobby.looks_shown = {};
+		return;
+	}
+	if (selected_in_game && scene != 2)
+		return;
+	data.lobby.looks_shown = {};
+	for (u32 side = 0; side < 2; ++side)
+	{
+		u32 selected = 0;
+		if (!read_word(0x10093f50 + side * 4, selected) || selected >= 84)
+			continue;
+		if (!selected_in_game && picks[side])
+			selected = picks[side]->value[0];
+		pbd::custom_look::look wanted{selected};
+		if (picks[side] && picks[side]->value[0] == selected)
+			if (const auto decoded = pbd::custom_wire::unpack(picks[side]->value))
+			{
+				wanted = *decoded;
+				data.lobby.looks_shown[side] = picks[side];
+			}
+		const auto worn = pbd::custom_look::shown(wanted);
+		const auto* row = pbd::custom_look::catalogue_row(selected);
+		std::array<u8, pbd::custom_look::blocks_size> saved{}, held{};
+		bool written = vm::try_access(pbd::custom_look::save_blocks_address(row->fighter), saved.data(), saved.size(), false);
+		auto blocks = pbd::custom_look::record_blocks(saved, worn);
+		written = written && vm::try_access(pbd::custom_look::record_address(side), blocks.data(), blocks.size(), true) &&
+		          vm::try_access(pbd::custom_look::record_address(side), held.data(), held.size(), false) && held == blocks;
+		pbd_session_log.notice("Custom look at resource boundary %u: side %u row %u slot %u; record %s; items %04x %04x %04x %04x.",
+			boundary, side, selected, data.lobby.looks_shown[side] ? data.lobby.looks_shown[side]->slot : 0,
+			written ? "written" : "not written", worn.items[0], worn.items[1], worn.items[2], worn.items[3]);
+	}
 }
 
 // Plan from stakes agreed at the preceding barrier (local launcher stakes without a peer), before game_preparing records
