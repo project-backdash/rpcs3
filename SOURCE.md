@@ -11,11 +11,11 @@ to PROJECT BACKDASH, not to RPCS3.
 
 - Upstream: RPCS3 commit [`028d1e8f4a42df2292cdbcd35e540c9e71fc47aa`](https://github.com/RPCS3/rpcs3/commit/028d1e8f4a42df2292cdbcd35e540c9e71fc47aa) (2026-09-10, "Fix some VFS issues - #19378"), unchanged,
   as a source base; snapshot preparation fetches it shallowly and includes no private repository history.
-- Changes on top of it: 742 files (622 added, 114 changed, 6 deleted, 0 renamed), 155999 lines added and 1057 removed,
+- Changes on top of it: 742 files (622 added, 114 changed, 6 deleted, 0 renamed), 156119 lines added and 1057 removed,
   not counting this file. Line counts describe the recorded native revision; exported build adapters may differ.
-- Emulator source revision: `e3497c27024dd21464f65f03986c9ea09cf3b5e9`.
+- Emulator source revision: `e4e91a16c6f6fbe59c31afd6d2acc322dc07cb6a`.
 - This release snapshot retains public build support and documentation, with PBD C++ formatting.
-- Release build: Project Backdash 0.61.9, `rpcs3.exe` SHA-256 `5a1298238789f9361864d9df58d7b5d9bcfc525028f179e9f40a9a247ff84968`.
+- Release build: Project Backdash 0.61.10, `rpcs3.exe` SHA-256 `0628e5ca8910d79c3c9faa434304983211c461c9d8804af232dc3c4b0f3b1711`.
 
 ## The GPL source in the installer
 
@@ -390,7 +390,7 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/practice_menu_reference_checks.h` | 296 |
 | `rpcs3/tests/pbd/practice_menu_settings_checks.h` | 260 |
 | `rpcs3/tests/pbd/practice_menu_test.cpp` | 1216 |
-| `rpcs3/tests/pbd/practice_moment_test.cpp` | 366 |
+| `rpcs3/tests/pbd/practice_moment_test.cpp` | 446 |
 | `rpcs3/tests/pbd/practice_movement_presets_test.cpp` | 333 |
 | `rpcs3/tests/pbd/practice_movement_test.cpp` | 836 |
 | `rpcs3/tests/pbd/practice_precision_test.cpp` | 182 |
@@ -405,7 +405,7 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/practice_store_test.cpp` | 1021 |
 | `rpcs3/tests/pbd/practice_streak_test.cpp` | 215 |
 | `rpcs3/tests/pbd/practice_throw_escape_test.cpp` | 76 |
-| `rpcs3/tests/pbd/practice_wakeup_test.cpp` | 437 |
+| `rpcs3/tests/pbd/practice_wakeup_test.cpp` | 463 |
 | `rpcs3/tests/pbd/practice_wall_model.h` | 135 |
 | `rpcs3/tests/pbd/practice_walls_test.cpp` | 459 |
 | `rpcs3/tests/pbd/presentation_rows_test.cpp` | 116 |
@@ -442,7 +442,7 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/skip_guard_test.cpp` | 119 |
 | `rpcs3/tests/pbd/sound_options_test.cpp` | 161 |
 | `rpcs3/tests/pbd/spectator_channel_model.h` | 198 |
-| `rpcs3/tests/pbd/spectator_channel_test.cpp` | 1091 |
+| `rpcs3/tests/pbd/spectator_channel_test.cpp` | 1094 |
 | `rpcs3/tests/pbd/spectator_packet_random_test.cpp` | 177 |
 | `rpcs3/tests/pbd/spectator_parser_audit_test.cpp` | 175 |
 | `rpcs3/tests/pbd/spectator_presentation_checks.h` | 190 |
@@ -704,11 +704,11 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_settings_view.h` | 255 |
 | `rpcs3/Emu/PBD/pbd_shader_build.h` | 267 |
 | `rpcs3/Emu/PBD/pbd_spectator_boundary_steps.h` | 298 |
-| `rpcs3/Emu/PBD/pbd_spectator_channel_controls.h` | 360 |
-| `rpcs3/Emu/PBD/pbd_spectator_channel_input.h` | 219 |
+| `rpcs3/Emu/PBD/pbd_spectator_channel_controls.h` | 361 |
+| `rpcs3/Emu/PBD/pbd_spectator_channel_input.h` | 220 |
 | `rpcs3/Emu/PBD/pbd_spectator_channel_model.h` | 410 |
 | `rpcs3/Emu/PBD/pbd_spectator_channel_publication.h` | 187 |
-| `rpcs3/Emu/PBD/pbd_spectator_local_channel.h` | 302 |
+| `rpcs3/Emu/PBD/pbd_spectator_local_channel.h` | 311 |
 | `rpcs3/Emu/PBD/pbd_spectator_standby.h` | 135 |
 | `rpcs3/Emu/PBD/pbd_stage_sync.h` | 73 |
 | `rpcs3/Emu/PBD/pbd_stall_metrics.h` | 208 |

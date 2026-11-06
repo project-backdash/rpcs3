@@ -287,6 +287,32 @@ PBD_TEST(PbdPracticeWakeup, FloorClockDirectionAndInvalidMemoryDoNotInventAGetup
 	check(!memory.read(2));
 }
 
+PBD_TEST(PbdPracticeWakeup, RepeatedFaceUpLandingsKeepToeAndSpringKicks)
+{
+	for (const auto selected : {option::toe_kick, option::spring_kick})
+	{
+		wakeup_memory memory;
+		pbd_wakeup_controller control;
+		for (const unsigned id : {4u, 6u, 7u, 4u, 6u, 7u})
+		{
+			memory.pose(1, id);
+			memory.words[0x1008f05c]++;
+			const auto now = memory.read(1);
+			check(now && now->on_floor && now->position == position::face_up_feet_toward,
+				"each phase of a face-up landing admits its available ground attacks");
+			if (!control.armed)
+				control.arm(selected);
+			const auto plan = pbd_plan_wakeup(selected, position::face_up_feet_toward, false);
+			check(control.sample(*now) == plan.words[0] && control.floor.plan.option == selected,
+				"a later face-up knockdown cannot replace the selected attack with Stand Up");
+			memory.pose(1, 1);
+			memory.words[memory.actors[1] + 0xcc] = 0x1000;
+			memory.words[0x1008f05c]++;
+			check(!control.sample(*memory.read(1)) && !control.armed, "standing releases the old opening before another knockdown");
+		}
+	}
+}
+
 PBD_TEST(PbdPracticeWakeup, ChangingFloorMovesDoesNotAcknowledgeAnIgnoredOpening)
 {
 	pbd_wakeup_controller control;

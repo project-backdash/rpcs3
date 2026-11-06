@@ -139,6 +139,7 @@ namespace pbd::spectator
 		m_origin = origin;
 		m_receipt = m_consumed = m_checked = capsule ? m_identity.pbd_first_frame : 0;
 		m_end.reset();
+		m_posted_pad.reset();
 		m_visible = m_ended = false;
 		clear_game_presentation(game);
 		draw();

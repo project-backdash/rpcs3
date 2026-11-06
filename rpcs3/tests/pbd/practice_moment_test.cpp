@@ -176,7 +176,74 @@ namespace pbd::test
 			}
 		}
 
-		void recording_wakeup()
+		void repeated_wakeup()
+		{
+			using namespace pbd::practice;
+			auto& data = *runtime.m_storage;
+			rollback_session::boundary_call call{runtime, data, *owner, pc};
+			data.practice.training_mode = training_mode::offense;
+			constexpr u32 actor = 0x10090910, table = 0x10084000, commands = 0x10087000;
+			vm::write16(commands + 8, 43);
+			u32 counter = 100;
+			const auto sample = [&](u32 id, u32 flags)
+			{
+				vm::write32(actor + 0xc4, table + id * 0x4c);
+				vm::write32(actor + 0xcc, flags);
+				vm::write32(0x1008f05c, ++counter);
+				data.practice.boundary_counter = counter;
+				data.practice.boundary_counter_valid = data.practice.frame_advanced = true;
+				call.practice_watch_contact(counter);
+				pbd::session_runtime::update_sample row;
+				call.choose_practice_input(counter, row);
+				rollback_session::tick_dispatch tick{{runtime, data, *owner, pc}, counter, row};
+				u32 raw = 0;
+				bool press = false;
+				tick.apply_practice_pause_input(1, raw, press);
+				check(raw == row.raw[1] && !press, "the final dummy latch retains the scheduled wake-up input");
+				return movement::record_word(row.raw[1], call.practice_dummy_side());
+			};
+			for (u32 selected = 0; selected < pbd_wakeup_option_count; ++selected)
+				for (const bool hit : {false, true})
+					for (unsigned restart = 0; restart < 3; ++restart)
+					{
+						data.practice.reactions.wakeup = static_cast<pbd_wakeup_option>(selected);
+						call.practice_restart_contact();
+						for (unsigned knockdown = 0; knockdown < 4; ++knockdown)
+						{
+							if (restart == 1)
+								call.practice_restart_contact();
+							if (restart == 2)
+								call.practice_restart_after_restore(counter);
+							data.practice.dummy.ignore_until_release = data.practice.dummy.mask_ui = false;
+							data.practice.dummy.hit = hit;
+							check(sample(40, 0x6000) == 0, "the airborne knockdown sends no floor input");
+							if (hit)
+								check(data.practice.reactions.wakeup_control.native_action() ==
+										  pbd_wakeup_native_action(data.practice.reactions.wakeup_control.choice),
+									"each airborne knockdown retains the selected landing tech");
+							const auto opening = sample(7, 0x6084);
+							const auto& control = data.practice.reactions.wakeup_control;
+							check(control.requested == static_cast<pbd_wakeup_option>(selected), "every knockdown retains the menu choice");
+							if (selected != static_cast<u32>(pbd_wakeup_option::random))
+							{
+								const auto expected = pbd_plan_wakeup(static_cast<pbd_wakeup_option>(selected), pbd_ground_position::face_up_feet_toward, false);
+								check(control.floor.plan.option == expected.option,
+									"the requested option keeps its documented floor behavior");
+							}
+							const auto random = data.practice.dummy.rng;
+							check(opening == (control.floor.plan.count ? control.floor.plan.words[0] : 0), "every knockdown receives its chosen opening");
+							const bool spring = control.floor.plan.option == pbd_wakeup_option::spring_kick;
+							check(sample(43, 0x6084) == (spring ? 0x0060 : 0), "an accepted grounded response keeps only the consecutive follow-up");
+							for (unsigned frame = 0; frame < 12; ++frame)
+								check(sample(7, 0x6084) == 0, "an accepted response or Stay Down never falls back to Stand Up");
+							check(data.practice.dummy.rng == random, "a single knockdown never redraws its random choice");
+							check(sample(1, 0x1000) == 0 && !data.practice.reactions.wakeup_control.armed,
+								"standing releases the completed knockdown before the next one");
+						}
+					}
+		}
+
+		void wakeup(bool repeated = false)
 		{
 			struct identity_scope
 			{
@@ -247,6 +314,14 @@ namespace pbd::test
 			data.practice.training_mode = pbd::practice::training_mode::defense;
 			data.practice.dummy.pad = 0x8040;
 			data.practice.input_delay_frames = pbd::practice::max_input_delay;
+			if (repeated)
+			{
+				// Use an ordinary face-up floor for attacks whose availability depends on the landing pose.
+				vm::write32(tables[1] + 7 * 0x4c + 0x14, 0x10087000);
+				vm::write16(tables[1] + 7 * 0x4c + 0x24, 60);
+				repeated_wakeup();
+				return;
+			}
 			rollback_session::boundary_call call{runtime, data, *owner, pc};
 			using state = pbd::practice::dummy_state;
 			for (const auto recording : {state::ready, state::recording})
@@ -362,5 +437,10 @@ PBD_TEST(PbdPractice, MovePickerMarksOtherSlotsWithoutRestrictingThem)
 
 PBD_TEST(PbdPracticeWakeup, DefenseRecordingGetsP1UpWithoutChangingTheP2Take)
 {
-	pbd::test::practice_moment_fixture{}.recording_wakeup();
+	pbd::test::practice_moment_fixture{}.wakeup();
+}
+
+PBD_TEST(PbdPracticeWakeup, RepeatedKnockdownsRetainEveryChoiceWithAndWithoutRestart)
+{
+	pbd::test::practice_moment_fixture{}.wakeup(true);
 }
