@@ -5,6 +5,8 @@
 #include "Emu/PBD/pbd_custom_files.h"
 #include "Emu/PBD/pbd_custom_save.h"
 #include "Emu/PBD/pbd_custom_photo.h"
+#include "Emu/PBD/pbd_costume_panel.h"
+#include "Emu/PBD/pbd_picture_facing.h"
 
 namespace
 {
@@ -266,8 +268,10 @@ PBD_TEST(PbdCustomFiles, CompactPicturesLoadForCustomAndDefaultCards)
 		seed = seed * 1664525u + 1013904223u;
 		byte = seed >> 24;
 	}
-	const auto jpeg = encode_jpeg(source);
+	const auto jpeg = encode_jpeg(source, 1);
 	check(jpeg.size() >= 4 && jpeg.size() <= 30 * 1024 && jpeg[0] == 0xff && jpeg[1] == 0xd8);
+	check(pbd::picture_facing::taken_on(jpeg) == 1);
+	check(pbd::picture_facing::mirrored(jpeg, 0) && !pbd::picture_facing::mirrored(jpeg, 1));
 	const auto root = std::filesystem::temp_directory_path() / "pbd-compact-costume-native-test";
 	std::filesystem::create_directories(root);
 	for (const auto* name : {"lili-03.jpg", "costume-77.jpg"})
@@ -289,6 +293,62 @@ PBD_TEST(PbdCustomFiles, CompactPicturesLoadForCustomAndDefaultCards)
 	for (const auto* name : {"lili-03.jpg", "costume-77.jpg", "practice-looks.json"})
 		std::filesystem::remove(root / name, error);
 	std::filesystem::remove(root, error);
+}
+
+PBD_TEST(PbdCustomFiles, PictureFacingKeepsOneImageAndMirrorsOnlyAcrossSides)
+{
+	using namespace pbd::picture_facing;
+	for (std::uint32_t side = 0; side < 2; ++side)
+	{
+		std::vector<std::uint8_t> jpeg{0xff, 0xd8, 0xff, 0xd9};
+		record(jpeg, side);
+		check(jpeg.size() == 4 + marker_bytes && taken_on(jpeg) == side);
+		check(!mirrored(jpeg, side) && mirrored(jpeg, 1 - side));
+		jpeg[14] = 2;
+		check(taken_on(jpeg) == 0);
+	}
+	check(taken_on({}) == 0);
+	const std::array<std::uint8_t, 4> legacy{0xff, 0xd8, 0xff, 0xd9};
+	check(!mirrored(legacy, 0) && mirrored(legacy, 1));
+}
+
+PBD_TEST(PbdCustomFiles, OnlinePicturesFollowLocalIdentityOnEitherSideAndRefreshWhileOpen)
+{
+	const auto root = std::filesystem::temp_directory_path() / "pbd-online-picture-panel-test";
+	const auto index = root / "picture-looks.json";
+	std::filesystem::create_directories(root / "photos");
+	const look saved{77, {61, 67, 66, 50}, {255, 3, 11}};
+	{
+		std::ofstream file(index);
+		file << "{\"schema\":\"pbd-custom-pictures-1\",\"looks\":[{\"slot\":3,\"bytes\":\"" << hex(pack(saved)) << "\"}]}";
+	}
+	const std::vector<u8> jpeg{0xff, 0xd8, 0xff, 0xd9};
+	{
+		std::ofstream file(root / "photos" / "costume-77.jpg", std::ios::binary);
+		file.write(reinterpret_cast<const char*>(jpeg.data()), jpeg.size());
+	}
+	pbd::costume_panel::detail::picture_cache cache;
+	for (u32 side = 0; side < 2; ++side)
+	{
+		pbd::costume_panel::snapshot view{100 + side, true, true, side};
+		view.cards = {{look{77}, 0, {}}, {saved, 0, 2}, {look{77}, 0, 2}};
+		cache.decorate(view, index);
+		check(view.cards[0].picture == jpeg);
+		check(view.cards[1].picture.empty() && view.cards[2].picture.empty());
+		{
+			std::ofstream file(root / "photos" / "lili-03.jpg", std::ios::binary);
+			file.write(reinterpret_cast<const char*>(jpeg.data()), jpeg.size());
+		}
+		pbd::custom_photo::published_pictures.fetch_add(1, std::memory_order_release);
+		cache.decorate(view, index);
+		check(view.open && view.side == side && view.cards[1].picture == jpeg);
+		check(view.cards[2].picture.empty(), "A mismatching online look never borrows the local slot's photo");
+		std::filesystem::remove(root / "photos" / "lili-03.jpg");
+	}
+	std::filesystem::remove(root / "photos" / "costume-77.jpg");
+	std::filesystem::remove(index);
+	std::filesystem::remove(root / "photos");
+	std::filesystem::remove(root);
 }
 
 PBD_TEST(PbdCustomFiles, FirstUsePicturesKeepTheExactSlotAndCostumeIdentity)

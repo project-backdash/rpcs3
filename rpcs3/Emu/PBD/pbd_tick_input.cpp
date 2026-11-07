@@ -59,8 +59,6 @@ bool pbd::rollback_session::tick_dispatch::inject_input(u32 port, port_sample& s
 	sample.input_read_seen = true;
 	sample.original_r3 = ppu.gpr[3];
 	read_practice_input(port, sample, raw);
-	if (raw && data.practice.rewind && !data.peer.enabled)
-		pbd::custom_photo::input_serial.fetch_add(1, std::memory_order_release);
 	// A peer session froze the claim into its own sample (filter_local_sample), so its owned port executes that value
 	// unchanged, live and in every re-execution. Only Practice, whose input no other PC executes, blanks the ports here.
 	if (pbd::game_overlay::blanks_executed_port(data.game_overlay.claim, data.peer.enabled, data.practice.rewind))
@@ -75,6 +73,9 @@ bool pbd::rollback_session::tick_dispatch::inject_input(u32 port, port_sample& s
 		row.raw[port] = 0;
 		row.throw_break[port].practice_word = 0;
 	}
+	// Select confirms and suppressed start/menu words cannot move either fighter or invalidate a neutral picture.
+	if (data.practice.rewind && !data.peer.enabled)
+		pbd::custom_photo::observe_input(raw, data.practice.view.fight_live);
 	// Live controller: the device read is recorded in original_r3 and becomes the NEXT tick's input;
 	// this tick injects row.raw exactly like a tape value so both peers execute identical, pre-published inputs.
 	if (ppu.lr != pcs[1] || ppu.gpr[21] != mapping_base || !mapping_matches(port))

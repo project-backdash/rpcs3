@@ -154,6 +154,28 @@ namespace pbd::custom_files
 					out.push_back({0, pack(custom_look::look{row})});
 		return out;
 	}
+	// Online tables establish the worn look; only this PC's matching slot may supply its local picture.
+	template <typename Cards>
+	void read_card_pictures(const std::filesystem::path& index, Cards& cards)
+	{
+		if (!index.is_absolute() || index.filename() != "picture-looks.json")
+			return;
+		const auto looks = read_picture_looks(index);
+		const auto root = index.parent_path() / "photos";
+		for (auto& card : cards)
+		{
+			card.picture.clear();
+			const auto* row = custom_look::catalogue_row(card.look.row);
+			if (!row)
+				continue;
+			const u32 slot = card.slot ? *card.slot + 1 : 0;
+			if (slot && std::find(looks.begin(), looks.end(), drawn{slot, pack(card.look)}) == looks.end())
+				continue;
+			const auto number = slot ? slot : card.look.row;
+			const auto name = slot ? std::string(character_ids[row->fighter]) : std::string("costume");
+			card.picture = picture(root / (name + "-" + (number < 10 ? "0" : "") + std::to_string(number) + ".jpg"));
+		}
+	}
 	struct customize
 	{
 		std::string id, character;

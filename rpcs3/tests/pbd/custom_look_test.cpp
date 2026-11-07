@@ -216,6 +216,26 @@ PBD_TEST(PbdCustomPhoto, PortraitRequestsRequireAnExplicitCustomPracticeOpening)
 	check(ordinary.value && !ordinary.value->portrait);
 }
 
+PBD_TEST(PbdCustomPhoto, PortraitExcludesFightHudAtEveryOutputSize)
+{
+	using namespace pbd::custom_photo;
+	for (const u32 height : {90u, 720u, 1080u})
+	{
+		frame source{1, 2, 3, height * 16 / 9, height, true};
+		source.rgba.resize(source.width * source.height * 4);
+		for (u32 y = 0; y < height / 4; ++y)
+			for (u32 x = 0; x < source.width; ++x)
+				source.rgba[(y * source.width + x) * 4] = 255;
+		for (const bool side : {false, true})
+		{
+			const auto image = portrait(source, !side, side);
+			check(image.valid && image.width == 320 && image.height == 480);
+			for (std::size_t at = 0; at < image.rgba.size(); at += 4)
+				check(image.rgba[at] == 0);
+		}
+	}
+}
+
 PBD_TEST(PbdCustomPhoto, CapturesOneFutureGuestFrameAndPreservesItsIdentity)
 {
 	using namespace pbd::custom_photo;
@@ -283,6 +303,21 @@ PBD_TEST(PbdCustomPhoto, HiddenLoadingKeepsItsOpeningUntilVisibleButNeverCapture
 	check(!pose.observe(10, 17, 17));
 	check(!pose.observe(4, 17, 4, false));
 	check(pose.observe(4, 17, 4));
+}
+
+PBD_TEST(PbdCustomPhoto, SelectionAndSuppressedInputKeepTheNeutralOpening)
+{
+	using namespace pbd::custom_photo;
+	entry_pose pose;
+	check(!pose.observe(10, 2, 44));
+	observe_input(0x40, false);
+	observe_input(0, true);
+	check(pose.observe(10, 17, 17));
+	observe_input(0x2000, true);
+	check(!pose.observe(10, 17, 17));
+	check(!pose.observe(10, 2, 44));
+	check(pose.observe(10, 17, 17));
+	check(!pose.holding());
 }
 
 PBD_TEST(PbdCustomPhoto, RejectsOversizedIncompleteAndUnfencedFrames)

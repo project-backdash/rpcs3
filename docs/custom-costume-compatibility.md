@@ -58,3 +58,20 @@ directory in `costumePictures`; both native pickers then show those pictures for
 files whenever its picker reopens. Legacy PNGs remain readable while the launcher converts them at startup, publishing
 and verifying the bounded JPEG before removing the old image.
 Capturing never closes play. Picture failures leave the ordinary portrait until another run supplies its image.
+
+Every native costume panel decorates cards from the same local `PBD_CUSTOM_PICTURES` root, including either side of
+online selection and repicks. A custom photo is attached only if that slot's packed bytes match the local index;
+photos and names never enter the online manifest. Panels reload when opened or when their own process atomically
+publishes a photo, so an already open panel can show the new file.
+
+First-use observation survives loading before actor cards are available. Only unsuppressed fight input cancels a
+Practice opening; stock select confirms and input consumed by the launcher or start flow do not. The index reloads
+on loading and visibility transitions, including a game kept ready before its player's saved slots changed.
+Contract, index-count and opening-state log entries distinguish missing paths, empty indexes and unavailable neutral
+openings without capturing diagnostics into the picture or delaying play.
+
+New portrait crops start one quarter down the guest frame and extend to the bottom, below the fight HUD and Practice
+damage text. Existing photos retain their pixels. Each JPEG records capture side in an APP15 segment immediately after
+SOI: `FF EF 00 0C`, ASCII `PBDPHOTO`, version `01`, then side `00` (P1) or `01` (P2). The segment's 14 bytes count toward
+the 30 KiB limit. Native cards reverse horizontal texture coordinates only when capture side and display side differ.
+Untagged legacy photos use P1 as a fallback because their actual capture side is unknown.

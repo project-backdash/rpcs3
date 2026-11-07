@@ -11,11 +11,11 @@ to PROJECT BACKDASH, not to RPCS3.
 
 - Upstream: RPCS3 commit [`028d1e8f4a42df2292cdbcd35e540c9e71fc47aa`](https://github.com/RPCS3/rpcs3/commit/028d1e8f4a42df2292cdbcd35e540c9e71fc47aa) (2026-09-10, "Fix some VFS issues - #19378"), unchanged,
   as a source base; snapshot preparation fetches it shallowly and includes no private repository history.
-- Changes on top of it: 742 files (622 added, 114 changed, 6 deleted, 0 renamed), 157024 lines added and 1057 removed,
+- Changes on top of it: 743 files (623 added, 114 changed, 6 deleted, 0 renamed), 157321 lines added and 1057 removed,
   not counting this file. Line counts describe the recorded native revision; exported build adapters may differ.
-- Emulator source revision: `b4dd8cf1e373fab194797ee18f316fee76469724`.
+- Emulator source revision: `6fb64795a79b52effd436704c8518658fba4cc66`.
 - This release snapshot retains public build support and documentation, with PBD C++ formatting.
-- Release build: Project Backdash 0.62.0, `rpcs3.exe` SHA-256 `a8cdbbd9a1da359c955da3720043a043e78b2646d78c0d11726a034bf28b5a43`.
+- Release build: Project Backdash 0.62.1, `rpcs3.exe` SHA-256 `31bfc72bce7fddc232684d66227c09ea46805ddb5970136884e67ee469a6ca0a`.
 
 ## The GPL source in the installer
 
@@ -293,7 +293,7 @@ The in-game menus, the netplay stats block, in-game settings, the player's volum
 | `rpcs3/Emu/RSX/Overlays/PbdFonts/OFL-PBD.txt` | 93 |
 | `rpcs3/Emu/RSX/Overlays/PbdFonts/PBDDisplay.otf` | binary |
 | `rpcs3/Emu/RSX/Overlays/pbd/overlay_pbd_button_layout.h` | 144 |
-| `rpcs3/Emu/RSX/Overlays/pbd/overlay_pbd_costume.h` | 110 |
+| `rpcs3/Emu/RSX/Overlays/pbd/overlay_pbd_costume.h` | 115 |
 | `rpcs3/Emu/RSX/Overlays/pbd/overlay_pbd_draw.h` | 393 |
 | `rpcs3/Emu/RSX/Overlays/pbd/overlay_pbd_lettering.h` | 368 |
 | `rpcs3/Emu/RSX/Overlays/pbd/overlay_pbd_notices.h` | 624 |
@@ -333,8 +333,8 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/corner_chat_test.cpp` | 66 |
 | `rpcs3/tests/pbd/correction_journal_test.cpp` | 422 |
 | `rpcs3/tests/pbd/costume_select_test.cpp` | 231 |
-| `rpcs3/tests/pbd/custom_look_test.cpp` | 681 |
-| `rpcs3/tests/pbd/custom_online_test.cpp` | 318 |
+| `rpcs3/tests/pbd/custom_look_test.cpp` | 716 |
+| `rpcs3/tests/pbd/custom_online_test.cpp` | 378 |
 | `rpcs3/tests/pbd/direct_fallback_test.cpp` | 165 |
 | `rpcs3/tests/pbd/env_parse_test.cpp` | 111 |
 | `rpcs3/tests/pbd/env_test.cpp` | 113 |
@@ -471,7 +471,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `KNOWN-DEBT.md` | 22 |
 | `README.rpcs3.md` | 48 |
 | `Utilities/pbd_stage_names_gen.mjs` | 79 |
-| `docs/custom-costume-compatibility.md` | 60 |
+| `docs/custom-costume-compatibility.md` | 77 |
 | `docs/design/game-hosting.md` | 71 |
 | `docs/design/game-start-capsule.md` | 102 |
 | `docs/design/native-network-recovery.md` | 48 |
@@ -545,15 +545,15 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_correction_execution.cpp` | 98 |
 | `rpcs3/Emu/PBD/pbd_correction_journal.h` | 456 |
 | `rpcs3/Emu/PBD/pbd_correction_memory.cpp` | 194 |
-| `rpcs3/Emu/PBD/pbd_costume_panel.h` | 89 |
+| `rpcs3/Emu/PBD/pbd_costume_panel.h` | 126 |
 | `rpcs3/Emu/PBD/pbd_costume_select.h` | 205 |
 | `rpcs3/Emu/PBD/pbd_custom_catalogue.h` | 109 |
-| `rpcs3/Emu/PBD/pbd_custom_editor.cpp` | 582 |
+| `rpcs3/Emu/PBD/pbd_custom_editor.cpp` | 606 |
 | `rpcs3/Emu/PBD/pbd_custom_editor.h` | 126 |
-| `rpcs3/Emu/PBD/pbd_custom_files.h` | 225 |
+| `rpcs3/Emu/PBD/pbd_custom_files.h` | 247 |
 | `rpcs3/Emu/PBD/pbd_custom_look.h` | 198 |
-| `rpcs3/Emu/PBD/pbd_custom_photo.cpp` | 139 |
-| `rpcs3/Emu/PBD/pbd_custom_photo.h` | 168 |
+| `rpcs3/Emu/PBD/pbd_custom_photo.cpp` | 146 |
+| `rpcs3/Emu/PBD/pbd_custom_photo.h` | 175 |
 | `rpcs3/Emu/PBD/pbd_custom_save.h` | 126 |
 | `rpcs3/Emu/PBD/pbd_custom_wire.h` | 251 |
 | `rpcs3/Emu/PBD/pbd_direct_replay_configuration.cpp` | 200 |
@@ -637,6 +637,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_phase_input_steps.h` | 203 |
 | `rpcs3/Emu/PBD/pbd_pick_transition.cpp` | 86 |
 | `rpcs3/Emu/PBD/pbd_pick_transition.h` | 59 |
+| `rpcs3/Emu/PBD/pbd_picture_facing.h` | 32 |
 | `rpcs3/Emu/PBD/pbd_player_seats.h` | 266 |
 | `rpcs3/Emu/PBD/pbd_rank_screens.cpp` | 185 |
 | `rpcs3/Emu/PBD/pbd_rank_screens.h` | 103 |
@@ -718,7 +719,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_throw_break_record.h` | 77 |
 | `rpcs3/Emu/PBD/pbd_tick_checkpoint.cpp` | 163 |
 | `rpcs3/Emu/PBD/pbd_tick_entry.cpp` | 463 |
-| `rpcs3/Emu/PBD/pbd_tick_input.cpp` | 452 |
+| `rpcs3/Emu/PBD/pbd_tick_input.cpp` | 453 |
 | `rpcs3/Emu/PBD/pbd_tick_state.cpp` | 217 |
 | `rpcs3/Emu/PBD/pbd_tick_verification.cpp` | 191 |
 | `rpcs3/Emu/PBD/pbd_undo_capture.h` | 247 |

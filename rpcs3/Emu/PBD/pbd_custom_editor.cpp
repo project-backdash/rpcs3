@@ -85,7 +85,8 @@ namespace pbd::custom_editor
 			{
 				u64 generation = 0, ticket = 0, after_flip = 0;
 				u32 side = 0, waits = 0;
-				bool loaded = false;
+				bool loaded = false, loading = false, was_visible = false;
+				u32 mode = ~0u, scene = ~0u, phase = ~0u;
 				std::filesystem::path root;
 				std::vector<custom_wire::drawn> looks, saving;
 				custom_photo::entry_pose pose;
@@ -100,9 +101,10 @@ namespace pbd::custom_editor
 				if (path.is_absolute() && path.filename() == "picture-looks.json")
 				{
 					state.root = path.parent_path() / "photos";
+					pbd_custom_editor_log.notice("First-use picture contract: %s", env::utf8_path("PBD_CUSTOM_PICTURES"));
 				}
 			}
-			if (state.root.empty() || (state.loaded && state.looks.empty() && state.saving.empty() && !state.ticket))
+			if (state.root.empty())
 			{
 				state.pose.finish();
 				return;
@@ -114,6 +116,31 @@ namespace pbd::custom_editor
 			const auto phase = practice::native::word(0x10093230);
 			const bool visible = output_gain::output().visible();
 			const bool neutral = state.pose.observe(mode, scene, phase, visible);
+			const bool loading = scene == 2;
+			const bool reload = !state.loaded || (loading && !state.loading) || (visible && !state.was_visible);
+			state.loading = loading;
+			state.was_visible = visible;
+			if (reload)
+			{
+				state.loaded = true;
+				state.looks = custom_files::read_picture_looks(state.root.parent_path() / "picture-looks.json");
+				pbd_custom_editor_log.notice("First-use picture index: %u local identities.", state.looks.size());
+			}
+			if (!state.looks.empty() && (state.mode != mode || state.scene != scene || state.phase != phase))
+				pbd_custom_editor_log.notice("First-use picture opening: mode %u scene %u phase %u visible %u neutral %u.", mode, scene, phase, visible, neutral);
+			state.mode = mode;
+			state.scene = scene;
+			state.phase = phase;
+			// Pictures are taken only in local Practice: an online opening varies with the peer and the stage, so online
+			// games show the saved pictures but never take one.
+			if (mode != 10)
+			{
+				custom_photo::pending.cancel(state.ticket);
+				state.ticket = 0;
+				state.looks.insert(state.looks.end(), state.saving.begin(), state.saving.end());
+				state.saving.clear();
+				return;
+			}
 			// Observe loading while hidden, but never request a hidden frame or discard the remembered opening.
 			if (!visible)
 			{
@@ -122,11 +149,6 @@ namespace pbd::custom_editor
 				state.looks.insert(state.looks.end(), state.saving.begin(), state.saving.end());
 				state.saving.clear();
 				return;
-			}
-			if (!state.loaded)
-			{
-				state.loaded = true;
-				state.looks = custom_files::read_picture_looks(state.root.parent_path() / "picture-looks.json");
 			}
 			const auto file_for = [&](const custom_wire::drawn& value)
 			{
@@ -145,6 +167,8 @@ namespace pbd::custom_editor
 			};
 			if (!neutral)
 			{
+				if (state.ticket || !state.saving.empty())
+					pbd_custom_editor_log.notice("First-use picture opening ended before capture; retry on another load.");
 				custom_photo::pending.cancel(state.ticket);
 				state.ticket = 0;
 				state.looks.insert(state.looks.end(), state.saving.begin(), state.saving.end());
@@ -220,7 +244,7 @@ namespace pbd::custom_editor
 					return;
 				}
 			}
-			state.pose.finish();
+			// Actors may still describe the preceding fight during loading; keep observing until the new cards exist.
 		}
 		void finish(ppu_thread& ppu, trial& state, const char* reason, bool capture)
 		{

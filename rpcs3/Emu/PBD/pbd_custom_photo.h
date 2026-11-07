@@ -15,6 +15,12 @@ namespace pbd::custom_photo
 	using u32 = std::uint32_t;
 	using u64 = std::uint64_t;
 	inline std::atomic<u64> input_serial{0};
+	inline std::atomic<u64> published_pictures{0};
+	inline void observe_input(u32 word, bool fighting) noexcept
+	{
+		if (word && fighting)
+			input_serial.fetch_add(1, std::memory_order_release);
+	}
 	// A picture observes a neutral opening and abandons it as soon as either player's input changes it.
 	class entry_pose
 	{
@@ -65,12 +71,13 @@ namespace pbd::custom_photo
 			return out;
 		out.valid = true;
 		out.rgba.resize(out.width * out.height * 4);
-		const u32 crop_height = source.height * 4 / 5;
+		// The stock fight bars and Practice damage text occupy the top quarter of the guest image.
+		const u32 top = source.height / 4;
+		const u32 crop_height = source.height - top;
 		const u32 crop_width = std::min(source.width, crop_height * 2 / 3);
 		const u32 centre = player_one ? source.width / 3 : player_two ? source.width * 2 / 3 :
 		                                                                source.width / 2;
 		const u32 left = std::min(source.width - crop_width, centre > crop_width / 2 ? centre - crop_width / 2 : 0);
-		const u32 top = (source.height - crop_height) / 2;
 		for (u32 y = 0; y < out.height; ++y)
 			for (u32 x = 0; x < out.width; ++x)
 			{
@@ -163,6 +170,6 @@ namespace pbd::custom_photo
 	};
 	inline channel pending;
 	std::vector<u8> encode_png(const frame& value);
-	std::vector<u8> encode_jpeg(const frame& value);
+	std::vector<u8> encode_jpeg(const frame& value, u32 side = 0);
 	bool save_async(frame value, u32 side, std::vector<std::filesystem::path> targets);
 } // namespace pbd::custom_photo

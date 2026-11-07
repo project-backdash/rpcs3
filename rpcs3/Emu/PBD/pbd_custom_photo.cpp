@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "pbd_custom_photo.h"
+#include "pbd_picture_facing.h"
 #include "png.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_STATIC
@@ -14,7 +15,7 @@ LOG_CHANNEL(pbd_photo_log, "PBD Costume Picture");
 
 namespace pbd::custom_photo
 {
-	std::vector<u8> encode_jpeg(const frame& value)
+	std::vector<u8> encode_jpeg(const frame& value, u32 side)
 	{
 		if (!value.valid || !value.width || !value.height || value.width > 320 || value.height > 480 ||
 			value.rgba.size() != u64{value.width} * value.height * 4)
@@ -29,8 +30,11 @@ namespace pbd::custom_photo
 		for (int quality : {75, 65, 55, 45, 35, 25, 15, 5})
 		{
 			out.clear();
-			if (stbi_write_jpg_to_func(append, &out, value.width, value.height, 4, value.rgba.data(), quality) && out.size() <= 30 * 1024)
+			if (stbi_write_jpg_to_func(append, &out, value.width, value.height, 4, value.rgba.data(), quality) && out.size() + picture_facing::marker_bytes <= 30 * 1024)
+			{
+				picture_facing::record(out, side);
 				return out;
+			}
 		}
 		return {};
 	}
@@ -67,7 +71,7 @@ namespace pbd::custom_photo
 						}
 						try
 						{
-							const auto jpeg = encode_jpeg(portrait(next.value, next.side == 0, next.side == 1));
+							const auto jpeg = encode_jpeg(portrait(next.value, next.side == 0, next.side == 1), next.side);
 							if (jpeg.empty())
 								continue;
 							for (const auto& target : next.targets)
@@ -83,7 +87,10 @@ namespace pbd::custom_photo
 								{
 									std::filesystem::rename(temporary, target, error);
 									if (!error)
+									{
+										published_pictures.fetch_add(1, std::memory_order_release);
 										pbd_photo_log.notice("Costume picture saved: %s (%u bytes, flip %u).", target.string(), jpeg.size(), next.value.flip);
+									}
 								}
 								std::filesystem::remove(temporary, error);
 							}

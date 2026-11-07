@@ -2,6 +2,8 @@
 
 #include "pbd_costume_select.h"
 #include "pbd_custom_save.h"
+#include "pbd_custom_files.h"
+#include "pbd_custom_photo.h"
 
 #include <atomic>
 #include <mutex>
@@ -56,10 +58,45 @@ namespace pbd::costume_panel
 		inline std::mutex mutex;
 		inline snapshot current;
 		inline std::atomic<u64> serial{0};
+		struct picture_cache
+		{
+			std::filesystem::path index;
+			u64 generation = 0, revision = 0;
+			bool open = false;
+			std::vector<custom_wire::drawn> identities;
+			std::vector<std::vector<std::uint8_t>> pictures;
+			void decorate(snapshot& value, const std::filesystem::path& file)
+			{
+				if (!file.is_absolute() || file.filename() != "picture-looks.json")
+					return;
+				std::vector<custom_wire::drawn> keys;
+				for (const auto& card : value.cards)
+					keys.push_back({card.slot ? *card.slot + 1 : 0, custom_wire::pack(card.look)});
+				const auto saved = custom_photo::published_pictures.load(std::memory_order_acquire);
+				// Reload on opening, identity changes or atomic publication, keeping disk reads out of ordinary pad samples.
+				if (file != index || generation != value.generation || saved != revision || keys != identities || (value.open && !open))
+				{
+					custom_files::read_card_pictures(file, value.cards);
+					pictures.clear();
+					for (const auto& card : value.cards)
+						pictures.push_back(card.picture);
+					index = file;
+					generation = value.generation;
+					revision = saved;
+					identities = std::move(keys);
+				}
+				else
+					for (std::size_t i = 0; i < value.cards.size(); ++i)
+						value.cards[i].picture = pictures[i];
+				open = value.open;
+			}
+		};
+		inline picture_cache local_pictures;
 	} // namespace detail
 	inline void publish(snapshot value)
 	{
 		std::lock_guard lock(detail::mutex);
+		detail::local_pictures.decorate(value, env::path("PBD_CUSTOM_PICTURES"));
 		if (value == detail::current)
 			return;
 		detail::current = std::move(value);

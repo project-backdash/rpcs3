@@ -2,6 +2,7 @@
 
 #include "overlay_pbd_versus.h"
 #include "Emu/PBD/pbd_costume_panel.h"
+#include "Emu/PBD/pbd_picture_facing.h"
 
 namespace rsx::overlays::pbd::costume
 {
@@ -86,7 +87,11 @@ namespace rsx::overlays::pbd::costume
 				const auto name = utf8_to_u32string(::pbd::costume_panel::label(view.cards[i]));
 				const auto number = utf8_to_u32string(std::to_string(view.cards[i].slot ? *view.cards[i].slot + 1 : i + 1));
 				if (const auto* photo = thumbnail(view.cards[i], i))
-					out.image(layer::b_bars, photo, white, card_x + 2.f, card_y + 2.f, card_x + card_w - 2.f, card_y + card_h - 26.f);
+				{
+					const bool mirror = ::pbd::picture_facing::mirrored(view.cards[i].picture, view.side);
+					out.image(layer::b_bars, photo, white, card_x + 2.f, card_y + 2.f, card_x + card_w - 2.f, card_y + card_h - 26.f,
+						mirror ? 1.f : 0.f, 0.f, mirror ? 0.f : 1.f, 1.f);
+				}
 				else
 					out.text(type.timer, rgb(0xFFFFFF, .22f), card_x + (card_w - text_width(type.timer, number) * 1.5f) / 2.f, card_y + 88.f, number, 1.5f, .18f);
 				if (selected)
