@@ -515,7 +515,8 @@ namespace pbd::set_notices
 		// stake word under a threatened plate, the score at the top, the headline and the rows on this player's side.
 		inline constexpr float band_top = 84.f, band_h = 30.f, band_w = 400.f, hud_plate_top = 110.f, hud_stake_top = 178.f, hud_stake_edge = 62.f;
 		inline constexpr float hud_score_y = 69.f, hud_score_em = 52.f, hud_caption_y = 108.f;
-		inline constexpr float menu_x = 76.f, headline_em = 46.f, row_w = 380.f, row_h = 33.f;
+		inline constexpr float menu_x = 76.f, headline_em = 46.f, row_w = 480.f, row_h = 52.f;
+		inline constexpr float row_label_y = 17.f, row_detail_y = 39.f;
 		inline constexpr float between_headline_y = 275.f, between_rows_top = 318.f;
 		inline constexpr float confirm_line_y = 318.f, confirm_rows_top = 342.f;
 		inline constexpr float result_headline_y = 261.f, result_line_y = 306.f, result_rows_top = 332.f;

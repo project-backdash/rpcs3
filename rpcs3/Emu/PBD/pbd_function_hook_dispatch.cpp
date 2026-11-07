@@ -93,7 +93,7 @@ namespace pbd::fn_hook::detail
 		}
 		// This owner-scoped live paint suppression is independent of replay skipping and RNG repair.
 		pbd::game_lifecycle::placement_phase(ppu, address);
-		if (pbd::practice::paint::suppress_paint(ppu, address))
+		if (pbd::custom_editor::suppress_profile_paint(ppu, address) || pbd::practice::paint::suppress_paint(ppu, address))
 			return hook_action::skip;
 		replay = g_pbd_replay_frame.load(std::memory_order_relaxed); // the whole re-executed frame
 #ifdef PBD_DIAGNOSTIC_BUILD

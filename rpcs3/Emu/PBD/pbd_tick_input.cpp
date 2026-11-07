@@ -2,6 +2,7 @@
 #include "../Cell/pbd_rollback_session_boundary.h"
 #include "pbd_practice_lesson_channel.h"
 #include "pbd_practice_start.h"
+#include "pbd_custom_photo.h"
 #include "pbd_dummy_move_runtime.h"
 
 bool pbd::rollback_session::tick_dispatch::read_input_counter(bool soft_mode)
@@ -58,6 +59,8 @@ bool pbd::rollback_session::tick_dispatch::inject_input(u32 port, port_sample& s
 	sample.input_read_seen = true;
 	sample.original_r3 = ppu.gpr[3];
 	read_practice_input(port, sample, raw);
+	if (raw && data.practice.rewind && !data.peer.enabled)
+		pbd::custom_photo::input_serial.fetch_add(1, std::memory_order_release);
 	// A peer session froze the claim into its own sample (filter_local_sample), so its owned port executes that value
 	// unchanged, live and in every re-execution. Only Practice, whose input no other PC executes, blanks the ports here.
 	if (pbd::game_overlay::blanks_executed_port(data.game_overlay.claim, data.peer.enabled, data.practice.rewind))

@@ -3,6 +3,8 @@
 #include "pbd_session_policy.h"
 #include "pbd_env_parse.h"
 #include "pbd_throw_break.h"
+#include "pbd_custom_editor.h"
+#include "pbd_custom_wire.h"
 #include "Emu/pbd_session_mode.h"
 #include <charconv>
 
@@ -90,7 +92,8 @@ namespace pbd::fn_hook::detail
 	void config::configure_observed_sites()
 	{
 		observed_sites = parse_list("PBD_FN_PROBES");
-		if (pbd::session_mode::offline_play())
+		// Costume cards and first-use pictures run at the main-loop boundary, including ordinary Practice starts.
+		if (pbd::session_mode::offline_play() || pbd::custom_wire::enabled())
 			observed_sites.push_back(pbd::t5dr::boundary_pc);
 		if (launch.selected == pbd::session_policy::mode::invalid)
 			configuration_errors.emplace_back("PBD_SESSION_POLICY: unknown policy");
@@ -146,6 +149,13 @@ namespace pbd::fn_hook::detail
 	void config::configure_skippable()
 	{
 		skippable = parse_list("PBD_FN_SKIPPABLE");
+		if (pbd::session_mode::customize())
+		{
+			skippable.insert(skippable.end(), pbd::custom_editor::profile_draws.begin(), pbd::custom_editor::profile_draws.end());
+			observed_sites.push_back(pbd::custom_editor::select_rank_update);
+			std::sort(observed_sites.begin(), observed_sites.end());
+			observed_sites.erase(std::unique(observed_sites.begin(), observed_sites.end()), observed_sites.end());
+		}
 		const auto replay = pbd::session_policy::replay_presentation_of(launch);
 		skippable.insert(skippable.end(), replay.skips.begin(), replay.skips.end());
 		std::sort(skippable.begin(), skippable.end());

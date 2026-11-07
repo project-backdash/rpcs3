@@ -482,7 +482,7 @@ namespace rsx::overlays::pbd::notices
 	}
 
 	// A menu row as the game's dark name plate; the chosen row is the gold rank plate leaning like the game's, with the player's
-	// mark beside it. `end` is drawn at the row's far end: a countdown in the display face, or a caption.
+	// mark beside it. Secondary words and the automatic-choice countdown sit below the option on their own line.
 	struct row_view
 	{
 		std::string label, end;
@@ -517,20 +517,20 @@ namespace rsx::overlays::pbd::notices
 		const color4f ink = gold_row ? chosen_ink : row.enabled ? row_ink :
 		                                                          rgb(0xE9EEED, .38f);
 		const auto label = utf8_to_u32string(::pbd::set_notices::upper(row.label));
-		const f32 centre = top + h / 2.f + .5f;
+		const f32 centre = top + at::row_label_y;
 		const f32 slant = gold_row ? .2f : 0.f;
-		const f32 label_w = tracked(nullptr, f.row, ink, 0.f, centre, label, 1.f, .09f);
+		const f32 natural_w = tracked(nullptr, f.row, ink, 0.f, centre, label, 1.f, .09f);
+		const f32 scale = natural_w > 0.f ? std::min(1.f, (w - 40.f) / natural_w) : 1.f;
+		const f32 label_w = natural_w * scale;
 		const f32 label_x = side == align::right ? x + w - 20.f - label_w : side == align::centre ? std::round(x + (w - label_w) / 2.f) :
 		                                                                                            x + 20.f;
-		tracked(&out, f.row, ink, label_x, centre, label, 1.f, .09f, align::left, slant);
+		tracked(&out, f.row, ink, label_x, centre, label, scale, .09f, align::left, slant);
 		if (row.end.empty())
 			return;
-		const f32 end_x = side == align::right ? x + 22.f : x + w - 22.f;
-		const align end_align = side == align::right ? align::left : align::right;
-		if (row.end_is_count)
-			tracked(&out, f.row_end, ink, end_x, centre, utf8_to_u32string(row.end), 1.f, .04f, end_align);
-		else
-			caption(out, end_x, centre, row.end, end_align, gold_row ? rgb(0x1B1106, .9f) : caption_ink);
+		const f32 end_x = side == align::right ? x + w - 20.f : side == align::centre ? x + w / 2.f :
+		                                                                                x + 20.f;
+		const auto detail = row.end_is_count ? "Auto-select in " + row.end + "s" : row.end;
+		caption(out, end_x, top + at::row_detail_y, detail, side, gold_row ? rgb(0x1B1106, .9f) : caption_ink);
 	}
 
 	// Prompts at the foot on one side: glyph and Barlow with no box.

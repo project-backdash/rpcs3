@@ -248,6 +248,16 @@ private:
 	u32 m_pbd_present_src = 0; // 1 surface store, 2 texture cache, 3 upload from guest memory; +10 = force-cast copy
 	void pbd_black_probe_record(const rsx::display_flip_info_t& info, vk::viewable_image* image, u32 w, u32 h, u64 flip);
 	void pbd_black_probe_resolve(vk::frame_context_t* ctx);
+	struct pbd_photo_slot
+	{
+		std::unique_ptr<vk::buffer> buffer;
+		u64 ticket = 0, generation = 0, flip = 0;
+		u32 width = 0, height = 0;
+		bool bgra = false;
+	};
+	std::vector<pbd_photo_slot> m_pbd_photo_slots;
+	void pbd_photo_record(vk::image* image, u32 width, u32 height, u64 ticket, u64 generation, u64 flip);
+	void pbd_photo_resolve(vk::frame_context_t* ctx);
 	// On-screen check (Emu/PBD/pbd_screen_check.h): when the game host asks, the check's 16 points of the image about to
 	// be presented, overlays included, are copied into a small host-visible buffer and answered once the frame has
 	// completed.

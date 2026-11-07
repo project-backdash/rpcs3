@@ -5,6 +5,8 @@
 #include "../PBD/pbd_t5dr_memory.h"
 #include "../PBD/pbd_versus_input.h"
 #include "../PBD/pbd_custom_editor.h"
+#include "../PBD/pbd_costume_panel.h"
+#include "../PBD/pbd_custom_files.h"
 #include "pbd_practice_native.h"
 #include "PPUThread.h"
 #include "Emu/pbd_session_mode.h"
@@ -45,6 +47,10 @@ namespace pbd::versus
 			bool chord = false;
 			// The screen last logged: game mode, scene, subscene and each player's select state.
 			std::array<u32, 5> logged{};
+			std::array<pbd::costume_select::row, sides> costumes;
+			std::array<std::optional<pbd::costume_select::card>, sides> looks;
+			pbd::custom_files::practice costume_files;
+			bool at_select = false, looks_pending = false;
 			bool menu_logged = false;
 			std::array<u16, sides> menu_words{};
 		};
@@ -130,6 +136,41 @@ namespace pbd::versus
 			controllers(f);
 			f.random = static_cast<u32>(s.random());
 			s.last = s.steps.step(f);
+			if (pbd::custom_wire::enabled())
+			{
+				const auto shown = s.steps.snapshot(f);
+				if (shown.select && !s.at_select)
+					s.costume_files = pbd::custom_files::read_practice(pbd::env::path("PBD_MENU_CHANNEL") / "practice-looks.json");
+				s.at_select = shown.select;
+				pbd::costume_panel::snapshot view{s.generation};
+				if (const auto tables = pbd::hidden_selection::read_native_tables(); tables && shown.select)
+					for (u32 side = 0; side < sides; ++side)
+					{
+						if (shown.setup[side].open || f.devices[side].empty())
+							continue;
+						const auto customs = pbd::custom_wire::choices(s.costume_files.table, f.players[side].base_character);
+						const auto choice = s.costumes[side].step(*tables, f.players[side], f.words[side], customs);
+						if (choice.picked)
+							s.looks[side] = choice.picked;
+						if (choice.word && !choice.controller_setup)
+						{
+							s.last.words[side] = choice.word;
+							s.last.hidden[side] = s.last.added[side] = 0;
+						}
+						if (s.costumes[side].open() || (!view.visible && !s.costumes[side].choices().empty()))
+							view = pbd::costume_panel::compose(s.generation, side, s.costumes[side]);
+					}
+				for (auto& card : view.cards)
+					for (const auto& label : s.costume_files.labels)
+						if (label.row == card.look.row && label.slot == (card.slot ? *card.slot + 1 : 0))
+						{
+							card.display_name = label.name;
+							card.picture = label.picture;
+						}
+				if (!shown.select)
+					s.costumes = {};
+				pbd::costume_panel::publish(std::move(view));
+			}
 			if (s.last.new_players)
 				input::opened.fetch_add(1, std::memory_order_acq_rel);
 			if (s.last.direct_start)
@@ -183,11 +224,11 @@ namespace pbd::versus
 
 	port_word at_read(u32 port) noexcept
 	{
-		if (pbd::custom_editor::blocks_saves(static_cast<u64>(Emu.GetEmulationIdentifier())))
+		if (pbd::session_mode::customize() || pbd::custom_editor::blocks_saves(static_cast<u64>(Emu.GetEmulationIdentifier())))
 		{
 			if (pbd::custom_editor::trial_pad.load(std::memory_order_acquire))
 				return {port == 0 ? pbd::custom_editor::trial_word.load(std::memory_order_acquire) : u16{0}};
-			return {};
+			return port == 0 ? port_word{} : port_word{u16{0}};
 		}
 		try
 		{
@@ -206,6 +247,9 @@ namespace pbd::versus
 				s.last = {};
 				s.pending.reset();
 				s.versus = false;
+				s.costumes = {};
+				s.looks = {};
+				s.at_select = s.looks_pending = false;
 			}
 			if (!s.supported)
 				return {};
@@ -225,19 +269,49 @@ namespace pbd::versus
 
 	bool frame_boundary(ppu_thread& owner, u32 address) noexcept
 	{
-		if (!pbd::session_mode::offline_play() || address != pbd::t5dr::boundary_pc ||
+		if (!pbd::session_mode::offline_versus() || address != pbd::t5dr::boundary_pc ||
 			owner.id != pbd::t5dr::main_ppu_id || pbd::practice::native::in_native_call())
 			return true;
 		try
 		{
 			auto& s = state();
 			std::optional<pbd::rematch::selection> request;
+			std::array<std::optional<pbd::costume_select::card>, sides> looks;
+			bool dress = false;
 			const auto generation = static_cast<u64>(Emu.GetEmulationIdentifier());
 			{
 				std::lock_guard lock(s.mutex);
 				if (!s.supported || s.generation != generation)
 					return true;
 				request = std::exchange(s.pending, {});
+				looks = s.looks;
+				if (s.looks_pending && word(pbd::t5dr::scene_address) == 2u)
+				{
+					dress = true;
+					s.looks_pending = false;
+				}
+			}
+			if (dress)
+			{
+				// The outgoing selector fills the cards before resource scene 2. Apply the saved look after that fill.
+				bool dressed = true;
+				for (u32 side = 0; side < sides; ++side)
+				{
+					const u32 row = word(0x10093f50 + side * 4).value_or(~0u);
+					const auto* base = pbd::custom_look::catalogue_row(row);
+					if (!base)
+					{
+						dressed = false;
+						break;
+					}
+					std::array<u8, pbd::custom_look::blocks_size> saved{}, held{};
+					const auto look = looks[side] && looks[side]->look.row == row ? looks[side]->look : pbd::custom_look::look{row};
+					dressed = vm::try_access(pbd::custom_look::save_blocks_address(base->fighter), saved.data(), saved.size(), false) && dressed;
+					auto blocks = pbd::custom_look::record_blocks(saved, look);
+					dressed = vm::try_access(pbd::custom_look::record_address(side), blocks.data(), blocks.size(), true) && dressed;
+					dressed = vm::try_access(pbd::custom_look::record_address(side), held.data(), held.size(), false) && held == blocks && dressed;
+				}
+				pbd_versus_log.notice("Local costumes at resource scene: records written %u", dressed);
 			}
 			if (!request)
 				return true;
@@ -256,6 +330,10 @@ namespace pbd::versus
 			{
 				pbd_versus_log.error("Offline Versus direct start refused: %s", refusal);
 				return false;
+			}
+			{
+				std::lock_guard lock(s.mutex);
+				s.looks_pending = pbd::custom_wire::enabled();
 			}
 			pbd_versus_log.notice("Offline Versus direct load: rows %u/%u stage %u", selected.left, selected.right, selected.stage);
 			return true;

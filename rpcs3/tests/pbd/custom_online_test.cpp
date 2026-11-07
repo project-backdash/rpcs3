@@ -254,3 +254,65 @@ PBD_TEST(PbdCustomFiles, PortraitHasOneFixedCropAndABoundedPixelCount)
 	source.valid = false;
 	check(!portrait(source).valid);
 }
+
+PBD_TEST(PbdCustomFiles, CompactPicturesLoadForCustomAndDefaultCards)
+{
+	using namespace pbd::custom_photo;
+	frame source{1, 1, 1, 320, 480, true};
+	source.rgba.resize(320 * 480 * 4);
+	u32 seed = 1;
+	for (auto& byte : source.rgba)
+	{
+		seed = seed * 1664525u + 1013904223u;
+		byte = seed >> 24;
+	}
+	const auto jpeg = encode_jpeg(source);
+	check(jpeg.size() >= 4 && jpeg.size() <= 30 * 1024 && jpeg[0] == 0xff && jpeg[1] == 0xd8);
+	const auto root = std::filesystem::temp_directory_path() / "pbd-compact-costume-native-test";
+	std::filesystem::create_directories(root);
+	for (const auto* name : {"lili-03.jpg", "costume-77.jpg"})
+	{
+		std::ofstream file(root / name, std::ios::binary | std::ios::trunc);
+		file.write(reinterpret_cast<const char*>(jpeg.data()), jpeg.size());
+		file.close();
+		check(file);
+	}
+	check(pbd::custom_files::picture(root / "lili-03.png") == jpeg);
+	const auto path = root / "practice-looks.json";
+	{
+		std::ofstream file(path, std::ios::binary | std::ios::trunc);
+		file << "{\"schema\":\"pbd-practice-looks-1\",\"table\":\"" << base64(table()) << "\",\"labels\":[{\"row\":77,\"slot\":3,\"name\":\"Rose\",\"picture\":" << pbd::json::quoted((root / "lili-03.jpg").string()) << "}],\"costumePictures\":" << pbd::json::quoted(root.string()) << "}";
+	}
+	const auto read = pbd::custom_files::read_practice(path);
+	check(read.labels.size() == 85 && read.labels[0].picture == jpeg && read.labels[78].picture == jpeg);
+	std::error_code error;
+	for (const auto* name : {"lili-03.jpg", "costume-77.jpg", "practice-looks.json"})
+		std::filesystem::remove(root / name, error);
+	std::filesystem::remove(root, error);
+}
+
+PBD_TEST(PbdCustomFiles, FirstUsePicturesKeepTheExactSlotAndCostumeIdentity)
+{
+	const auto path = std::filesystem::temp_directory_path() / "pbd-picture-looks-native-test.json";
+	{
+		std::ofstream file(path);
+		file << R"({"schema":"pbd-custom-pictures-1","looks":[{"slot":3,"bytes":"0d0004ffffffffffff02ffff"},{"slot":11,"bytes":"0d0004ffffffffffff02ffff"},{"slot":4,"bytes":"0d0004ffffffffffff02ffff"}]})";
+	}
+	const auto read = pbd::custom_files::read_picture_looks(path);
+	check(read.size() == 2 && read[0].slot == 3 && read[1].slot == 4);
+	check(read[0].value[0] == 13 && read[0].value[2] == 4 && read[0].value[9] == 2);
+	{
+		std::ofstream file(path);
+		file << R"({"schema":"pbd-custom-pictures-1","looks":[],"captureDefaults":true})";
+	}
+	const auto defaults = pbd::custom_files::read_picture_looks(path);
+	check(defaults.size() == 84);
+	check(defaults[13].slot == 0 && defaults[13].value == pbd::custom_wire::pack(pbd::custom_look::look{13}));
+	{
+		std::ofstream file(path);
+		file << R"({"schema":"pbd-custom-pictures-2","looks":[]})";
+	}
+	check(pbd::custom_files::read_picture_looks(path).empty());
+	std::error_code error;
+	std::filesystem::remove(path, error);
+}

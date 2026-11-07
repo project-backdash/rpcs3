@@ -820,6 +820,7 @@ VKGSRender::~VKGSRender()
 	// Readback buffers free their memory through the device's allocator, which the swapchain destroys below with the device.
 	m_pbd_screen_slots.clear();
 	m_pbd_bp_slots.clear();
+	m_pbd_photo_slots.clear();
 
 	// Globals. TODO: Refactor lifetime management
 	if (auto async_scheduler = g_fxo->try_get<vk::AsyncTaskScheduler>())

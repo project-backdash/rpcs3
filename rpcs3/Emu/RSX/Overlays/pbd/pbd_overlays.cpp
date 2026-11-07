@@ -7,6 +7,8 @@
 #include "Emu/Cell/pbd_direct_match.h"
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/System.h"
+#include "Emu/pbd_session_mode.h"
+#include "Emu/PBD/pbd_costume_panel.h"
 
 // The PBD overlays' creation order and the helpers they share.
 
@@ -97,9 +99,10 @@ namespace rsx
 				std::lock_guard lock(manager);
 				watch_overlay->init();
 			}
-			// The select countdown band: only a lobby set chooses fighters in the game's own select. Before the menu overlay, so a
-			// launcher panel and the waiting modal draw over it.
-			if (::pbd::set_channel::requested_directory() && !manager.get<rsx::overlays::pbd_select_band_overlay>())
+			// Held games bind their set after renderer startup, so reserve the costume layer for standby as well.
+			// Create it before the menu overlay so menu panels and waiting modals remain above it.
+			if (::pbd::costume_panel::requested(::pbd::set_channel::set_screens_requested(), ::pbd::practice::requested(), ::pbd::session_mode::customize(), ::pbd::session_mode::offline_versus()) &&
+				!manager.get<rsx::overlays::pbd_select_band_overlay>())
 			{
 				auto band_overlay = manager.create<rsx::overlays::pbd_select_band_overlay>();
 				std::lock_guard lock(manager);

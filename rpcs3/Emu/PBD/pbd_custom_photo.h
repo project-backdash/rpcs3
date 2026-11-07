@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <filesystem>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -13,6 +14,42 @@ namespace pbd::custom_photo
 	using u8 = std::uint8_t;
 	using u32 = std::uint32_t;
 	using u64 = std::uint64_t;
+	inline std::atomic<u64> input_serial{0};
+	// A picture observes a neutral opening and abandons it as soon as either player's input changes it.
+	class entry_pose
+	{
+		bool m_practice = false;
+		u32 m_frames = 0;
+		u64 m_input = 0;
+
+	public:
+		static constexpr u32 maximum_opening_boundaries = 600;
+		void arm_practice() noexcept
+		{
+			m_practice = true;
+			m_frames = 0;
+			m_input = input_serial.load(std::memory_order_acquire);
+		}
+		void finish() noexcept
+		{
+			m_practice = false;
+		}
+		bool holding() const noexcept
+		{
+			return false;
+		}
+		bool observe(u32 mode, u32 scene, u32 phase, bool visible = true) noexcept
+		{
+			// Loading may finish while the host still hides the game; remember that opening until it is shown.
+			if (mode == 10 && scene == 2)
+				arm_practice();
+			if (mode != 10 || scene == 3)
+				finish();
+			if (mode == 10 && m_practice && (input_serial.load(std::memory_order_acquire) != m_input || (visible && scene == 17 && ++m_frames > maximum_opening_boundaries)))
+				finish();
+			return visible && scene == 17 && ((mode != 10 && phase == 4) || (mode == 10 && phase == 17 && m_practice));
+		}
+	};
 	struct frame
 	{
 		u64 ticket = 0, generation = 0, flip = 0;
@@ -20,8 +57,8 @@ namespace pbd::custom_photo
 		bool valid = false;
 		std::vector<u8> rgba;
 	};
-	// Every thumbnail uses the same central portrait window, independent of the display's output size.
-	inline frame portrait(const frame& source)
+	// Keep a fixed portrait size across output resolutions; fighter openings use the player's side of the frame.
+	inline frame portrait(const frame& source, bool player_one = false, bool player_two = false)
 	{
 		frame out{source.ticket, source.generation, source.flip, 320, 480};
 		if (!source.valid || source.width < 2 || source.height < 2 || source.rgba.size() != u64{source.width} * source.height * 4)
@@ -30,7 +67,10 @@ namespace pbd::custom_photo
 		out.rgba.resize(out.width * out.height * 4);
 		const u32 crop_height = source.height * 4 / 5;
 		const u32 crop_width = std::min(source.width, crop_height * 2 / 3);
-		const u32 left = (source.width - crop_width) / 2, top = (source.height - crop_height) / 2;
+		const u32 centre = player_one ? source.width / 3 : player_two ? source.width * 2 / 3 :
+		                                                                source.width / 2;
+		const u32 left = std::min(source.width - crop_width, centre > crop_width / 2 ? centre - crop_width / 2 : 0);
+		const u32 top = (source.height - crop_height) / 2;
 		for (u32 y = 0; y < out.height; ++y)
 			for (u32 x = 0; x < out.width; ++x)
 			{
@@ -47,6 +87,7 @@ namespace pbd::custom_photo
 		std::atomic<bool> m_pending{false};
 		std::atomic<u64> m_latest_flip{0};
 		u64 m_serial = 0, m_ticket = 0, m_generation = 0, m_after = 0;
+		bool m_copied = false;
 		std::optional<frame> m_result;
 
 	public:
@@ -58,6 +99,7 @@ namespace pbd::custom_photo
 			m_ticket = ++m_serial;
 			m_generation = generation;
 			m_after = after_flip;
+			m_copied = false;
 			m_result.reset();
 			m_pending.store(true, std::memory_order_release);
 			return m_ticket;
@@ -68,7 +110,10 @@ namespace pbd::custom_photo
 			if (!m_pending.load(std::memory_order_acquire))
 				return 0;
 			std::lock_guard lock(m_mutex);
-			return m_ticket && !m_result && generation == m_generation && flip > m_after ? m_ticket : 0;
+			if (!m_ticket || m_copied || generation != m_generation || flip <= m_after)
+				return 0;
+			m_copied = true;
+			return m_ticket;
 		}
 		u64 latest_flip() const noexcept
 		{
@@ -118,4 +163,6 @@ namespace pbd::custom_photo
 	};
 	inline channel pending;
 	std::vector<u8> encode_png(const frame& value);
+	std::vector<u8> encode_jpeg(const frame& value);
+	bool save_async(frame value, u32 side, std::vector<std::filesystem::path> targets);
 } // namespace pbd::custom_photo

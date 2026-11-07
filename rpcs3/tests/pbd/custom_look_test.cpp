@@ -7,9 +7,51 @@
 #include "Emu/PBD/pbd_custom_wire.h"
 #include "Emu/PBD/pbd_practice_start.h"
 #include "Emu/PBD/pbd_set_channel_model.h"
+#include "Emu/pbd_session_mode.h"
 #include <stb_image.h>
 
 using pbd::test::check;
+
+PBD_TEST(PbdCustomEditor, CustomizeOwnsItsControllerOnlyInAnOfflineRequest)
+{
+	using pbd::session_mode::customize_requested;
+	check(customize_requested("1", "0", "1", "customize-request.json"));
+	check(customize_requested("1", nullptr, "1", "customize-request.json"));
+	check(!customize_requested("1", "1", "1", "customize-request.json"));
+	check(!customize_requested(nullptr, "0", "1", "customize-request.json"));
+	check(!customize_requested("1", "0", "0", "customize-request.json"));
+	check(!customize_requested("1", "0", "1", ""));
+	check(!customize_requested("1", "0", "1", nullptr));
+}
+
+PBD_TEST(PbdCustomEditor, RankOpacityIsLimitedToTheSelectSpriteUpdate)
+{
+	using namespace pbd::custom_editor;
+	check(select_rank_sprite(0x105b18, 0x1139b4));
+	check(!select_rank_sprite(0x105b18, 0x1176bc));
+	check(!select_rank_sprite(0x1059cc, 0x1139b4));
+	check(std::find(profile_draws.begin(), profile_draws.end(), 0x1059cc) == profile_draws.end());
+	check(std::find(profile_draws.begin(), profile_draws.end(), 0x1500c8) == profile_draws.end());
+}
+
+PBD_TEST(PbdCustomEditor, EditingHasNoDeadlineAndExitCapturesOnce)
+{
+	using namespace pbd::custom_editor;
+	flow entry;
+	observation value{true, true, true, 3, 4, 3, 44, 3, 3, 0};
+	check(entry.step(value) == action::enter);
+	value.selector = value.next_selector = 6;
+	value.shop = 2;
+	check(entry.step(value) == action::open_items);
+	value.shop = 4;
+	for (u32 frame = 0; frame < 72000; ++frame)
+		check(entry.step(value) == action::wait);
+	check(entry.step(value, 0x0900) == action::capture);
+	entry.resume();
+	check(entry.step(value, 0x0900) == action::wait);
+	check(entry.step(value, 0) == action::wait);
+	check(entry.step(value, 0x0800) == action::capture);
+}
 
 PBD_TEST(PbdCustomSave, RequiresAReleasedPadAndACompletedPhoto)
 {
@@ -138,6 +180,42 @@ PBD_TEST(PbdCustomPhoto, EncodesTheCapturedPixelsAsAPortablePng)
 	check(encode_png(value).empty());
 }
 
+PBD_TEST(PbdCustomPhoto, PracticePortraitContainsThePlayersSideInsteadOfTheCentre)
+{
+	using namespace pbd::custom_photo;
+	frame source{1, 2, 3, 120, 90, true};
+	source.rgba.resize(120 * 90 * 4);
+	for (u32 y = 0; y < 90; ++y)
+		for (u32 x = 0; x < 120; ++x)
+		{
+			const auto at = (y * 120 + x) * 4;
+			source.rgba[at] = x < 80 ? 255 : 0;
+			source.rgba[at + 2] = x < 80 ? 0 : 255;
+			source.rgba[at + 3] = 255;
+		}
+	const auto player = portrait(source, true);
+	check(player.valid && player.width == 320 && player.height == 480 && player.generation == 2);
+	for (std::size_t at = 0; at < player.rgba.size(); at += 4)
+		check(player.rgba[at] == 255 && player.rgba[at + 2] == 0);
+	const auto centre = portrait(source);
+	check(centre.rgba[centre.rgba.size() - 2] == 255);
+	source.valid = false;
+	check(!portrait(source, true).valid);
+}
+
+PBD_TEST(PbdCustomPhoto, PortraitRequestsRequireAnExplicitCustomPracticeOpening)
+{
+	const std::string start = R"({"schema":"pbd-practice-start-1","id":"portrait","characterId":"nina_williams","characterRow":13,"costume":0,"stage":0)";
+	const std::string look = R"(,"custom":{"items":[65535,65535,65535,65535],"colours":[255,255,255]})";
+	const auto parsed = pbd::practice::start::parse(start + look + R"(,"portrait":true})");
+	check(parsed.value && parsed.value->portrait && parsed.value->custom);
+	check(!pbd::practice::start::parse(start + R"(,"portrait":true})").value);
+	check(!pbd::practice::start::parse(start + look + R"(,"portrait":"true"})").value);
+	check(!pbd::practice::start::parse(start + look + R"(,"portrait":null})").value);
+	const auto ordinary = pbd::practice::start::parse(start + look + "}");
+	check(ordinary.value && !ordinary.value->portrait);
+}
+
 PBD_TEST(PbdCustomPhoto, CapturesOneFutureGuestFrameAndPreservesItsIdentity)
 {
 	using namespace pbd::custom_photo;
@@ -161,6 +239,50 @@ PBD_TEST(PbdCustomPhoto, CapturesOneFutureGuestFrameAndPreservesItsIdentity)
 	check(capture.wants_frame(8, 1) == next);
 	capture.cancel(next);
 	check(!capture.wants_frame(8, 1));
+}
+
+PBD_TEST(PbdCustomPhoto, FirstUseNeverHoldsInputAndAbandonsAMovingOpening)
+{
+	using pbd::custom_photo::entry_pose;
+	entry_pose pose;
+	check(!pose.observe(10, 17, 17) && !pose.holding());
+	pose.arm_practice();
+	check(!pose.observe(10, 2, 44) && !pose.holding());
+	for (unsigned frame = 0; frame < entry_pose::maximum_opening_boundaries; ++frame)
+		check(pose.observe(10, 17, 17) && !pose.holding());
+	check(!pose.observe(10, 17, 17) && !pose.holding());
+	pose.arm_practice();
+	check(pose.observe(10, 17, 17));
+	pbd::custom_photo::input_serial.fetch_add(1);
+	check(!pose.observe(10, 17, 17) && !pose.holding());
+	pose.arm_practice();
+	pose.finish();
+	check(!pose.observe(10, 17, 17));
+	for (unsigned phase = 0; phase < 40; ++phase)
+	{
+		check(pose.observe(4, 17, phase) == (phase == 4));
+		check(!pose.holding());
+	}
+	check(!pose.observe(4, 3, 4));
+}
+
+PBD_TEST(PbdCustomPhoto, HiddenLoadingKeepsItsOpeningUntilVisibleButNeverCapturesHiddenFrames)
+{
+	using pbd::custom_photo::entry_pose;
+	entry_pose pose;
+	check(!pose.observe(10, 2, 44, false));
+	for (unsigned frame = 0; frame < 1200; ++frame)
+		check(!pose.observe(10, 17, 17, false) && !pose.holding());
+	check(pose.observe(10, 17, 17));
+	// Two dispatches per presented frame still leave enough time for the opening fade.
+	for (unsigned frame = 0; frame < 250; ++frame)
+		check(pose.observe(10, 17, 17));
+	pose.observe(10, 2, 44, false);
+	pbd::custom_photo::input_serial.fetch_add(1);
+	check(!pose.observe(10, 17, 17, false));
+	check(!pose.observe(10, 17, 17));
+	check(!pose.observe(4, 17, 4, false));
+	check(pose.observe(4, 17, 4));
 }
 
 PBD_TEST(PbdCustomPhoto, RejectsOversizedIncompleteAndUnfencedFrames)

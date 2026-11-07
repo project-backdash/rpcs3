@@ -40,6 +40,24 @@ namespace pbd::session_mode
 		return value;
 	}
 
+	// Customize uses the VS checkpoint, but owns one controller from boot and has no Versus seats or menus.
+	inline bool customize_requested(const char* offline, const char* session, const char* looks, const char* request) noexcept
+	{
+		return offline_play_requested(offline, session) && looks && std::string_view(looks) == "1" && request && *request;
+	}
+
+	inline bool customize() noexcept
+	{
+		static const bool value = customize_requested(pbd::env::find("PBD_OFFLINE_PLAY"), pbd::env::find("PBD_SESSION"),
+			pbd::env::find("PBD_CUSTOM_LOOKS"), pbd::env::find("PBD_CUSTOMIZE_REQUEST"));
+		return value;
+	}
+
+	inline bool offline_versus() noexcept
+	{
+		return offline_play() && !customize();
+	}
+
 	// The player closed the game window (its close button, Alt+F4 or the window menu). The game window sets this just before it
 	// asks the emulator to stop, so the update latch can tell that deliberate close from every other stop: a lobby set reads it
 	// as the player leaving the seat. A crash, a guard failure, a peer's end or a stop the launcher asks for never sets it.

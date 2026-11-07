@@ -156,7 +156,7 @@ namespace pbd::controllers
 #ifdef _WIN32
 		m->keyboard = pbd::raw_keyboard::shared_sink();
 #endif
-		m->seated = !standalone && pbd::session_mode::offline_play();
+		m->seated = !standalone && pbd::session_mode::offline_versus();
 		if (!standalone)
 			m->controls_revision = settings::current_revision();
 		m->reload();
@@ -313,7 +313,7 @@ namespace pbd::controllers
 			}
 		}
 		// Practice consumes its own raw action map after its menu and shortcuts have had their buttons.
-		const bool raw_controls = pbd::env::find("PBD_PRACTICE_BUTTON_MAP") || pbd::env::find("PBD_REPLAY_VIEWER") ||
+		const bool raw_controls = pbd::session_mode::customize() || pbd::env::find("PBD_PRACTICE_BUTTON_MAP") || pbd::env::find("PBD_REPLAY_VIEWER") ||
 		                          pbd::env::find("PBD_SESSION_REPLAY") || pbd::env::find("PBD_REPLAY_V2_GAME") || pbd::env::find("PBD_SPECTATOR_CHANNEL");
 		// In a fight a stick click with an action is that action; with none it stays the click it was. Offline play's Versus reads
 		// the buttons themselves at its select (pbd_versus_input.h).

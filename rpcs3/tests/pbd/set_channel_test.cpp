@@ -2,6 +2,7 @@
 
 #include "Emu/Cell/pbd_set_channel.h"
 #include "Emu/PBD/pbd_features.h"
+#include "Emu/PBD/pbd_costume_panel.h"
 #include "Emu/PBD/pbd_replay_journal.h"
 
 #include <regex>
@@ -1424,10 +1425,12 @@ PBD_TEST(PbdSetChannel, AHeldGameAsksForTheSetScreens)
 	put("PBD_MATCH_STANDBY_CHANNEL", channel.c_str());
 	check(set_screens_requested(), "a game held ready for a set makes its screens");
 	check(!requested_directory(), "a held game has no set channel until it binds one");
+	check(pbd::costume_panel::requested(set_screens_requested(), false, false), "standby creates the picker before either side is assigned");
 
 	put("PBD_MATCH_STANDBY_CHANNEL", nullptr);
 	put("PBD_SET_CHANNEL", channel.c_str());
 	check(set_screens_requested() && requested_directory() == std::filesystem::path(channel), "a set configured at launch");
+	check(pbd::costume_panel::requested(set_screens_requested(), false, false), "cold online starts create the same picker");
 }
 
 #include "Emu/PBD/pbd_match_bind.h"

@@ -10,6 +10,13 @@ class ppu_thread;
 namespace pbd::custom_editor
 {
 	using custom_look::u32;
+	inline constexpr std::array<u32, 2> profile_draws{0x105bb4, 0x105eec};
+	inline constexpr u32 select_rank_update = 0x105b18, select_rank_return = 0x1139b4;
+	// The rank's resource lookup must run; its select sprite is hidden through the stock opacity field.
+	constexpr bool select_rank_sprite(u32 address, u32 caller) noexcept
+	{
+		return address == select_rank_update && caller == select_rank_return;
+	}
 	inline std::atomic<bool> save_blocked{false};
 	inline std::atomic<std::uint64_t> save_generation{0};
 	inline std::atomic<bool> trial_pad{false};
@@ -55,18 +62,22 @@ namespace pbd::custom_editor
 	{
 		bool m_entered = false, m_open = false, m_finished = false;
 		u32 m_frames = 0;
+		std::uint16_t m_held = 0xffff;
 
 	public:
 		void resume() noexcept
 		{
 			m_finished = false;
 			m_frames = 0;
+			m_held = 0xffff;
 		}
-		action step(const observation& value) noexcept
+		action step(const observation& value, std::uint16_t pad = 0) noexcept
 		{
+			const auto pressed = static_cast<std::uint16_t>(pad & ~m_held);
+			m_held = pad;
 			if (m_finished)
 				return action::wait;
-			if (!admissible(value) || ++m_frames > 3600)
+			if (!admissible(value) || (!m_open && ++m_frames > 3600))
 			{
 				m_finished = true;
 				return action::refuse;
@@ -79,7 +90,7 @@ namespace pbd::custom_editor
 				return action::enter;
 			}
 			// The stock controller may also finish when the select timer expires. Catch either exit before the next tick.
-			if (value.next_selector == 7 || value.selector == 7 || (value.selector == 6 && (value.shop == 3 || value.shop == 6)))
+			if ((m_open && (pressed & 0x0800)) || value.next_selector == 7 || value.selector == 7 || (value.selector == 6 && (value.shop == 3 || value.shop == 6)))
 			{
 				m_finished = true;
 				return m_open ? action::capture : action::refuse;
@@ -105,4 +116,11 @@ namespace pbd::custom_editor
 
 	// A bounded direct-entry observation, separate from the launcher request/result protocol.
 	bool trial_boundary(ppu_thread& ppu, u32 address) noexcept;
+	bool suppress_profile_paint(ppu_thread& ppu, u32 address) noexcept;
 } // namespace pbd::custom_editor
+
+namespace pbd::practice_costume
+{
+	std::optional<std::uint16_t> select_word(std::uint32_t port, std::uint16_t raw) noexcept;
+	void boundary(ppu_thread& ppu, std::uint64_t generation) noexcept;
+} // namespace pbd::practice_costume

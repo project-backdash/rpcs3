@@ -8,6 +8,7 @@
 #include "Emu/PBD/pbd_player_seats.h"
 #include "Emu/PBD/pbd_spectator_channel_model.h"
 #include "Emu/System.h"
+#include "Emu/pbd_session_mode.h"
 
 #include <algorithm>
 #include <chrono>
@@ -114,6 +115,8 @@ namespace rsx
 		compiled_resource pbd_settings_overlay::notices()
 		{
 			using namespace pbd;
+			if (::pbd::session_mode::customize())
+				return {};
 			// A controller takeover's toast and offline play's player question and Versus layer
 			// (pbd_versus.h), rebuilt only when one of them changes.
 			const u64 now = ::pbd::controller_takeover::steady_ms();

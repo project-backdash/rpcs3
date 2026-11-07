@@ -4,6 +4,7 @@
 #include "pbd_practice_lesson_channel.h"
 #include "pbd_practice_frames.h"
 #include "pbd_practice_start.h"
+#include "pbd_custom_photo.h"
 
 namespace start = pbd::practice::start;
 
@@ -16,6 +17,7 @@ std::optional<replay_control_result> pbd::rollback_session::practice_steps::open
 		const auto now = session_clock::now();
 		if (entry.root != data.game_overlay.dir || entry.generation != generation)
 		{
+			pbd::custom_photo::pending.cancel(entry.portrait_ticket);
 			start::input_held = false;
 			if (entry.wanted || !entry.refusal.empty())
 				pbd::game_overlay::publish({});
@@ -52,6 +54,44 @@ std::optional<replay_control_result> pbd::rollback_session::practice_steps::open
 				pbd::game_overlay::publish(card);
 				if (!entry.refusal.empty() && now - entry.failed_at >= std::chrono::seconds(3))
 				{
+					Emu.CallFromMainThread([]
+						{
+							Emu.Kill(true, false);
+						});
+					return replay_control_result::stopped;
+				}
+				return replay_control_result::go;
+			}
+			if (entry.wanted && entry.wanted->portrait)
+			{
+				// A new opening leaves both fighters at their reset positions. Hold physical input until the loaded
+				// costume has drawn, then copy only the player's side of the game image before host overlays.
+				start::input_held = true;
+				data.practice.dummy.mask_ui = true;
+				pbd::practice::input_claim.store(true, std::memory_order_release);
+				pbd::practice::publish({});
+				if (++entry.portrait_frames == 30)
+					entry.portrait_ticket = pbd::custom_photo::pending.request(generation, pbd::custom_photo::pending.latest_flip() + 2);
+				bool done = entry.portrait_frames > 600;
+				if (auto photo = pbd::custom_photo::pending.take(entry.portrait_ticket))
+				{
+					const auto png = pbd::custom_photo::encode_png(pbd::custom_photo::portrait(*photo, true));
+					if (!png.empty() && png.size() <= 1024 * 1024)
+					{
+						const auto path = (entry.root / "custom-portrait.png").u8string();
+						const std::string filename(path.begin(), path.end());
+						fs::file file(filename, fs::write_new + fs::isfile);
+						const bool written = file && file.write(png.data(), png.size()) == png.size();
+						file.close();
+						if (!written)
+							fs::remove_file(filename);
+						pbd_session_log.notice("custom-portrait-1: row %u, flip %u, written %u", entry.wanted->character_row, photo->flip, written);
+					}
+					done = true;
+				}
+				if (done)
+				{
+					pbd::custom_photo::pending.cancel(entry.portrait_ticket);
 					Emu.CallFromMainThread([]
 						{
 							Emu.Kill(true, false);

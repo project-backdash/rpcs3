@@ -65,7 +65,15 @@ namespace pbd::custom_files
 	{
 		if (!path.is_absolute())
 			return {};
-		const auto data = read(path, picture_limit);
+		auto preferred = path;
+		preferred.replace_extension(".jpg");
+		auto data = read(preferred, 30 * 1024);
+		if (data && data->size() >= 4 && static_cast<u8>((*data)[0]) == 0xff && static_cast<u8>((*data)[1]) == 0xd8 &&
+			static_cast<u8>((*data)[data->size() - 2]) == 0xff && static_cast<u8>(data->back()) == 0xd9)
+			return {data->begin(), data->end()};
+		auto legacy = path;
+		legacy.replace_extension(".png");
+		data = read(legacy, picture_limit);
 		constexpr std::array<u8, 8> signature{137, 80, 78, 71, 13, 10, 26, 10};
 		if (!data || data->size() < 24 || !std::equal(signature.begin(), signature.end(), reinterpret_cast<const u8*>(data->data())))
 			return {};
@@ -107,6 +115,12 @@ namespace pbd::custom_files
 				value.picture = picture(std::filesystem::u8path(file->text));
 			out.labels.push_back(std::move(value));
 		}
+		if (const auto* root = parsed.value->find("costumePictures"); root && root->kind == pbd::json::json_kind::string && root->text.size() <= 4096)
+			for (u32 row = 0; row < 84; ++row)
+			{
+				const auto file = std::filesystem::u8path(root->text) / ("costume-" + std::string(row < 10 ? "0" : "") + std::to_string(row) + ".png");
+				out.labels.push_back({row, 0, {}, picture(file)});
+			}
 		return out;
 	}
 	inline constexpr std::array<std::string_view, 35> character_ids{
@@ -115,6 +129,31 @@ namespace pbd::custom_files
 		"kazuya_mishima", "lee_chaolan", "steve_fox", "craig_marduk", "mokujin", "jack_5", "roger_jr",
 		"anna_williams", "wang_jinrei", "ganryu", "asuka_kazama", "bruce_irvin", "baek_doo_san", "devil_jin",
 		"raven", "feng_wei", "armor_king", "lili", "sergei_dragunov", "eddy_gordo", "jinpachi_mishima"};
+	inline std::vector<drawn> read_picture_looks(const std::filesystem::path& path)
+	{
+		std::vector<drawn> out;
+		const auto text = read(path, 64 * 1024);
+		if (!text)
+			return out;
+		const auto parsed = pbd::json::detail::json_parser(*text, 4096, 64 * 1024, 4096).parse();
+		if (!parsed.value || !pbd::json::detail::is(parsed.value->find("schema"), "pbd-custom-pictures-1"))
+			return out;
+		const auto* looks = parsed.value->find("looks");
+		if (!looks || looks->kind != pbd::json::json_kind::array || looks->items.size() > 350)
+			return out;
+		for (const auto& value : looks->items)
+			for (u32 row = 0; row < 84; ++row)
+				if (auto look = read_drawn(&value, row))
+				{
+					out.push_back(*look);
+					break;
+				}
+		if (const auto* defaults = parsed.value->find("captureDefaults"); defaults && defaults->kind == pbd::json::json_kind::boolean && defaults->truth)
+			for (u32 row = 0; row < 84; ++row)
+				if (custom_look::normalise(custom_look::look{row}))
+					out.push_back({0, pack(custom_look::look{row})});
+		return out;
+	}
 	struct customize
 	{
 		std::string id, character;

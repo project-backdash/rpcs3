@@ -26,6 +26,7 @@ namespace pbd::practice::start
 		// The look for the player's fighter (applied only with PBD_CUSTOM_LOOKS=1); its row is set to the costume's row once
 		// the opening resolves it.
 		std::optional<custom_look::look> custom;
+		bool portrait = false;
 	};
 	// "custom": {"items": four item ids (65535 none), "colours": three colours (255 the model's own)}, as the player record
 	// holds them.
@@ -70,6 +71,12 @@ namespace pbd::practice::start
 		if (const auto* custom = value.find("custom"))
 			if (!parse_custom(*custom, out.custom) || out.costume != 0)
 				out.custom = custom_look::look{out.character_row};
+		if (const auto* portrait = value.find("portrait"))
+		{
+			if (portrait->kind != json::json_kind::boolean || !out.custom || out.costume != 0)
+				return {{}, "invalid_practice_portrait"};
+			out.portrait = portrait->truth;
+		}
 		out.id = value.find("id")->text;
 		return {std::move(out), {}};
 	}
@@ -150,6 +157,8 @@ namespace pbd::practice::start
 		watch loaded;
 		bool inspected = false, prepared = false, load_requested = false, looks_written = false, ready = false, published = false, released = false;
 		std::string refusal;
+		std::uint64_t portrait_ticket = 0;
+		std::uint32_t portrait_frames = 0;
 		std::chrono::steady_clock::time_point deadline{}, failed_at{};
 	};
 } // namespace pbd::practice::start

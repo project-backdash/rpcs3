@@ -86,7 +86,7 @@ namespace pbd::pads
 			}
 		// Offline play: Player 2's port, left without a controller in the input config, is a second PBD device for a second
 		// player on this PC (poll).
-		if (chosen.controller == 0 && pbd::session_mode::offline_play() && !is_virtual(1) &&
+		if (chosen.controller == 0 && pbd::session_mode::offline_versus() && !is_virtual(1) &&
 			g_cfg_input.player[1]->handler.get() == pad_handler::null)
 			chosen.second = 1;
 		return chosen;

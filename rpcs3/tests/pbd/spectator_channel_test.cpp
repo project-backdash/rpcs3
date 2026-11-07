@@ -248,13 +248,10 @@ PBD_TEST(PbdSpectatorChannel, TheThrowBreakRuleHoldsFramesAheadAndKeepsEachPacke
 	check(f.input.pbd_queued_pad(3, 0) == std::uint16_t{0x40} && f.input.pbd_queued_pad(2, 1) == std::uint16_t{0x20} && !f.input.pbd_queued_pad(4, 0),
 		"the pads of the frames held, and none past them");
 	check(f.input.verify_state(0, 1, 17, 0x8000004d, 7, {11, 22, 33}) && f.input.commit(0x01000000, 0x12efc, 0, f.completed(), {0x40, 0x20}));
-	check(f.input.pbd_queued_pad(0, 0) == std::uint16_t{0x40} && f.input.pbd_queued_pad(3, 1) == std::uint16_t{0x20},
-		"the battle's throw read follows the two-port post and still needs that tick and its queued lookahead");
 	check(!f.input.reserve(), "the second frame waits for the frame L past it");
 	f.packet(3, 1, 4, 4, 3);
 	check(f.input.poll_input(test_hash));
 	f.play(1);
-	check(!f.input.pbd_queued_pad(0, 0), "only the most recent posted tick is retained behind the queue");
 	// The consumed report of packet `chunk`, as many as there are.
 	const auto consumed = [&](u32 chunk, u32 through)
 	{

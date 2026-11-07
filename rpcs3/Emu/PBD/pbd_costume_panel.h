@@ -12,6 +12,10 @@ namespace pbd::costume_panel
 {
 	using u32 = std::uint32_t;
 	using u64 = std::uint64_t;
+	constexpr bool requested(bool set, bool practice, bool customize, bool offline = false) noexcept
+	{
+		return set || practice || customize || offline;
+	}
 	inline std::string_view fighter_name(u32 row)
 	{
 		constexpr std::array<std::string_view, 35> names{

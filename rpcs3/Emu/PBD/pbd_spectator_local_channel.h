@@ -9,12 +9,6 @@ namespace pbd::spectator
 		std::filesystem::path m_directory;
 		manifest m_identity;
 		std::deque<frame> m_frames;
-		struct posted_pad
-		{
-			u32 boundary = 0;
-			std::array<std::uint16_t, 2> pads{};
-		};
-		std::optional<posted_pad> m_posted_pad;
 		presentation m_presentation;
 		u64 m_native_generation = 0, m_control_serial = 0, m_report_serial = 0;
 		u32 m_packet_serial = 0, m_game = 0, m_origin = 0, m_receipt = 0, m_consumed = 0, m_checked = 0;
@@ -279,15 +273,12 @@ namespace pbd::spectator
 			m_reserved = true;
 			return m_frames.front();
 		}
-		// The battle reads throw breaks after the two-port post released its reservation. Keep that tick's raw pad and
-		// the held successors available until the next post; no input is available before the first reservation.
+		// A port's pad at a native boundary from the reserved frame on, among the frames held; nothing for one not held.
 		std::optional<std::uint16_t> pbd_queued_pad(u32 boundary, u32 port) const
 		{
 			const u32 source = pbd_source_boundary(boundary);
-			if (!healthy() || !game_active() || (!m_reserved && !m_posted_pad) || port > 1 || source == ~0u)
+			if (!m_reserved || port > 1 || source == ~0u)
 				return {};
-			if (m_posted_pad && m_posted_pad->boundary == source)
-				return m_posted_pad->pads[port];
 			for (const auto& item : m_frames)
 				if (item.boundary == source)
 					return item.pads[port];

@@ -3,6 +3,13 @@
 #include "Emu/PBD/pbd_costume_select.h"
 #include "Emu/PBD/pbd_costume_panel.h"
 
+PBD_TEST(PbdCostumePanel, OfflineMenusCreateTheirControlLayerWithoutAnOnlineSet)
+{
+	using pbd::costume_panel::requested;
+	for (unsigned modes = 0; modes < 16; ++modes)
+		pbd::test::check(requested(modes & 1, modes & 2, modes & 4, modes & 8) == (modes != 0));
+}
+
 using pbd::test::check;
 using namespace pbd::costume_select;
 
@@ -61,6 +68,26 @@ PBD_TEST(PbdCostumeSelect, EveryStockCostumeHasItsOwnConfirm)
 	unavailable = tables;
 	unavailable.ban_jinpachi = true;
 	check(cards(unavailable, 34).empty());
+}
+
+PBD_TEST(PbdCostumeSelect, OnePhysicalConfirmCannotChooseBothPracticeFighters)
+{
+	const auto tables = pbd::test::select_tables();
+	row player, dummy;
+	confirm_release shared;
+	const auto seen = selecting();
+	const auto picked = player.step(tables, seen, cross);
+	check(picked.picked.has_value());
+	shared.consume();
+	for (u32 poll = 0; poll < 120; ++poll)
+		check(shared.holds(cross));
+	check(shared.holds(0));
+	check(!shared.holds(left));
+	check(dummy.step(tables, seen, left).word == left);
+	check(!shared.holds(cross));
+	check(dummy.step(tables, seen, cross).picked.has_value());
+	shared.consume();
+	check(shared.holds(cross) && shared.holds(0) && !shared.holds(right));
 }
 
 PBD_TEST(PbdCostumeSelect, CrossAlwaysPicksDefaultOneAndSquareRemembersTheLastPick)
@@ -175,4 +202,30 @@ PBD_TEST(PbdCostumeSelect, CustomsAreBoundedValidatedAndGroupedAfterDefaults)
 	slots[0].reset();
 	menu.step(tables, seen, square, slots);
 	check(menu.focus() == 0);
+}
+
+PBD_TEST(PbdCostumePanel, BothOnlineSidesPublishTheirOwnOpenPickerAndSavedChoice)
+{
+	const auto tables = pbd::test::select_tables();
+	std::array<std::optional<pbd::custom_look::look>, 10> slots;
+	slots[2] = pbd::custom_look::look{77, {61, 67, 66, 50}};
+	for (u32 side : {0u, 1u})
+	{
+		auto seen = selecting();
+		seen.mode = 4;
+		seen.pad_role = side;
+		row menu;
+		check(menu.step(tables, seen, square, slots).word == 0);
+		const auto opened = pbd::costume_panel::compose(100 + side, side, menu);
+		check(opened.visible && opened.open && opened.side == side && opened.cards.size() == 3);
+		pbd::costume_panel::publish(opened);
+		check(pbd::costume_panel::load() == opened);
+		menu.step(tables, seen, 0, slots);
+		menu.step(tables, seen, r1, slots);
+		const auto highlighted = pbd::costume_panel::compose(100 + side, side, menu);
+		check(highlighted.visible && highlighted.open && highlighted.cards[highlighted.focus].slot == 2);
+		menu.step(tables, seen, 0, slots);
+		const auto picked = menu.step(tables, seen, cross, slots);
+		check(picked.picked && picked.picked->slot == 2 && !menu.open());
+	}
 }

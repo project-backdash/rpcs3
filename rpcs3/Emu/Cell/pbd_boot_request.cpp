@@ -19,6 +19,8 @@ namespace pbd::boot_request
 
 	bool detail::boot_observation::observe_owner(ppu_thread& ppu, u32 address)
 	{
+		if (applied && !output && !screenshots)
+			return false;
 		bool request = false;
 		if (address == 0x56258)
 			title = static_cast<u32>(ppu.gpr[3]);
@@ -78,6 +80,8 @@ namespace pbd::boot_request
 
 	void detail::boot_observation::observe_draw(ppu_thread& ppu, u32 address)
 	{
+		if (!output || !draw_witness)
+			return;
 		u32 core = 0;
 		bool entry = false;
 		if (address == 0x3afc3c || address == 0x3afd48)

@@ -46,6 +46,10 @@ namespace pbd::output_gain
 				m_hides.fetch_add(1, std::memory_order_acq_rel);
 			m_visible.store(value, std::memory_order_release);
 		}
+		bool visible() const noexcept
+		{
+			return m_visible.load(std::memory_order_acquire);
+		}
 		// Lets the output rise; its first rise takes fade_ms. Only the first call counts: the gate never closes again.
 		void open(std::uint32_t fade_ms) noexcept
 		{

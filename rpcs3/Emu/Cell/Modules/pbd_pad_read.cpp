@@ -13,6 +13,7 @@
 #include "Emu/Io/pad_types.h"
 #include "Emu/Memory/vm.h"
 #include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/pbd_custom_editor.h"
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/pbd_session_mode.h"
 #include "Input/pad_thread.h"
@@ -634,6 +635,18 @@ namespace pbd::pad_read
 		neutral_for_menus(r);
 		versus(r);
 		practice_start_select(r);
+		// Character select reads pads without entering the battle input hook.
+		if (r.data.len > CELL_PAD_BTN_OFFSET_DIGITAL2)
+		{
+			const u16 raw = (r.data.button[CELL_PAD_BTN_OFFSET_DIGITAL1] << 8) | r.data.button[CELL_PAD_BTN_OFFSET_DIGITAL2];
+			if (const auto selected = pbd::practice_costume::select_word(r.port, raw))
+			{
+				pbd_fill_canonical(r.data, r.config.port_setting[r.port], *selected >> 8, *selected & 0xff);
+				// A real pad sends changes only. Resample after a synthesized confirm so the guest gets its release even
+				// while the device remains held, and so a dummy's fresh row cannot inherit the player's confirm.
+				pad->m_buffer_cleared = true;
+			}
+		}
 		observe(r);
 	}
 

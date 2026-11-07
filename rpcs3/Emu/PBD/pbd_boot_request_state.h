@@ -49,6 +49,7 @@ namespace pbd::boot_request::detail
 		bool enabled = false, attempted = false, applied = false, executing = false;
 		bool screenshots = false, select_image = false, fight_image = false;
 		bool getter_diagnostic = false;
+		bool draw_witness = true;
 		bool media_retire = false, teardown_requested = false, replay = false, capped = false;
 		u32 teardown_child = 0, teardown_handle_generation = 0, teardown_media_generation = 0;
 		u32 select_wait_observations = 0;
@@ -78,6 +79,7 @@ namespace pbd::boot_request::detail
 			target = environment("PBD_BOOT_TARGET");
 			screenshots = environment("PBD_BOOT_SCREENSHOTS") == "1";
 			getter_diagnostic = environment("PBD_BOOT_GETTER_DIAGNOSTIC") == "1";
+			draw_witness = environment("PBD_BOOT_WITNESS_DRAWS") != "0";
 			// A replay's fresh boot always retires the title movie first: with the movie's buffer still held, the character select's
 			// load is refused memory and the game reads into an unmapped page.
 			replay = !environment("PBD_REPLAY_V2_GAME").empty();
@@ -85,11 +87,14 @@ namespace pbd::boot_request::detail
 			enabled = !path.empty() || !target.empty();
 			if (!enabled)
 				return;
-			if (path.empty() || (!target.empty() && target != "vs" && target != "practice"))
+			if (!target.empty() && target != "vs" && target != "practice")
 			{
 				failed = true;
 				return;
 			}
+			// A boot request still verifies retirement and owner preservation when no diagnostic file is requested.
+			if (path.empty())
+				return;
 			output = fs::file(path, fs::rewrite);
 			if (!output)
 			{
@@ -101,7 +106,7 @@ namespace pbd::boot_request::detail
 		}
 		void write(const std::string& row)
 		{
-			if (failed || capped)
+			if (!output || failed || capped)
 				return;
 			// A replay keeps the witness through its whole game, whose draws outgrow the cap long after the boot it records is
 			// over: the witness then stops, and the game plays on.
@@ -123,6 +128,8 @@ namespace pbd::boot_request::detail
 		}
 		void sample(ppu_thread& ppu, const char* phase)
 		{
+			if (!output)
+				return;
 			std::ostringstream row;
 			row << "{\"type\":\"state\",\"phase\":\"" << phase << "\",\"ms\":" << elapsed()
 				<< ",\"frame\":" << word(0x1008f07c) << ",\"pad_frame\":" << word(0x1008eb9c)

@@ -1,9 +1,12 @@
 #include "stdafx.h"
 #include "pbd_custom_editor.h"
 #include "pbd_custom_wire.h"
-#include "pbd_custom_photo.h"
 #include "pbd_custom_files.h"
+#include "pbd_custom_photo.h"
 #include "pbd_costume_panel.h"
+#include "pbd_practice_presentation.h"
+#include "pbd_settings_runtime.h"
+#include "pbd_output_gain.h"
 #include "../Cell/pbd_rollback_session.h"
 #include "pbd_native_call.h"
 #include "../Cell/pbd_hidden_selection.h"
@@ -42,12 +45,9 @@ namespace pbd::custom_editor
 			u64 generation = 0;
 			u32 row = 0, logged_shop = ~0u;
 			std::optional<u32> exercise_frame;
-			u64 photo_ticket = 0;
-			u32 photo_wait = 0;
-			bool photo_written = false, protocol = false, cancelled = false;
+			bool protocol = false;
 			std::optional<custom_files::customize> request;
 			std::optional<custom_look::look> saved_look;
-			save_panel panel;
 			bool inspected = false, requested = false, captured = false, touched = false, finished = false;
 			std::filesystem::path output;
 			std::vector<saved_span> held, protected_save;
@@ -78,10 +78,153 @@ namespace pbd::custom_editor
 			state.captured = true;
 			return true;
 		}
+		// Pictures observe play without owning input; encoding and publication run on a separate host thread.
+		void capture_worn_picture(ppu_thread& ppu, u64 generation)
+		{
+			struct capture_state
+			{
+				u64 generation = 0, ticket = 0, after_flip = 0;
+				u32 side = 0, waits = 0;
+				bool loaded = false;
+				std::filesystem::path root;
+				std::vector<custom_wire::drawn> looks, saving;
+				custom_photo::entry_pose pose;
+			};
+			static thread_local capture_state state;
+			if (state.generation != generation)
+			{
+				custom_photo::pending.cancel(state.ticket);
+				state = {};
+				state.generation = generation;
+				const auto path = env::path("PBD_CUSTOM_PICTURES");
+				if (path.is_absolute() && path.filename() == "picture-looks.json")
+				{
+					state.root = path.parent_path() / "photos";
+				}
+			}
+			if (state.root.empty() || (state.loaded && state.looks.empty() && state.saving.empty() && !state.ticket))
+			{
+				state.pose.finish();
+				return;
+			}
+			if (!practice::native::boundary_readable(ppu) || !hidden_selection::pinned_binary())
+				return;
+			const auto mode = practice::native::word(t5dr::game_mode_address);
+			const auto scene = practice::native::word(t5dr::scene_address);
+			const auto phase = practice::native::word(0x10093230);
+			const bool visible = output_gain::output().visible();
+			const bool neutral = state.pose.observe(mode, scene, phase, visible);
+			// Observe loading while hidden, but never request a hidden frame or discard the remembered opening.
+			if (!visible)
+			{
+				custom_photo::pending.cancel(state.ticket);
+				state.ticket = 0;
+				state.looks.insert(state.looks.end(), state.saving.begin(), state.saving.end());
+				state.saving.clear();
+				return;
+			}
+			if (!state.loaded)
+			{
+				state.loaded = true;
+				state.looks = custom_files::read_picture_looks(state.root.parent_path() / "picture-looks.json");
+			}
+			const auto file_for = [&](const custom_wire::drawn& value)
+			{
+				if (!value.slot)
+					return state.root / ("costume-" + std::string(value.value[0] < 10 ? "0" : "") + std::to_string(value.value[0]) + ".jpg");
+				const auto* row = custom_look::catalogue_row(value.value[0]);
+				return state.root / (std::string(custom_files::character_ids[row->fighter]) + "-" +
+										(value.slot < 10 ? "0" : "") + std::to_string(value.slot) + ".jpg");
+			};
+			const auto worn_for = [](const auto& blocks, u32 row) -> std::optional<custom_look::look>
+			{
+				const auto* entry = custom_look::catalogue_row(row);
+				if (entry && !entry->dressable)
+					return custom_look::normalise(custom_look::look{row});
+				return custom_look::read_record(blocks, row);
+			};
+			if (!neutral)
+			{
+				custom_photo::pending.cancel(state.ticket);
+				state.ticket = 0;
+				state.looks.insert(state.looks.end(), state.saving.begin(), state.saving.end());
+				state.saving.clear();
+				return;
+			}
+			if (state.ticket)
+			{
+				if (auto photo = custom_photo::pending.take(state.ticket))
+				{
+					std::vector<std::filesystem::path> targets;
+					for (const auto& look : state.saving)
+						targets.push_back(file_for(look));
+					const auto flip = photo->flip;
+					if (!custom_photo::save_async(std::move(*photo), state.side, std::move(targets)))
+						state.looks.insert(state.looks.end(), state.saving.begin(), state.saving.end());
+					else
+						pbd_custom_editor_log.notice("custom-first-use-picture-1: side %u flip %u queued", state.side, flip);
+					state.ticket = 0;
+					state.saving.clear();
+				}
+				else if (++state.waits > 600)
+				{
+					custom_photo::pending.cancel(state.ticket);
+					state.ticket = 0;
+					state.saving.clear();
+				}
+				return;
+			}
+			if (!state.saving.empty())
+			{
+				if (custom_photo::pending.latest_flip() >= state.after_flip)
+				{
+					state.waits = 0;
+					state.ticket = custom_photo::pending.request(generation, custom_photo::pending.latest_flip() + 2);
+					if (!state.ticket)
+						state.saving.clear();
+				}
+				return;
+			}
+			for (u32 side = 0; side < 2; ++side)
+			{
+				be_t<u16> row{};
+				std::array<u8, custom_look::blocks_size> blocks{};
+				if (!vm::try_access(replay_memory::actors + side * replay_memory::actor_stride + replay_memory::actor_row, &row, sizeof(row), false) ||
+					!vm::try_access(custom_look::record_address(side), blocks.data(), blocks.size(), false))
+					continue;
+				const auto worn = worn_for(blocks, row);
+				if (!worn)
+					continue;
+				const auto identity = custom_wire::pack(*worn);
+				for (auto it = state.looks.begin(); it != state.looks.end();)
+				{
+					if (it->value != identity)
+					{
+						++it;
+						continue;
+					}
+					std::error_code error;
+					if (std::filesystem::exists(file_for(*it), error))
+						it = state.looks.erase(it);
+					else
+					{
+						state.saving.push_back(*it);
+						it = state.looks.erase(it);
+					}
+				}
+				if (!state.saving.empty())
+				{
+					state.side = side;
+					// Wait for the fade only while the player stays neutral. The countdown already keeps online poses neutral.
+					state.after_flip = custom_photo::pending.latest_flip() + (mode == 10 ? 120 : 0);
+					return;
+				}
+			}
+			state.pose.finish();
+		}
 		void finish(ppu_thread& ppu, trial& state, const char* reason, bool capture)
 		{
 			state.finished = true;
-			custom_photo::pending.cancel(state.photo_ticket);
 			trial_word.store(0, std::memory_order_release);
 			std::optional<custom_look::look> look;
 			std::array<u8, custom_look::blocks_size> blocks{};
@@ -96,17 +239,15 @@ namespace pbd::custom_editor
 					restored = span.restore() && restored;
 			const auto text = fmt::format("{\"schema\":\"pbd-customize-trial-1\",\"reason\":%s,\"row\":%u,\"look\":%s,\"save_unchanged\":%s,\"card_and_select_restored\":%s,\"photo_written\":%s,\"overlays_included\":false}\n",
 				json::quoted(reason), state.row, look ? json::quoted(custom_wire::hex(custom_wire::pack(*look))) : std::string("null"),
-				unchanged ? "true" : "false", restored ? "true" : "false", state.photo_written ? "true" : "false");
+				unchanged ? "true" : "false", restored ? "true" : "false", "false");
 			if (state.protocol)
 			{
 				const bool safe = capture && look && unchanged && restored;
-				// A portrait needs a reset preview pose. Until that reset is available, saved slots use their numbered outlines.
+				// EXIT saves to the requested slot before closing; pictures come from the first time the look is worn.
 				const auto text = custom_files::result(state.request.value_or(custom_files::customize{}),
-					safe ? "saved" : state.cancelled ? "cancelled" :
-													   "unavailable",
-					state.panel.slot(), look, false);
+					safe ? "saved" : "unavailable",
+					state.request ? state.request->slot : 0, look, false);
 				const bool written = custom_files::commit_result(state.output, text);
-				costume_panel::publish({state.generation});
 				pbd_custom_editor_log.notice("Customize result: %s; save unchanged %u; restored %u; result written %u", reason, unchanged, restored, written);
 				ppu.state += cpu_flag::exit;
 				Emu.CallFromMainThread([]
@@ -129,17 +270,49 @@ namespace pbd::custom_editor
 		}
 	} // namespace
 
+	bool suppress_profile_paint(ppu_thread& ppu, u32 address) noexcept
+	{
+		if (!session_mode::customize() || !blocks_saves(static_cast<u64>(Emu.GetEmulationIdentifier())) || Emu.GetUsrId() != 3 ||
+			ppu.id != t5dr::main_ppu_id || practice::native::word(t5dr::game_mode_address) != 4 ||
+			practice::native::word(t5dr::scene_address) != 3 || practice::native::word(t5dr::subscene_address) != 44 ||
+			!hidden_selection::pinned_binary())
+			return false;
+		if (select_rank_sprite(address, static_cast<u32>(ppu.lr)) &&
+			practice::native::word(address) == 0x38000070 && practice::native::word(address + 4) == 0xf821ff31)
+		{
+			// The select's card-present branch sets sprite+0x9c to one at 0x113998; its absent-card branch sets zero.
+			// Keep the resource update and only hide this select sprite, leaving the shop's preview tasks running.
+			put_word(static_cast<u32>(ppu.gpr[3]) + 0x9c, 0);
+		}
+		return (address == profile_draws[0] && practice::native::word(address) == 0x380000b0 &&
+				   practice::native::word(address + 4) == 0xf821fed1) ||
+		       (address == profile_draws[1] && practice::native::word(address) == 0x38000190 &&
+				   practice::native::word(address + 4) == 0xf821fdd1);
+	}
+
 	bool trial_boundary(ppu_thread& ppu, u32 address) noexcept
 	{
 		if (address != t5dr::boundary_pc || ppu.id != t5dr::main_ppu_id || practice::native::in_native_call())
 			return true;
 		try
 		{
+			practice_costume::boundary(ppu, static_cast<u64>(Emu.GetEmulationIdentifier()));
+			static thread_local u64 picture_failed = 0;
+			const auto picture_generation = static_cast<u64>(Emu.GetEmulationIdentifier());
+			if (picture_failed != picture_generation)
+				try
+				{
+					capture_worn_picture(ppu, picture_generation);
+				}
+				catch (...)
+				{
+					picture_failed = picture_generation;
+					pbd_custom_editor_log.warning("First-use picture unavailable; play continues.");
+				}
 			static thread_local trial state;
 			const auto generation = static_cast<u64>(Emu.GetEmulationIdentifier());
 			if (state.generation != generation)
 			{
-				custom_photo::pending.cancel(state.photo_ticket);
 				state = {};
 				state.generation = generation;
 				save_blocked.store(false, std::memory_order_release);
@@ -189,59 +362,13 @@ namespace pbd::custom_editor
 				Emu.GetUsrId(), practice::native::word(t5dr::game_mode_address), practice::native::word(t5dr::scene_address),
 				practice::native::word(t5dr::subscene_address), practice::native::byte(0x10093f78),
 				practice::native::byte(0x10093f79), practice::native::word(0x10538e38)};
-			if (state.protocol && state.panel.open() && !state.photo_ticket)
+			// Keep the stock select timer from closing a look while its player is editing.
+			if (!put_word(0x10094050, 3600))
 			{
-				if (!admissible(value) || !put_word(0x10538e38, 4))
-				{
-					finish(ppu, state, "customize_save_context_changed", false);
-					return true;
-				}
-				const auto decision = state.panel.step(pbd_local_pad_word());
-				if (decision == save_action::save || decision == save_action::discard)
-				{
-					state.cancelled = decision == save_action::discard;
-					finish(ppu, state, state.cancelled ? "customize_cancelled" : "customize_saved", !state.cancelled);
-				}
-				else if (decision == save_action::keep_editing)
-				{
-					state.saved_look.reset();
-					state.photo_written = false;
-					state.steps.resume();
-					trial_pad.store(false, std::memory_order_release);
-					costume_panel::publish({generation});
-				}
-				else
-					costume_panel::publish_editor(generation, state.panel);
+				finish(ppu, state, "customize_timer_unavailable", false);
 				return true;
 			}
-			if (state.photo_ticket)
-			{
-				if (!admissible(value) || ++state.photo_wait > 600)
-					finish(ppu, state, "editor_photo_timeout_or_context_changed", false);
-				else if (auto photo = custom_photo::pending.take(state.photo_ticket))
-				{
-					const auto png = custom_photo::encode_png(state.protocol ? custom_photo::portrait(*photo) : *photo);
-					const auto folder = state.protocol ? state.request->picture_dir : state.output.parent_path();
-					std::error_code ec;
-					std::filesystem::create_directories(folder, ec);
-					const auto path = (folder / (state.protocol ? "photo.png" : "editor-photo.png")).u8string();
-					fs::file file(std::string(path.begin(), path.end()), fs::write_new + fs::isfile);
-					state.photo_written = !png.empty() && png.size() <= custom_files::picture_limit && file && file.write(png.data(), png.size()) == png.size();
-					file.close();
-					if (state.protocol)
-					{
-						state.photo_ticket = 0;
-						state.panel.photo_ready(true);
-						costume_panel::publish_editor(generation, state.panel);
-					}
-					else
-						finish(ppu, state, state.photo_written ? "shop_exit_captured" : "editor_photo_write_failed", true);
-				}
-				else if (!put_word(0x10538e38, 4))
-					finish(ppu, state, "editor_photo_hold_failed", false);
-				return true;
-			}
-			const auto next = state.steps.step(value);
+			const auto next = state.steps.step(value, state.protocol ? pbd_local_pad_word() : 0);
 			if (next == action::refuse)
 			{
 				finish(ppu, state, "editor_context_or_transition_refused", false);
@@ -280,23 +407,18 @@ namespace pbd::custom_editor
 					state.row = practice::native::word(0x10093f50);
 					if (vm::try_access(custom_look::record_address(0), blocks.data(), blocks.size(), false))
 						state.saved_look = custom_look::read_record(blocks, state.row);
-					if (!state.saved_look || custom_look::catalogue_row(state.row)->fighter != custom_look::catalogue_row(state.request->start.row)->fighter ||
-						!state.panel.begin(state.request->slot, state.request->filled) || !put_byte(0x10093f78, 6) || !put_byte(0x10093f79, 6))
+					const auto* row = custom_look::catalogue_row(state.row);
+					const auto* base = custom_look::catalogue_row(state.request->start.row);
+					if (!state.saved_look || !row || !base || row->fighter != base->fighter)
 					{
 						finish(ppu, state, "customize_look_unavailable", false);
 						return true;
 					}
-					costume_panel::publish_editor(generation, state.panel);
 				}
-				// Hold the stock item view and its controller while two new guest flips retire the menu transition.
-				trial_pad.store(true, std::memory_order_release);
-				trial_word.store(0, std::memory_order_release);
-				state.photo_wait = 0;
-				state.photo_ticket = custom_photo::pending.request(generation, custom_photo::pending.latest_flip() + 2);
-				if (!state.photo_ticket || !put_word(0x10538e38, 4))
-					finish(ppu, state, "editor_photo_request_failed", false);
+				finish(ppu, state, "customize_saved", true);
+				return true;
 			}
-			if (!state.finished && !state.photo_ticket && state.exercise_frame && trial_pad.load(std::memory_order_acquire))
+			if (!state.finished && state.exercise_frame && trial_pad.load(std::memory_order_acquire))
 				trial_word.store(exercise_word(++*state.exercise_frame), std::memory_order_release);
 			if (value.shop != state.logged_shop)
 			{
@@ -312,3 +434,149 @@ namespace pbd::custom_editor
 		}
 	}
 } // namespace pbd::custom_editor
+
+namespace pbd::practice_costume
+{
+	namespace
+	{
+		struct runtime
+		{
+			std::mutex mutex;
+			u64 generation = 0;
+			bool selecting = false, written = false, files_read = false;
+			std::array<costume_select::row, 2> menus;
+			std::array<std::optional<costume_select::card>, 2> picks;
+			costume_select::confirm_release confirmation;
+			custom_files::practice files;
+		};
+		runtime current;
+		void reset(u64 generation)
+		{
+			current.generation = generation;
+			current.selecting = current.written = current.files_read = false;
+			current.menus = {};
+			current.picks = {};
+			current.confirmation = {};
+			current.files = {};
+		}
+	} // namespace
+
+	std::optional<u16> select_word(u32 port, u16 raw) noexcept
+	{
+		if (port != 0 || !practice::requested() || !custom_wire::enabled() ||
+			practice::native::word(t5dr::game_mode_address) != 10 || practice::native::word(t5dr::scene_address) != 3)
+			return {};
+		try
+		{
+			std::lock_guard lock(current.mutex);
+			const auto generation = static_cast<u64>(Emu.GetEmulationIdentifier());
+			if (current.generation != generation)
+				reset(generation);
+			const bool held = current.confirmation.holds(raw);
+			if (held)
+				raw = 0;
+			const auto tables = hidden_selection::read_native_tables();
+			if (!tables)
+				return {};
+			for (u32 side = 0; side < 2; ++side)
+			{
+				const auto seen = hidden_selection::read_native_observation(side);
+				if (!seen || seen->mode != 10 || seen->scene != 3 || seen->state != 3 || seen->pad_role != port)
+					continue;
+				current.selecting = true;
+				if ((raw & costume_select::square) && !current.menus[side].open())
+				{
+					current.files_read = true;
+					current.files = custom_files::read_practice(env::path("PBD_MENU_CHANNEL") / "practice-looks.json");
+					const auto pictured = std::count_if(current.files.labels.begin(), current.files.labels.end(), [](const auto& label)
+						{
+							return !label.picture.empty();
+						});
+					pbd_custom_editor_log.notice("Practice costume pictures: %u loaded from %u labels.", pictured, current.files.labels.size());
+				}
+				auto& menu = current.menus[side];
+				const auto customs = custom_wire::choices(current.files.table, seen->base_character);
+				const auto chosen = menu.step(*tables, *seen, raw, customs);
+				if (chosen.picked)
+				{
+					current.picks[side] = chosen.picked;
+					current.confirmation.consume();
+				}
+				if (chosen.controller_setup)
+					settings_menu::request_controls_open(controllers::read_display().device);
+				auto view = costume_panel::compose(generation, side, menu);
+				for (auto& card : view.cards)
+					for (const auto& label : current.files.labels)
+						if (label.row == card.look.row && label.slot == (card.slot ? *card.slot + 1 : 0))
+						{
+							card.display_name = label.name;
+							card.picture = label.picture;
+						}
+				costume_panel::publish(std::move(view));
+				return chosen.word.value_or(raw);
+			}
+			costume_panel::publish({generation});
+			if (held)
+				return u16{0};
+		}
+		catch (...)
+		{
+			pbd_custom_editor_log.warning("Practice costume selection unavailable; stock input continues.");
+		}
+		return {};
+	}
+
+	void boundary(ppu_thread& ppu, u64 generation) noexcept
+	{
+		if (!practice::requested() || !custom_wire::enabled())
+			return;
+		try
+		{
+			std::lock_guard lock(current.mutex);
+			if (current.generation != generation)
+				reset(generation);
+			if (!practice::native::boundary_readable(ppu))
+				return;
+			if (practice::native::word(t5dr::game_mode_address) != 10)
+			{
+				reset(generation);
+				costume_panel::publish({generation});
+				return;
+			}
+			const u32 scene = practice::native::word(t5dr::scene_address);
+			if (scene == 3 && !current.selecting)
+			{
+				reset(generation);
+				current.selecting = true;
+			}
+			if (scene == 2 && current.selecting && !current.written)
+			{
+				current.written = true;
+				for (u32 side = 0; side < 2; ++side)
+				{
+					const u32 row = practice::native::word(0x10093f50 + side * 4);
+					const auto* base = custom_look::catalogue_row(row);
+					if (!base || !current.picks[side])
+						continue;
+					const auto wanted = current.picks[side]->look.row == row ? current.picks[side]->look : custom_look::look{row};
+					std::array<u8, custom_look::blocks_size> saved{}, held{};
+					bool written = vm::try_access(custom_look::save_blocks_address(base->fighter), saved.data(), saved.size(), false);
+					auto blocks = custom_look::record_blocks(saved, wanted);
+					written = written && vm::try_access(custom_look::record_address(side), blocks.data(), blocks.size(), true) &&
+					          vm::try_access(custom_look::record_address(side), held.data(), held.size(), false) && held == blocks;
+					pbd_custom_editor_log.notice("Practice select costume: side %u row %u slot %u written %u", side, row,
+						current.picks[side]->slot ? *current.picks[side]->slot + 1 : 0, written);
+				}
+			}
+			if (scene != 3)
+				costume_panel::publish({generation});
+			// Stock Practice visits selector exit scenes 4 and 5 before its resource scene. Keep the pick through them.
+			if (scene == 17)
+				current.selecting = false;
+		}
+		catch (...)
+		{
+			pbd_custom_editor_log.warning("Practice costume card unavailable; play continues.");
+		}
+	}
+} // namespace pbd::practice_costume

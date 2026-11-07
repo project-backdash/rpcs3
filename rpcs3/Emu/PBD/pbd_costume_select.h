@@ -19,6 +19,26 @@ namespace pbd::costume_select
 	inline constexpr u16 reserved = cross | square | circle | triangle | l1 | r1 | start;
 	inline constexpr u32 custom_slots = 10;
 
+	// Practice moves one physical pad from the player to the dummy and then the stage. A confirmation belongs only to
+	// the choice that emitted it; every later read is neutral until that physical press has been released.
+	class confirm_release
+	{
+		bool m_waiting = false;
+
+	public:
+		void consume() noexcept
+		{
+			m_waiting = true;
+		}
+		bool holds(u16 raw) noexcept
+		{
+			if (!m_waiting)
+				return false;
+			m_waiting = raw != 0;
+			return true;
+		}
+	};
+
 	struct card
 	{
 		custom_look::look look;

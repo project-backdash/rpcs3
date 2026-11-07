@@ -530,6 +530,7 @@ void VKGSRender::frame_context_cleanup(vk::frame_context_t *ctx)
 	else
 	{
 		pbd_black_probe_resolve(ctx);
+		pbd_photo_resolve(ctx);
 		pbd_screen_check_resolve(ctx);
 		clips_resolve(ctx);
 	}
@@ -582,6 +583,56 @@ void VKGSRender::frame_context_cleanup(vk::frame_context_t *ctx)
 	}
 
 	vk::advance_completed_frame_counter();
+}
+
+// Copy before overlays and read only after the ordinary frame fence completes, without a queue flush or device wait.
+void VKGSRender::pbd_photo_record(vk::image* image, u32 width, u32 height, u64 ticket, u64 generation, u64 flip)
+{
+	if (!m_current_frame || m_frame_context_storage.empty() || !image || !width || !height || width > 4096 || height > 4096 ||
+		(image->format() != VK_FORMAT_B8G8R8A8_UNORM && image->format() != VK_FORMAT_R8G8B8A8_UNORM))
+	{
+		::pbd::custom_photo::pending.deliver(ticket, generation, flip, {}, 0, 0, false, false);
+		return;
+	}
+	const auto index = static_cast<usz>(m_current_frame - m_frame_context_storage.data());
+	if (index >= m_frame_context_storage.size()) return;
+	m_pbd_photo_slots.resize(m_frame_context_storage.size());
+	auto& slot = m_pbd_photo_slots[index];
+	if (slot.ticket) return;
+	const u64 size = u64{width} * height * 4;
+	slot.buffer = std::make_unique<vk::buffer>(*m_device, size, m_device->get_memory_mapping().host_visible_coherent,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_BUFFER_USAGE_TRANSFER_DST_BIT, 0, VMM_ALLOCATION_POOL_UNDEFINED);
+	slot.ticket = ticket;
+	slot.generation = generation;
+	slot.flip = flip;
+	slot.width = width;
+	slot.height = height;
+	slot.bgra = image->format() == VK_FORMAT_B8G8R8A8_UNORM;
+	VkBufferImageCopy copy{};
+	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.imageSubresource.layerCount = 1;
+	copy.imageExtent = {width, height, 1};
+	image->push_layout(*m_current_command_buffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	vk::copy_image_to_buffer(*m_current_command_buffer, image, slot.buffer.get(), copy);
+	vk::insert_buffer_memory_barrier(*m_current_command_buffer, slot.buffer->value, 0, size, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
+	image->pop_layout(*m_current_command_buffer);
+}
+
+void VKGSRender::pbd_photo_resolve(vk::frame_context_t* ctx)
+{
+	if (m_pbd_photo_slots.empty() || m_frame_context_storage.empty()) return;
+	const auto index = static_cast<usz>(ctx - m_frame_context_storage.data());
+	if (index >= m_pbd_photo_slots.size()) return;
+	auto& slot = m_pbd_photo_slots[index];
+	if (!slot.ticket || !slot.buffer) return;
+	const u64 size = u64{slot.width} * slot.height * 4;
+	const auto* bytes = static_cast<const u8*>(slot.buffer->map(0, size));
+	::pbd::custom_photo::pending.deliver(slot.ticket, slot.generation, slot.flip,
+		bytes ? std::span<const u8>(bytes, size) : std::span<const u8>{}, slot.width, slot.height, slot.bgra, bytes != nullptr);
+	if (bytes) slot.buffer->unmap();
+	slot.ticket = 0;
+	slot.buffer.reset();
 }
 
 void VKGSRender::pbd_black_probe_record(const rsx::display_flip_info_t& info, vk::viewable_image* image, u32 w, u32 h, u64 flip)
@@ -1172,7 +1223,8 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 	const bool pbd_target_capture = info.emu_flip && ::pbd::frame_presentation::target_capture::get().wants_frame(pbd_flip, info.pbd_token);
 	const u64 pbd_photo_generation = static_cast<u64>(Emu.GetEmulationIdentifier());
 	const u64 pbd_photo_ticket = info.emu_flip ? ::pbd::custom_photo::pending.wants_frame(pbd_photo_generation, pbd_flip) : 0;
-	const bool need_media_capture = user_asked_for_screenshot || user_is_recording || pbd_capture || pbd_identity_capture || pbd_target_capture || pbd_photo_ticket;
+	if (pbd_photo_ticket) pbd_photo_record(image_to_flip, buffer_width, buffer_height, pbd_photo_ticket, pbd_photo_generation, pbd_flip);
+	const bool need_media_capture = user_asked_for_screenshot || user_is_recording || pbd_capture || pbd_identity_capture || pbd_target_capture;
 
 	const auto render_overlays = [&](vk::framebuffer_holder* fbo, const areau& area, bool capture)
 	{
@@ -1215,8 +1267,8 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 
 		vk::image* image_to_copy = image_to_flip;
 
-		const bool asynchronous = user_is_recording && m_frame->asynchronous_capture() && !user_asked_for_screenshot && !pbd_capture && !pbd_identity_capture && !pbd_target_capture && !pbd_photo_ticket;
-		if (!pbd_capture && !pbd_identity_capture && !pbd_target_capture && !pbd_photo_ticket && (g_cfg.video.record_with_overlays || asynchronous) && has_overlay)
+		const bool asynchronous = user_is_recording && m_frame->asynchronous_capture() && !user_asked_for_screenshot && !pbd_capture && !pbd_identity_capture && !pbd_target_capture;
+		if (!pbd_capture && !pbd_identity_capture && !pbd_target_capture && (g_cfg.video.record_with_overlays || asynchronous) && has_overlay)
 		{
 			const auto key = vk::get_renderpass_key(m_swapchain->get_surface_format());
 			single_target_pass = vk::get_renderpass(*m_device, key);
@@ -1272,7 +1324,7 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 		image_to_copy->push_layout(*m_current_command_buffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 		vk::copy_image_to_buffer(*m_current_command_buffer, image_to_copy, &sshot_vkbuf, copy_info);
 		// PBD: make the transfer write available to the host read below (coherence removes only the invalidate).
-		if (pbd_identity_capture || pbd_target_capture || pbd_photo_ticket)
+		if (pbd_identity_capture || pbd_target_capture)
 			vk::insert_buffer_memory_barrier(*m_current_command_buffer, sshot_vkbuf.value, 0, sshot_size, VK_PIPELINE_STAGE_TRANSFER_BIT,
 				VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
 		image_to_copy->pop_layout(*m_current_command_buffer);
@@ -1289,9 +1341,6 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 		sshot_vkbuf.unmap();
 
 		const bool is_bgra = image_to_copy->format() == VK_FORMAT_B8G8R8A8_UNORM;
-		if (pbd_photo_ticket)
-			::pbd::custom_photo::pending.deliver(pbd_photo_ticket, pbd_photo_generation, pbd_flip, sshot_frame,
-				buffer_width, buffer_height, is_bgra, pbd_fence == VK_SUCCESS && (is_bgra || image_to_copy->format() == VK_FORMAT_R8G8B8A8_UNORM));
 		if (pbd_identity_capture && ::pbd::frame_presentation::queue_tags_enabled())
 			::pbd::frame_presentation::tag_trace::get().token_state("readback_complete", info.pbd_token, pbd_flip,
 				pbd_fence == VK_SUCCESS ? "captured" : "fence_failed", buffer_width, buffer_height, buffer_pitch, buffer_width * 4,

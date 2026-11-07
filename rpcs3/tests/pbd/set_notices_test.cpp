@@ -351,6 +351,10 @@ PBD_TEST(PbdSetNotices, LayoutOnTheCanvas)
 	// Rows stack on the row pitch under each headline, never into the prompts.
 	for (const float rows_top : {at::between_rows_top, at::confirm_rows_top, at::result_rows_top, at::placing_rows_top, at::rank_rows_top})
 		check(rows_top + 3.f * at::row_h < at::prompt_y - 20.f);
+	// The loser's four choices have separate option/caption lines and leave room for help above the footer.
+	check(at::row_detail_y - at::row_label_y >= 20.f && at::row_detail_y + 9.f < at::row_h);
+	check(at::between_rows_top + 4.f * at::row_h + 50.f < at::prompt_y - 20.f);
+	check(at::menu_x + at::row_w < 640.f - 40.f);
 }
 
 // The hand-off: once the lobby ends the set, this emulation's picture fades to black over 0.3 s; another emulation (the game

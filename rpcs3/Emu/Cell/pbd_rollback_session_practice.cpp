@@ -304,56 +304,13 @@ void pbd::rollback_session::boundary_call::practice_slot_moves_refresh()
 }
 
 // Held Practice menus and release waits leave selection input neutral.
-u16 pbd::rollback_session::boundary_call::practice_select_word(u32 port, u16 raw)
+u16 pbd::rollback_session::boundary_call::practice_select_word(u32, u16 raw)
 {
 	const bool held = data.practice.menu.open || data.practice.dummy.state == dummy_state::confirm ||
 	                  data.practice.dummy.ignore_until_release || data.takeover.ignore_pad_until_release ||
 	                  data.practice.restart.reset_request.has_value();
 	if (held)
 		return 0;
-	if (port != 0 || !pbd::custom_wire::enabled())
-		return raw;
-	auto* memory = session_runtime.m_practice_memory.get();
-	if (!memory)
-		return raw;
-	if (!memory->tables)
-		memory->tables = pbd::hidden_selection::read_native_tables();
-	if (!memory->tables)
-		return raw;
-	for (u32 side = 0; side < 2; ++side)
-	{
-		const auto seen = pbd::hidden_selection::read_native_observation(side);
-		if (!seen || seen->mode != 10 || seen->scene != 3 || seen->state != 3 || seen->pad_role != port)
-		{
-			data.practice.costume_rows[side].step(*memory->tables, {}, 0);
-			continue;
-		}
-		auto& menu = data.practice.costume_rows[side];
-		if (!data.practice.costumes_read && (raw & pbd::costume_select::square))
-		{
-			data.practice.costumes_read = true;
-			data.practice.costume_files = pbd::custom_files::read_practice(data.game_overlay.dir / "practice-looks.json");
-		}
-		const auto customs = pbd::custom_wire::choices(data.practice.costume_files.table, seen->base_character);
-		const auto chosen = menu.step(*memory->tables, *seen, raw, customs);
-		if (chosen.controller_setup)
-			pbd::settings_menu::request_controls_open(pbd::controllers::read_display().device);
-		if (chosen.picked)
-			data.practice.costume_picks[side] = chosen.picked;
-		auto view = pbd::costume_panel::compose(data.generation, side, menu);
-		for (auto& card : view.cards)
-			if (card.slot)
-				for (const auto& label : data.practice.costume_files.labels)
-					if (label.row == card.look.row && label.slot == *card.slot + 1)
-					{
-						card.display_name = label.name;
-						card.picture = label.picture;
-						break;
-					}
-		pbd::costume_panel::publish(std::move(view));
-		return chosen.word.value_or(raw);
-	}
-	pbd::costume_panel::publish({data.generation});
 	return raw;
 }
 
@@ -372,39 +329,6 @@ void pbd::rollback_session::practice_steps::memory_boundary()
 	if (!memory)
 		return;
 	u32 scene = 0;
-	if (pbd::custom_wire::enabled() && read_word(pbd::t5dr::scene_address, scene))
-	{
-		if (scene == 3 && !data.practice.costume_selecting)
-		{
-			data.practice.costume_selecting = true;
-			data.practice.costumes_written = data.practice.costumes_read = false;
-			data.practice.costume_picks = {};
-			data.practice.costume_files = {};
-		}
-		if (scene == 2 && data.practice.costume_selecting && !data.practice.costumes_written)
-		{
-			data.practice.costumes_written = true;
-			for (u32 side = 0; side < 2; ++side)
-			{
-				u32 row = 0;
-				if (!read_word(0x10093f50 + side * 4, row) || row >= 84 || !data.practice.costume_picks[side])
-					continue;
-				auto wanted = data.practice.costume_picks[side]->look;
-				if (wanted.row != row)
-					wanted = pbd::custom_look::look{row};
-				std::array<u8, pbd::custom_look::blocks_size> saved{};
-				if (vm::try_access(pbd::custom_look::save_blocks_address(pbd::custom_look::catalogue_row(row)->fighter), saved.data(), saved.size(), false))
-				{
-					auto blocks = pbd::custom_look::record_blocks(saved, wanted);
-					vm::try_access(pbd::custom_look::record_address(side), blocks.data(), blocks.size(), true);
-				}
-			}
-		}
-		if (scene != 3)
-			data.practice.costume_selecting = false;
-	}
-	if (read_word(pbd::t5dr::scene_address, scene) && scene != 3)
-		pbd::costume_panel::publish({data.generation});
 	recording_set_poll();
 	if (!memory->tables && read_word(pbd::t5dr::scene_address, scene) && scene == 3)
 		memory->tables = pbd::hidden_selection::read_native_tables();

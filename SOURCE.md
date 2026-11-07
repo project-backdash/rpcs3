@@ -11,11 +11,11 @@ to PROJECT BACKDASH, not to RPCS3.
 
 - Upstream: RPCS3 commit [`028d1e8f4a42df2292cdbcd35e540c9e71fc47aa`](https://github.com/RPCS3/rpcs3/commit/028d1e8f4a42df2292cdbcd35e540c9e71fc47aa) (2026-09-10, "Fix some VFS issues - #19378"), unchanged,
   as a source base; snapshot preparation fetches it shallowly and includes no private repository history.
-- Changes on top of it: 742 files (622 added, 114 changed, 6 deleted, 0 renamed), 156119 lines added and 1057 removed,
+- Changes on top of it: 742 files (622 added, 114 changed, 6 deleted, 0 renamed), 157024 lines added and 1057 removed,
   not counting this file. Line counts describe the recorded native revision; exported build adapters may differ.
-- Emulator source revision: `e4e91a16c6f6fbe59c31afd6d2acc322dc07cb6a`.
+- Emulator source revision: `b4dd8cf1e373fab194797ee18f316fee76469724`.
 - This release snapshot retains public build support and documentation, with PBD C++ formatting.
-- Release build: Project Backdash 0.61.10, `rpcs3.exe` SHA-256 `0628e5ca8910d79c3c9faa434304983211c461c9d8804af232dc3c4b0f3b1711`.
+- Release build: Project Backdash 0.62.0, `rpcs3.exe` SHA-256 `a8cdbbd9a1da359c955da3720043a043e78b2646d78c0d11726a034bf28b5a43`.
 
 ## The GPL source in the installer
 
@@ -72,7 +72,7 @@ The game's frame boundary, input delay, checkpoints of guest state, restore and 
 | `rpcs3/Emu/Cell/pbd_rollback_session_correction.cpp` | 201 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_lobby.cpp` | 1015 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_peer.cpp` | 477 |
-| `rpcs3/Emu/Cell/pbd_rollback_session_practice.cpp` | 642 |
+| `rpcs3/Emu/Cell/pbd_rollback_session_practice.cpp` | 566 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_practice_controls.cpp` | 539 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_practice_dummy.cpp` | 487 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_practice_menu.cpp` | 371 |
@@ -103,7 +103,7 @@ The game's frame boundary, input delay, checkpoints of guest state, restore and 
 | `rpcs3/Emu/PBD/pbd_peer_message.h` | 444 |
 | `rpcs3/Emu/PBD/pbd_session_start.h` | 72 |
 | `rpcs3/Emu/PBD/pbd_t5dr_memory.h` | 292 |
-| `rpcs3/Emu/pbd_session_mode.h` | 55 |
+| `rpcs3/Emu/pbd_session_mode.h` | 73 |
 
 ### Input
 
@@ -114,7 +114,7 @@ Scripted and live controller input, controller takeover, and the hidden characte
 | `rpcs3/Emu/Cell/Modules/pbd_input_live.h` | 567 |
 | `rpcs3/Emu/Cell/Modules/pbd_input_script.h` | 202 |
 | `rpcs3/Emu/Cell/Modules/pbd_input_script_runtime.h` | 67 |
-| `rpcs3/Emu/Cell/Modules/pbd_pad_read.cpp` | 668 |
+| `rpcs3/Emu/Cell/Modules/pbd_pad_read.cpp` | 681 |
 | `rpcs3/Emu/Cell/Modules/pbd_pad_read.h` | 38 |
 | `rpcs3/Emu/Cell/Modules/pbd_pad_words.cpp` | 83 |
 | `rpcs3/Emu/Cell/pbd_controller_takeover.h` | 240 |
@@ -135,7 +135,7 @@ The channel to the launcher for a set of games, the select countdowns, VS cards,
 
 | File | Lines |
 |---|---|
-| `rpcs3/Emu/Cell/pbd_boot_request.cpp` | 244 |
+| `rpcs3/Emu/Cell/pbd_boot_request.cpp` | 248 |
 | `rpcs3/Emu/Cell/pbd_boot_request.h` | 17 |
 | `rpcs3/Emu/Cell/pbd_direct_match.cpp` | 232 |
 | `rpcs3/Emu/Cell/pbd_direct_match.h` | 119 |
@@ -199,7 +199,7 @@ Practice mode: the dummy's recordings and movement, wall positions, the Practice
 | `rpcs3/Emu/PBD/pbd_practice_menu_rows.cpp` | 287 |
 | `rpcs3/Emu/PBD/pbd_practice_move_list.h` | 193 |
 | `rpcs3/Emu/PBD/pbd_practice_move_observation.cpp` | 149 |
-| `rpcs3/Emu/PBD/pbd_practice_opening.cpp` | 240 |
+| `rpcs3/Emu/PBD/pbd_practice_opening.cpp` | 280 |
 | `rpcs3/Emu/PBD/pbd_practice_option_commands.cpp` | 362 |
 | `rpcs3/Emu/PBD/pbd_practice_pad.h` | 38 |
 | `rpcs3/Emu/PBD/pbd_practice_pad_actions.cpp` | 372 |
@@ -219,7 +219,7 @@ Practice mode: the dummy's recordings and movement, wall positions, the Practice
 | `rpcs3/Emu/PBD/pbd_practice_sets.cpp` | 171 |
 | `rpcs3/Emu/PBD/pbd_practice_sets.h` | 340 |
 | `rpcs3/Emu/PBD/pbd_practice_stage.h` | 114 |
-| `rpcs3/Emu/PBD/pbd_practice_start.h` | 155 |
+| `rpcs3/Emu/PBD/pbd_practice_start.h` | 164 |
 | `rpcs3/Emu/PBD/pbd_practice_startup.h` | 74 |
 | `rpcs3/Emu/PBD/pbd_practice_store.h` | 222 |
 | `rpcs3/Emu/PBD/pbd_practice_store_codec.h` | 454 |
@@ -311,9 +311,9 @@ The in-game menus, the netplay stats block, in-game settings, the player's volum
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_lobby_set_overlay.cpp` | 448 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_menu_overlay.cpp` | 123 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_overlay_canvas.h` | 409 |
-| `rpcs3/Emu/RSX/Overlays/pbd/pbd_overlays.cpp` | 162 |
+| `rpcs3/Emu/RSX/Overlays/pbd/pbd_overlays.cpp` | 165 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_overlays.h` | 237 |
-| `rpcs3/Emu/RSX/Overlays/pbd/pbd_settings_overlay.cpp` | 365 |
+| `rpcs3/Emu/RSX/Overlays/pbd/pbd_settings_overlay.cpp` | 368 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_spectator_overlay.cpp` | 474 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_status_overlay.cpp` | 471 |
 | `rpcs3/Emu/RSX/Utils/pbd_render_scale.h` | 44 |
@@ -332,9 +332,9 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/controller_takeover_test.cpp` | 124 |
 | `rpcs3/tests/pbd/corner_chat_test.cpp` | 66 |
 | `rpcs3/tests/pbd/correction_journal_test.cpp` | 422 |
-| `rpcs3/tests/pbd/costume_select_test.cpp` | 178 |
-| `rpcs3/tests/pbd/custom_look_test.cpp` | 559 |
-| `rpcs3/tests/pbd/custom_online_test.cpp` | 256 |
+| `rpcs3/tests/pbd/costume_select_test.cpp` | 231 |
+| `rpcs3/tests/pbd/custom_look_test.cpp` | 681 |
+| `rpcs3/tests/pbd/custom_online_test.cpp` | 318 |
 | `rpcs3/tests/pbd/direct_fallback_test.cpp` | 165 |
 | `rpcs3/tests/pbd/env_parse_test.cpp` | 111 |
 | `rpcs3/tests/pbd/env_test.cpp` | 113 |
@@ -434,15 +434,15 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/session_policy_test.cpp` | 47 |
 | `rpcs3/tests/pbd/session_start_test.cpp` | 149 |
 | `rpcs3/tests/pbd/set_channel_parser_audit_test.cpp` | 80 |
-| `rpcs3/tests/pbd/set_channel_test.cpp` | 1583 |
-| `rpcs3/tests/pbd/set_notices_test.cpp` | 480 |
+| `rpcs3/tests/pbd/set_channel_test.cpp` | 1586 |
+| `rpcs3/tests/pbd/set_notices_test.cpp` | 484 |
 | `rpcs3/tests/pbd/settings_menu_test.cpp` | 903 |
 | `rpcs3/tests/pbd/setup_digest_test.cpp` | 179 |
 | `rpcs3/tests/pbd/shader_build_test.cpp` | 241 |
 | `rpcs3/tests/pbd/skip_guard_test.cpp` | 119 |
 | `rpcs3/tests/pbd/sound_options_test.cpp` | 161 |
 | `rpcs3/tests/pbd/spectator_channel_model.h` | 198 |
-| `rpcs3/tests/pbd/spectator_channel_test.cpp` | 1094 |
+| `rpcs3/tests/pbd/spectator_channel_test.cpp` | 1091 |
 | `rpcs3/tests/pbd/spectator_packet_random_test.cpp` | 177 |
 | `rpcs3/tests/pbd/spectator_parser_audit_test.cpp` | 175 |
 | `rpcs3/tests/pbd/spectator_presentation_checks.h` | 190 |
@@ -471,7 +471,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `KNOWN-DEBT.md` | 22 |
 | `README.rpcs3.md` | 48 |
 | `Utilities/pbd_stage_names_gen.mjs` | 79 |
-| `docs/custom-costume-compatibility.md` | 32 |
+| `docs/custom-costume-compatibility.md` | 60 |
 | `docs/design/game-hosting.md` | 71 |
 | `docs/design/game-start-capsule.md` | 102 |
 | `docs/design/native-network-recovery.md` | 48 |
@@ -522,13 +522,13 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/Cell/pbd_ppu_object_name.h` | 254 |
 | `rpcs3/Emu/Cell/pbd_search_badge.h` | 243 |
 | `rpcs3/Emu/Cell/pbd_versus.h` | 596 |
-| `rpcs3/Emu/Cell/pbd_versus_native.cpp` | 269 |
+| `rpcs3/Emu/Cell/pbd_versus_native.cpp` | 347 |
 | `rpcs3/Emu/Cell/pbd_versus_native.h` | 24 |
 | `rpcs3/Emu/PBD/pbd_anchor_dump.cpp` | 181 |
 | `rpcs3/Emu/PBD/pbd_anchor_dump.h` | 26 |
 | `rpcs3/Emu/PBD/pbd_boot_dispatch.cpp` | 225 |
 | `rpcs3/Emu/PBD/pbd_boot_environment.h` | 25 |
-| `rpcs3/Emu/PBD/pbd_boot_request_state.h` | 198 |
+| `rpcs3/Emu/PBD/pbd_boot_request_state.h` | 205 |
 | `rpcs3/Emu/PBD/pbd_boundary_completion.cpp` | 267 |
 | `rpcs3/Emu/PBD/pbd_boundary_dispatch.cpp` | 352 |
 | `rpcs3/Emu/PBD/pbd_checkpoint_capture.h` | 139 |
@@ -545,15 +545,15 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_correction_execution.cpp` | 98 |
 | `rpcs3/Emu/PBD/pbd_correction_journal.h` | 456 |
 | `rpcs3/Emu/PBD/pbd_correction_memory.cpp` | 194 |
-| `rpcs3/Emu/PBD/pbd_costume_panel.h` | 85 |
-| `rpcs3/Emu/PBD/pbd_costume_select.h` | 185 |
+| `rpcs3/Emu/PBD/pbd_costume_panel.h` | 89 |
+| `rpcs3/Emu/PBD/pbd_costume_select.h` | 205 |
 | `rpcs3/Emu/PBD/pbd_custom_catalogue.h` | 109 |
-| `rpcs3/Emu/PBD/pbd_custom_editor.cpp` | 314 |
-| `rpcs3/Emu/PBD/pbd_custom_editor.h` | 108 |
-| `rpcs3/Emu/PBD/pbd_custom_files.h` | 186 |
+| `rpcs3/Emu/PBD/pbd_custom_editor.cpp` | 582 |
+| `rpcs3/Emu/PBD/pbd_custom_editor.h` | 126 |
+| `rpcs3/Emu/PBD/pbd_custom_files.h` | 225 |
 | `rpcs3/Emu/PBD/pbd_custom_look.h` | 198 |
-| `rpcs3/Emu/PBD/pbd_custom_photo.cpp` | 31 |
-| `rpcs3/Emu/PBD/pbd_custom_photo.h` | 121 |
+| `rpcs3/Emu/PBD/pbd_custom_photo.cpp` | 139 |
+| `rpcs3/Emu/PBD/pbd_custom_photo.h` | 168 |
 | `rpcs3/Emu/PBD/pbd_custom_save.h` | 126 |
 | `rpcs3/Emu/PBD/pbd_custom_wire.h` | 251 |
 | `rpcs3/Emu/PBD/pbd_direct_replay_configuration.cpp` | 200 |
@@ -575,7 +575,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_fight_timing.h` | 159 |
 | `rpcs3/Emu/PBD/pbd_fighter_side.cpp` | 111 |
 | `rpcs3/Emu/PBD/pbd_freeze_probe.h` | 109 |
-| `rpcs3/Emu/PBD/pbd_function_hook_configuration.cpp` | 443 |
+| `rpcs3/Emu/PBD/pbd_function_hook_configuration.cpp` | 453 |
 | `rpcs3/Emu/PBD/pbd_function_hook_dispatch.cpp` | 259 |
 | `rpcs3/Emu/PBD/pbd_function_hook_event.h` | 55 |
 | `rpcs3/Emu/PBD/pbd_function_hook_gates.cpp` | 325 |
@@ -618,7 +618,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_movement_sequence.h` | 320 |
 | `rpcs3/Emu/PBD/pbd_movement_transitions.h` | 251 |
 | `rpcs3/Emu/PBD/pbd_native_call.h` | 65 |
-| `rpcs3/Emu/PBD/pbd_output_gain.h` | 153 |
+| `rpcs3/Emu/PBD/pbd_output_gain.h` | 157 |
 | `rpcs3/Emu/PBD/pbd_overlay_controls.h` | 291 |
 | `rpcs3/Emu/PBD/pbd_owner_flags.h` | 37 |
 | `rpcs3/Emu/PBD/pbd_peer_auth.h` | 171 |
@@ -695,7 +695,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_set_channel_model.h` | 517 |
 | `rpcs3/Emu/PBD/pbd_set_commands.h` | 407 |
 | `rpcs3/Emu/PBD/pbd_set_event_payload.h` | 200 |
-| `rpcs3/Emu/PBD/pbd_set_notices.h` | 589 |
+| `rpcs3/Emu/PBD/pbd_set_notices.h` | 590 |
 | `rpcs3/Emu/PBD/pbd_set_publication.h` | 158 |
 | `rpcs3/Emu/PBD/pbd_settings_controller.h` | 401 |
 | `rpcs3/Emu/PBD/pbd_settings_input.h` | 250 |
@@ -704,11 +704,11 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_settings_view.h` | 255 |
 | `rpcs3/Emu/PBD/pbd_shader_build.h` | 267 |
 | `rpcs3/Emu/PBD/pbd_spectator_boundary_steps.h` | 298 |
-| `rpcs3/Emu/PBD/pbd_spectator_channel_controls.h` | 361 |
-| `rpcs3/Emu/PBD/pbd_spectator_channel_input.h` | 220 |
+| `rpcs3/Emu/PBD/pbd_spectator_channel_controls.h` | 360 |
+| `rpcs3/Emu/PBD/pbd_spectator_channel_input.h` | 219 |
 | `rpcs3/Emu/PBD/pbd_spectator_channel_model.h` | 410 |
 | `rpcs3/Emu/PBD/pbd_spectator_channel_publication.h` | 187 |
-| `rpcs3/Emu/PBD/pbd_spectator_local_channel.h` | 311 |
+| `rpcs3/Emu/PBD/pbd_spectator_local_channel.h` | 302 |
 | `rpcs3/Emu/PBD/pbd_spectator_standby.h` | 135 |
 | `rpcs3/Emu/PBD/pbd_stage_sync.h` | 73 |
 | `rpcs3/Emu/PBD/pbd_stall_metrics.h` | 208 |
@@ -718,7 +718,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_throw_break_record.h` | 77 |
 | `rpcs3/Emu/PBD/pbd_tick_checkpoint.cpp` | 163 |
 | `rpcs3/Emu/PBD/pbd_tick_entry.cpp` | 463 |
-| `rpcs3/Emu/PBD/pbd_tick_input.cpp` | 449 |
+| `rpcs3/Emu/PBD/pbd_tick_input.cpp` | 452 |
 | `rpcs3/Emu/PBD/pbd_tick_state.cpp` | 217 |
 | `rpcs3/Emu/PBD/pbd_tick_verification.cpp` | 191 |
 | `rpcs3/Emu/PBD/pbd_undo_capture.h` | 247 |
@@ -822,11 +822,11 @@ change with its date.
 | `rpcs3/Emu/RSX/RSXZCULL.cpp` | 6 | 3 |
 | `rpcs3/Emu/RSX/Utils/rsx_utils.h` | 12 | 5 |
 | `rpcs3/Emu/RSX/VK/VKDMA.cpp` | 3 | 0 |
-| `rpcs3/Emu/RSX/VK/VKGSRender.cpp` | 118 | 4 |
-| `rpcs3/Emu/RSX/VK/VKGSRender.h` | 59 | 0 |
+| `rpcs3/Emu/RSX/VK/VKGSRender.cpp` | 119 | 4 |
+| `rpcs3/Emu/RSX/VK/VKGSRender.h` | 69 | 0 |
 | `rpcs3/Emu/RSX/VK/VKOverlays.cpp` | 3 | 2 |
 | `rpcs3/Emu/RSX/VK/VKOverlays.h` | 1 | 1 |
-| `rpcs3/Emu/RSX/VK/VKPresent.cpp` | 620 | 38 |
+| `rpcs3/Emu/RSX/VK/VKPresent.cpp` | 669 | 38 |
 | `rpcs3/Emu/RSX/VK/VKShaderInterpreter.cpp` | 408 | 24 |
 | `rpcs3/Emu/RSX/VK/VKShaderInterpreter.h` | 57 | 1 |
 | `rpcs3/Emu/RSX/VK/vkutils/device.cpp` | 17 | 0 |
