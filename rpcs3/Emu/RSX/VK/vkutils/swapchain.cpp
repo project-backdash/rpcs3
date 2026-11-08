@@ -2,6 +2,7 @@
 #include "swapchain.h"
 #include "Emu/PBD/pbd_presentation_journal.h"
 #include "Emu/PBD/pbd_swapchain_rebuild.h"
+#include "pbd_present_wait.h"
 
 namespace vk
 {
@@ -141,6 +142,7 @@ namespace vk
 		{
 			if (m_vk_swapchain)
 			{
+				pbd::present_wait::tracer::get().retire(m_vk_swapchain);
 				_vkDestroySwapchainKHR(pdev, m_vk_swapchain, nullptr);
 			}
 
@@ -153,6 +155,7 @@ namespace vk
 		if (m_vk_swapchain)
 		{
 			swapchain_images.clear();
+			pbd::present_wait::tracer::get().retire(m_vk_swapchain);
 			_vkDestroySwapchainKHR(dev, m_vk_swapchain, nullptr);
 			m_vk_swapchain = VK_NULL_HANDLE;
 		}
@@ -393,6 +396,7 @@ namespace vk
 		const auto destroy = [this](VkSwapchainKHR swapchain)
 		{
 			swapchain_images.clear();
+			pbd::present_wait::tracer::get().retire(swapchain);
 			_vkDestroySwapchainKHR(dev, swapchain, nullptr);
 		};
 
@@ -421,6 +425,21 @@ namespace vk
 			present.pWaitSemaphores = &semaphore;
 		}
 
-		return _vkQueuePresentKHR(dev.get_present_queue(), &present);
+		// PBD_PRESENT_WAIT_TRACE: each present carries an id the trace waits on until the frame is on screen.
+		VkPresentIdKHR present_id = {};
+		u64 id = 0;
+		if (dev.get_present_wait_support())
+		{
+			id = pbd::present_wait::tracer::get().next_id();
+			present_id.sType = VK_STRUCTURE_TYPE_PRESENT_ID_KHR;
+			present_id.swapchainCount = 1;
+			present_id.pPresentIds = &id;
+			present.pNext = &present_id;
+		}
+
+		const VkResult result = _vkQueuePresentKHR(dev.get_present_queue(), &present);
+		if (id && (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR))
+			pbd::present_wait::tracer::get().presented(m_vk_swapchain, id, pbd::present_wait::now_ns());
+		return result;
 	}
 }

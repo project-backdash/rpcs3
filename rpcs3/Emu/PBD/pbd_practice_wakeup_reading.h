@@ -112,16 +112,27 @@ namespace pbd::practice
 			std::uint32_t entering = 0;
 			out.actionable = direction > 0 && direction <= 0x7fff && cursor > 0 && length <= 0x7fff && cursor <= length &&
 			                 pbd_floor_input_open(owner, allocation, cursor, word, half, true, 0, &entering);
-			bool resting = false;
+			// A thrown fighter lies in the thrower's moves: its floor aliases are the bank that owns the current move.
+			const auto owned = [&](std::uint32_t id)
+			{
+				const auto index = word(owner + 0xac + id * 4);
+				return index < word(owner + 0x1e4) && allocation == word(owner + 0x1e0) + index * 0x4c;
+			};
+			bool resting = false, lying = false;
 			for (const std::uint32_t id : {4u, 5u, 6u, 7u, 8u, 9u, 10u, 11u, 12u, 13u, 14u, 23u})
-				if (alias(id) || entering == id)
+				if (alias(id) || owned(id) || entering == id)
 				{
 					resting = alias(id);
+					lying = true;
 					out.position = (id == 4 || id == 6 || id == 7) ? pbd_ground_position::face_up_feet_toward :
 					               id < 8                          ? pbd_ground_position::face_up_feet_away :
 					                                                 pbd_ground_position::face_down_feet_toward;
 					break;
 				}
+			// The landing move's own open commands are the landing techs: a kick, a punch or a direction there rolls the
+			// fighter as it lands (Quick Roll Up/Down, Quick Roll Back, Spring Forward). Wake-up input waits for the lying move
+			// or the window that enters it, whose commands are the floor's options.
+			out.actionable = out.actionable && lying;
 			// Side rolls and some face-down get-ups keep flag 4. A target of the floor's input commands is a response;
 			// an automatic transition between its resting aliases is not.
 			if (!resting)

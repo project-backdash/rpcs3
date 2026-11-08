@@ -82,9 +82,9 @@ bool pbd::rollback_session::practice_steps::choose_training_setting(u32 row, u32
 	if (data.practice.menu.page == category::practice_settings && data.practice.training_mode == pbd::practice::training_mode::offense &&
 		row == pbd::practice::practice_rows::wakeup)
 	{
-		if (option < pbd::practice::pbd_wakeup_option_count)
+		if (option < pbd::practice::pbd_wakeup_menu.size())
 		{
-			data.practice.reactions.wakeup = static_cast<pbd::practice::pbd_wakeup_option>(option);
+			data.practice.reactions.wakeup = pbd::practice::pbd_wakeup_menu[option];
 			data.practice.reactions.wakeup_control.reset();
 			data.practice.reactions.recording_wakeup.reset();
 			data.practice.reactions.wakeup_suspended = false;

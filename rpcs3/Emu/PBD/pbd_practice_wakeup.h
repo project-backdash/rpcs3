@@ -27,8 +27,26 @@ namespace pbd::practice
 	};
 	inline constexpr std::uint32_t pbd_wakeup_option_count = 15;
 	inline constexpr std::array<std::string_view, pbd_wakeup_option_count> pbd_wakeup_names{
-		"Stand Up", "Stay Down", "Back Roll", "Forward Roll", "Side Roll Up", "Side Roll Down", "Rising Low Kick", "Rising Mid Kick",
-		"Toe Kick", "Spring Kick", "Quick Roll Up", "Quick Roll Down", "Quick Roll Back", "Spring Forward", "Random"};
+		"Stand Up", "Stay Down", "Back Roll", "Forward Roll", "Side Roll to Background", "Side Roll to Foreground",
+		"Rising Low Kick", "Rising Mid Kick", "Toe Kick", "Spring Kick", "Tech Roll to Background", "Tech Roll to Foreground",
+		"Quick Roll Back", "Spring Forward", "Random"};
+	// The menu's rows. The stored values stay the enum's: Quick Roll Back, which Back Roll covers, is no longer offered,
+	// and a saved Quick Roll Back plays Back Roll.
+	inline constexpr std::array<pbd_wakeup_option, pbd_wakeup_option_count - 1> pbd_wakeup_menu{
+		pbd_wakeup_option::stand_up, pbd_wakeup_option::stay_down, pbd_wakeup_option::back_roll, pbd_wakeup_option::forward_roll,
+		pbd_wakeup_option::side_roll_up, pbd_wakeup_option::side_roll_down, pbd_wakeup_option::rising_low_kick,
+		pbd_wakeup_option::rising_mid_kick, pbd_wakeup_option::toe_kick, pbd_wakeup_option::spring_kick,
+		pbd_wakeup_option::quick_roll_up, pbd_wakeup_option::quick_roll_down, pbd_wakeup_option::spring_forward,
+		pbd_wakeup_option::random};
+	constexpr std::uint32_t pbd_wakeup_menu_row(pbd_wakeup_option option) noexcept
+	{
+		if (option == pbd_wakeup_option::quick_roll_back)
+			option = pbd_wakeup_option::back_roll;
+		for (std::uint32_t row = 0; row < pbd_wakeup_menu.size(); ++row)
+			if (pbd_wakeup_menu[row] == option)
+				return row;
+		return 0;
+	}
 
 	enum class pbd_ground_position : std::uint8_t
 	{
@@ -51,6 +69,8 @@ namespace pbd::practice
 	constexpr pbd_wakeup_option pbd_resolve_wakeup(
 		pbd_wakeup_option option, pbd_ground_position position, std::uint32_t random_word = 0, bool can_tech = true) noexcept
 	{
+		if (option == pbd_wakeup_option::quick_roll_back)
+			option = pbd_wakeup_option::back_roll;
 		if (option != pbd_wakeup_option::random)
 			return pbd_wakeup_available(option, position) ? option : pbd_wakeup_option::stand_up;
 		std::array<pbd_wakeup_option, pbd_wakeup_option_count - 1> available{};
@@ -58,7 +78,8 @@ namespace pbd::practice
 		for (std::uint32_t at = 0; at < available.size(); ++at)
 		{
 			const auto candidate = static_cast<pbd_wakeup_option>(at);
-			if (pbd_wakeup_available(candidate, position) && (can_tech || candidate < pbd_wakeup_option::quick_roll_up))
+			if (candidate != pbd_wakeup_option::quick_roll_back && pbd_wakeup_available(candidate, position) &&
+				(can_tech || candidate < pbd_wakeup_option::quick_roll_up))
 				available[count++] = candidate;
 		}
 		return available[random_word % count];
@@ -112,7 +133,7 @@ namespace pbd::practice
 		case pbd_wakeup_option::side_roll_down: out.words[0] = 0x4080; break;
 		case pbd_wakeup_option::rising_low_kick: out.words[0] = 0x0040; break;
 		case pbd_wakeup_option::rising_mid_kick: out.words[0] = 0x0020; break;
-		case pbd_wakeup_option::toe_kick: out.words[0] = 0x4040; break;
+		case pbd_wakeup_option::toe_kick: out.words[0] = 0x4020; break;
 		case pbd_wakeup_option::spring_kick:
 			out.words = {0x8000, 0x0060};
 			out.count = 2;

@@ -11,11 +11,11 @@ to PROJECT BACKDASH, not to RPCS3.
 
 - Upstream: RPCS3 commit [`028d1e8f4a42df2292cdbcd35e540c9e71fc47aa`](https://github.com/RPCS3/rpcs3/commit/028d1e8f4a42df2292cdbcd35e540c9e71fc47aa) (2026-09-10, "Fix some VFS issues - #19378"), unchanged,
   as a source base; snapshot preparation fetches it shallowly and includes no private repository history.
-- Changes on top of it: 744 files (624 added, 114 changed, 6 deleted, 0 renamed), 157696 lines added and 1057 removed,
+- Changes on top of it: 745 files (625 added, 114 changed, 6 deleted, 0 renamed), 158001 lines added and 1058 removed,
   not counting this file. Line counts describe the recorded native revision; exported build adapters may differ.
-- Emulator source revision: `8c760ca1a3a9e4ea2177966d48b11fc05c94c2e8`.
+- Emulator source revision: `628001710254fd7d92f8b5d1465d02741047773e`.
 - This release snapshot retains public build support and documentation, with PBD C++ formatting.
-- Release build: Project Backdash 0.62.3, `rpcs3.exe` SHA-256 `aaf74d04fe6a9c4387890ad782b7aa11013a6e4bfaf5b705e26a72d8a287549c`.
+- Release build: Project Backdash 0.62.5, `rpcs3.exe` SHA-256 `d30d8facf6d1770176841f40d7fee92f82863d3a2e5642e1f50a014bcbd27795`.
 
 ## The GPL source in the installer
 
@@ -179,11 +179,11 @@ Practice mode: the dummy's recordings and movement, wall positions, the Practice
 | `rpcs3/Emu/PBD/pbd_practice_display_model.h` | 280 |
 | `rpcs3/Emu/PBD/pbd_practice_floor.h` | 99 |
 | `rpcs3/Emu/PBD/pbd_practice_frame_calculator.h` | 520 |
-| `rpcs3/Emu/PBD/pbd_practice_frame_events.cpp` | 520 |
+| `rpcs3/Emu/PBD/pbd_practice_frame_events.cpp` | 526 |
 | `rpcs3/Emu/PBD/pbd_practice_frame_model.h` | 317 |
 | `rpcs3/Emu/PBD/pbd_practice_frame_observation.cpp` | 294 |
 | `rpcs3/Emu/PBD/pbd_practice_frames.h` | 193 |
-| `rpcs3/Emu/PBD/pbd_practice_guard.h` | 144 |
+| `rpcs3/Emu/PBD/pbd_practice_guard.h` | 146 |
 | `rpcs3/Emu/PBD/pbd_practice_input_delay.h` | 57 |
 | `rpcs3/Emu/PBD/pbd_practice_lesson.h` | 82 |
 | `rpcs3/Emu/PBD/pbd_practice_lesson_boundary.cpp` | 87 |
@@ -225,8 +225,8 @@ Practice mode: the dummy's recordings and movement, wall positions, the Practice
 | `rpcs3/Emu/PBD/pbd_practice_store_codec.h` | 454 |
 | `rpcs3/Emu/PBD/pbd_practice_store_model.h` | 149 |
 | `rpcs3/Emu/PBD/pbd_practice_throw_escape.h` | 96 |
-| `rpcs3/Emu/PBD/pbd_practice_wakeup.h` | 277 |
-| `rpcs3/Emu/PBD/pbd_practice_wakeup_reading.h` | 140 |
+| `rpcs3/Emu/PBD/pbd_practice_wakeup.h` | 298 |
+| `rpcs3/Emu/PBD/pbd_practice_wakeup_reading.h` | 151 |
 | `rpcs3/Emu/PBD/pbd_practice_wall_classification.h` | 309 |
 | `rpcs3/Emu/PBD/pbd_practice_wall_geometry.h` | 104 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_practice_menu_drawing.h` | 468 |
@@ -405,7 +405,7 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/practice_store_test.cpp` | 1021 |
 | `rpcs3/tests/pbd/practice_streak_test.cpp` | 215 |
 | `rpcs3/tests/pbd/practice_throw_escape_test.cpp` | 76 |
-| `rpcs3/tests/pbd/practice_wakeup_test.cpp` | 466 |
+| `rpcs3/tests/pbd/practice_wakeup_test.cpp` | 500 |
 | `rpcs3/tests/pbd/practice_wall_model.h` | 135 |
 | `rpcs3/tests/pbd/practice_walls_test.cpp` | 459 |
 | `rpcs3/tests/pbd/presentation_rows_test.cpp` | 116 |
@@ -568,7 +568,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_dummy_move_input.h` | 98 |
 | `rpcs3/Emu/PBD/pbd_dummy_move_runtime.h` | 392 |
 | `rpcs3/Emu/PBD/pbd_dummy_move_store.h` | 66 |
-| `rpcs3/Emu/PBD/pbd_dummy_native_route.cpp` | 189 |
+| `rpcs3/Emu/PBD/pbd_dummy_native_route.cpp` | 192 |
 | `rpcs3/Emu/PBD/pbd_emulator_identity.h` | 62 |
 | `rpcs3/Emu/PBD/pbd_exit_gate.cpp` | 87 |
 | `rpcs3/Emu/PBD/pbd_features.h` | 21 |
@@ -727,6 +727,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_undo_restore.h` | 87 |
 | `rpcs3/Emu/PBD/pbd_versus_input.h` | 32 |
 | `rpcs3/Emu/PBD/pbd_voice_health.h` | 36 |
+| `rpcs3/Emu/RSX/VK/vkutils/pbd_present_wait.h` | 183 |
 | `rpcs3/Emu/RSX/pbd_present_identity.h` | 255 |
 | `rpcs3/Input/pbd_controller_backend.cpp` | 396 |
 | `rpcs3/Input/pbd_controller_backend.h` | 27 |
@@ -831,11 +832,11 @@ change with its date.
 | `rpcs3/Emu/RSX/VK/VKPresent.cpp` | 669 | 38 |
 | `rpcs3/Emu/RSX/VK/VKShaderInterpreter.cpp` | 408 | 24 |
 | `rpcs3/Emu/RSX/VK/VKShaderInterpreter.h` | 57 | 1 |
-| `rpcs3/Emu/RSX/VK/vkutils/device.cpp` | 17 | 0 |
-| `rpcs3/Emu/RSX/VK/vkutils/device.h` | 5 | 0 |
+| `rpcs3/Emu/RSX/VK/vkutils/device.cpp` | 53 | 0 |
+| `rpcs3/Emu/RSX/VK/vkutils/device.h` | 9 | 0 |
 | `rpcs3/Emu/RSX/VK/vkutils/instance.cpp` | 18 | 1 |
 | `rpcs3/Emu/RSX/VK/vkutils/instance.h` | 3 | 0 |
-| `rpcs3/Emu/RSX/VK/vkutils/swapchain.cpp` | 76 | 9 |
+| `rpcs3/Emu/RSX/VK/vkutils/swapchain.cpp` | 96 | 10 |
 | `rpcs3/Emu/RSX/VK/vkutils/swapchain_core.h` | 42 | 2 |
 | `rpcs3/Emu/RSX/rsx_cache.h` | 4 | 0 |
 | `rpcs3/Emu/System.cpp` | 178 | 11 |

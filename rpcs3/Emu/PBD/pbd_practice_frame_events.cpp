@@ -9,6 +9,8 @@ namespace pbd::practice::native
 		thread_local frame_observer frame_data;
 		constexpr std::array<u32, 2> frame_actors{0x10090040, 0x10090910};
 		thread_local pbd::practice::pbd_getup_guard getup_state;
+		// The Movement dummy, set at each boundary: the game would stand-guard it whenever its technique leaves it at neutral.
+		thread_local bool movement_unguarded = false;
 		// Removes a fighter's guard the way the game removes one its Dummy Action turns off (0xF2928): from the live flags
 		// (+0xCC), from the copy the stance update reloads them from (+0xD0, 0x33F94) and from the guard the contact check reads
 		// (+0x152). The game derives +0x152 from +0xCC every frame, so the guard stays off until a move or a move property
@@ -196,8 +198,11 @@ namespace pbd::practice::native
 			return {};
 		return pbd::practice::throw_escape_view{allocation, wanted, given};
 	}
-	void getup_guard(u32 chosen_action) noexcept
+	void getup_guard(u32 chosen_action, bool movement) noexcept
 	{
+		movement_unguarded = movement;
+		if (movement)
+			remove_guard(frame_actors[1]);
 		const auto now = read_wakeup();
 		const bool down = now && (now->knocked_down || now->on_floor), standing = !now || now->standing;
 		// The guard comes with each move the get-up enters; the commit hook in frame_event removes it there. This boundary
@@ -490,7 +495,8 @@ namespace pbd::practice::native
 			// The commit of a move change, after the game has given the dummy the new move's guard (0xF1D50) and before this
 			// frame's contact check (0x1822C): removed here, the guard a get-up move brings blocks on none of its frames
 			// (getup_guard).
-			if (address == 0xf26f4 && side == 1 && practice && getup_state.entered(static_cast<u64>(Emu.GetEmulationIdentifier()), counter))
+			if (address == 0xf26f4 && side == 1 && practice &&
+				(movement_unguarded || getup_state.entered(static_cast<u64>(Emu.GetEmulationIdentifier()), counter)))
 				remove_guard(actor);
 			frame_step step{ppu, address, counter, actor, side};
 			if (address == 0x16d9c)

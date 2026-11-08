@@ -4,6 +4,7 @@
 #include "Emu/PBD/pbd_practice_wakeup_reading.h"
 #include "Emu/PBD/pbd_movement_observation.h"
 
+#include <algorithm>
 #include <set>
 #include <map>
 
@@ -17,15 +18,25 @@ namespace
 
 PBD_TEST(PbdPracticeWakeup, StockTechValuesAndUntechableFallback)
 {
-	const std::array choices{option::quick_roll_down, option::quick_roll_up, option::spring_forward, option::quick_roll_back};
+	const std::array choices{option::quick_roll_down, option::quick_roll_up, option::spring_forward};
 	for (std::uint32_t at = 0; at < choices.size(); ++at)
 	{
 		const auto tech = pbd_plan_wakeup(choices[at], position::face_down_feet_away, true);
-		check(tech.native_action == 6 + at, "landing techs retain the game's established values 6-9");
+		check(tech.native_action == 6 + at, "landing techs retain the game's established values 6-8");
 		const auto fallback = pbd_plan_wakeup(choices[at], position::face_down_feet_away, false);
 		check(fallback.option == option::stand_up && !fallback.native_action && fallback.words[0] == 0x1000,
 			"a landing that cannot tech uses Stand Up from the floor");
 	}
+}
+
+PBD_TEST(PbdPracticeWakeup, ASavedQuickRollBackPlaysBackRollAndLeavesTheMenu)
+{
+	const auto saved = pbd_plan_wakeup(option::quick_roll_back, position::face_up_feet_toward, true);
+	check(saved.option == option::back_roll && !saved.native_action && saved.words[0] == 0x8000, "Back Roll covers Quick Roll Back");
+	check(std::find(pbd_wakeup_menu.begin(), pbd_wakeup_menu.end(), option::quick_roll_back) == pbd_wakeup_menu.end());
+	check(pbd_wakeup_menu_row(option::quick_roll_back) == pbd_wakeup_menu_row(option::back_roll));
+	for (std::uint32_t row = 0; row < pbd_wakeup_menu.size(); ++row)
+		check(pbd_wakeup_menu_row(pbd_wakeup_menu[row]) == row, "each menu row stores its own choice");
 }
 
 PBD_TEST(PbdPracticeWakeup, UnavailableFaceUpChoicesStandUp)
@@ -54,7 +65,8 @@ PBD_TEST(PbdPracticeWakeup, RandomIncludesStayDownAndOnlyAvailableChoices)
 			observed.insert(chosen);
 		}
 		check(observed.contains(option::stay_down), "Stay Down remains a real Random option");
-		check(observed.size() == (pose == position::face_up_feet_toward ? 14 : 12));
+		check(!observed.contains(option::quick_roll_back), "Random never picks the retired Quick Roll Back");
+		check(observed.size() == (pose == position::face_up_feet_toward ? 13 : 11));
 		for (std::uint32_t word = 0; word < 20; ++word)
 		{
 			const auto floor = pbd_plan_wakeup(option::random, pose, false, word);
@@ -103,7 +115,7 @@ PBD_TEST(PbdPracticeWakeup, AnUnavailableCharacterAttackFallsBackToStandUp)
 {
 	pbd_floor_wakeup sequence;
 	sequence.reset(pbd_plan_wakeup(option::toe_kick, position::face_up_feet_toward, false));
-	check(sequence.next(true, true, false) == 0x4040);
+	check(sequence.next(true, true, false) == 0x4020, "Toe Kick is d+4");
 	for (unsigned frame = 0; frame < 7; ++frame)
 		check(!sequence.next(true, true, false));
 	check(sequence.next(true, true, false) == 0x1000, "an unaccepted shared floor attack falls back to Stand Up");
@@ -246,22 +258,44 @@ namespace
 	};
 } // namespace
 
-PBD_TEST(PbdPracticeWakeup, EveryFloorAliasAndSharedReactionReceivesEveryWakeupChoice)
+PBD_TEST(PbdPracticeWakeup, EveryFloorAliasReceivesEveryWakeupChoice)
 {
 	for (unsigned side = 0; side < 2; ++side)
-		for (const unsigned id : {4u, 5u, 6u, 7u, 8u, 9u, 10u, 11u, 12u, 13u, 14u, 0x17u, 40u})
+		for (const unsigned id : {4u, 5u, 6u, 7u, 8u, 9u, 10u, 11u, 12u, 13u, 14u, 0x17u})
 			for (unsigned owner = 0; owner < 2; ++owner)
 				for (unsigned selected = 0; selected < pbd_wakeup_option_count; ++selected)
 				{
 					wakeup_memory memory;
 					memory.pose(side, id, owner);
 					const auto now = memory.read(side);
-					check(now && now->on_floor && now->actionable, "the live floor flag admits own-bank and attacker-bank floor poses");
+					check(now && now->on_floor && now->actionable, "own-bank and attacker-bank lying moves admit wake-up input");
 					pbd_wakeup_controller control;
 					control.arm(static_cast<option>(selected));
 					const auto plan = pbd_plan_wakeup(static_cast<option>(selected), now->position, false);
 					check(control.sample(*now) == (plan.count ? plan.words[0] : 0), "each choice reaches its floor input or its documented fallback");
 				}
+}
+
+// A move that is not lying down keeps wake-up input back, even with an input window open: a landing's open commands are the
+// landing techs, where a kick or a punch rolls the fighter and a direction springs it up.
+PBD_TEST(PbdPracticeWakeup, ALandingsOwnInputWindowIsTheTechWindowNotTheFloors)
+{
+	for (unsigned side = 0; side < 2; ++side)
+		for (unsigned owner = 0; owner < 2; ++owner)
+		{
+			wakeup_memory memory;
+			memory.pose(side, 40, owner);
+			const auto landing = memory.read(side);
+			check(landing && landing->on_floor && !landing->actionable, "an open landing command is no wake-up window");
+			pbd_wakeup_controller control;
+			control.arm(option::rising_low_kick);
+			check(control.sample(*landing) == 0 && control.floor.given == 0, "no kick is pressed while the fighter lands");
+			memory.pose(side, 4, owner);
+			memory.words[0x1008f05c]++;
+			const auto lying = memory.read(side);
+			check(lying && lying->actionable, "the lying move's window takes the wake-up input");
+			check(control.sample(*lying) == 0x0040, "Rising Low Kick is pressed once the fighter lies");
+		}
 }
 
 PBD_TEST(PbdPracticeWakeup, FloorClockDirectionAndInvalidMemoryDoNotInventAGetup)
@@ -360,7 +394,7 @@ PBD_TEST(PbdPracticeWakeup, LockedLandingPreservesEveryOpeningUntilTheGetupWindo
 			const auto now = memory.read(1);
 			check(now && now->on_floor && !now->actionable, "a grounded landing without an input window cannot consume a wake-up");
 			check(control.sample(*now) == 0 && control.floor.given == 0);
-			check(control.native_action() == pbd_wakeup_native_action(static_cast<option>(selected)),
+			check(control.native_action() == pbd_wakeup_native_action(control.choice),
 				"a landing tech stays offered while the fighter lands, before the floor's input window");
 		}
 		memory.words[actor + 0x96] = 60;
@@ -392,7 +426,7 @@ PBD_TEST(PbdPracticeWakeup, PaulBackThreeKnockdownWaitsForTheFloorCommandWindow)
 		memory.pose(1, 667);
 		memory.words[actor + 0xcc] = 0x7402;
 		check(!control.sample(*memory.read(1)) && control.engaged && !control.active, "the falling reaction retains landing techs");
-		check(control.native_action() == pbd_wakeup_native_action(static_cast<option>(selected)), "landing-tech choices retain their native action before the floor");
+		check(control.native_action() == pbd_wakeup_native_action(control.choice), "landing-tech choices retain their native action before the floor");
 		memory.pose(1, 35);
 		memory.words[table + 35 * 0x4c + 0x14] = commands + 24;
 		memory.words[commands + 24 + 8] = 0x8006;
@@ -460,7 +494,7 @@ PBD_TEST(PbdPracticeWakeup, LandingPoseChoosesAvailableGroundAttacksWhenTheWindo
 		const auto now = memory.read(1);
 		check(now && now->actionable && now->position == position::face_up_feet_toward, "the terminal's floor alias identifies the available get-up before the hand-over");
 		const auto opening = control.sample(*now);
-		check(control.floor.plan.option == selected && opening == (selected == option::toe_kick ? 0x4040 : 0x8000),
+		check(control.floor.plan.option == selected && opening == (selected == option::toe_kick ? 0x4020 : 0x8000),
 			"toe and spring kicks are chosen from the pose that admits input, including after a locked throw landing");
 	}
 }

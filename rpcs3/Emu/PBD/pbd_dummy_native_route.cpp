@@ -46,7 +46,10 @@ void pbd::rollback_session::boundary_call::practice_getup_guard()
 	else
 		action = pbd::practice::pbd_guard_action(data.practice.native.controlled ? data.practice.native.action[0] : action,
 			data.practice.reactions.guard);
-	pbd::practice::native::getup_guard(action);
+	// Movement takes the dummy's input from its port (Controller), where neutral stand-guards; the Movement dummy never
+	// guards. Recorded playback also runs as Controller and keeps the guard its recording holds.
+	const bool movement = action == pbd::practice::pbd_movement_action && data.practice.dummy.state != dummy_state::playing;
+	pbd::practice::native::getup_guard(action, movement);
 }
 
 // The Practice object's +0x6C action and +0x70 saved Freestyle value must agree while this route drives the dummy.

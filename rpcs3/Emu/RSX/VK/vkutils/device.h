@@ -105,6 +105,7 @@ namespace vk
 			bool portability = false;
 			bool provoking_vertex_last = false;
 			bool full_screen_exclusive = false;
+			bool present_wait = false; // VK_KHR_present_id and VK_KHR_present_wait, queried only for PBD_PRESENT_WAIT_TRACE
 		} optional_features_support;
 
 		friend class render_device;
@@ -156,6 +157,7 @@ namespace vk
 		u32 m_transfer_queue_family = 0;
 
 		bool m_full_screen_exclusive = false;
+		bool m_present_wait = false;
 
 		void dump_debug_info(
 			const std::vector<const char*>& requested_extensions,
@@ -198,6 +200,8 @@ namespace vk
 		bool get_provoking_vertex_last_support() const { return pgpu->optional_features_support.provoking_vertex_last; }
 		// VK_EXT_full_screen_exclusive is enabled on this device (Windows, supported, and the setting is not Automatic).
 		bool get_full_screen_exclusive_support() const { return m_full_screen_exclusive; }
+		// Present ids and waits are enabled (PBD_PRESENT_WAIT_TRACE, supported) and the trace is writing.
+		bool get_present_wait_support() const { return m_present_wait; }
 
 		u64 get_descriptor_update_after_bind_support() const { return pgpu->descriptor_indexing_support.update_after_bind_mask; }
 		u32 get_descriptor_max_draw_calls() const { return pgpu->descriptor_max_draw_calls; }

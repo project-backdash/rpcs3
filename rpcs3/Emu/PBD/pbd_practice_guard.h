@@ -17,6 +17,8 @@ namespace pbd::practice
 	};
 	inline constexpr std::uint32_t pbd_guard_option_count = 3;
 	inline constexpr std::uint32_t pbd_standing_action = 0, pbd_guard_all_action = 4;
+	// The Dummy Action "Movement": the game's Controller action, driven by the dummy's movement technique.
+	inline constexpr std::uint32_t pbd_movement_action = 10;
 	// After First Hit guards follow-ups until half a second of neutral since the last contact.
 	inline constexpr std::uint32_t pbd_guard_reset_frames = 30;
 	// An unreadable neutral state releases guard after three seconds without contact.

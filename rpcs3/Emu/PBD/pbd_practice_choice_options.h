@@ -112,9 +112,9 @@ struct pbd::rollback_session::practice_choice_steps : practice_steps
 		if (data.practice.menu.page == category::practice_settings && data.practice.training_mode == pbd::practice::training_mode::offense &&
 			row == pbd::practice::practice_rows::wakeup)
 		{
-			for (u32 option = 0; option < pbd::practice::pbd_wakeup_option_count; ++option)
-				add(std::string(pbd::practice::pbd_wakeup_names[option]), "How the dummy gets up after a knockdown; unavailable choices use Stand Up.", option == 0);
-			out.current = std::min<u32>(static_cast<u32>(data.practice.reactions.wakeup), pbd::practice::pbd_wakeup_option_count - 1);
+			for (const auto option : pbd::practice::pbd_wakeup_menu)
+				add(std::string(pbd::practice::pbd_wakeup_names[static_cast<u32>(option)]), "How the dummy gets up after a knockdown; unavailable choices use Stand Up.", option == pbd::practice::pbd_wakeup_option::stand_up);
+			out.current = pbd::practice::pbd_wakeup_menu_row(data.practice.reactions.wakeup);
 			return true;
 		}
 		if (data.practice.menu.page == category::practice_settings && data.practice.training_mode == pbd::practice::training_mode::offense &&

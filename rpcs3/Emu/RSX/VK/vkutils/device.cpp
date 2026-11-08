@@ -2,6 +2,7 @@
 #include "instance.h"
 #include "util/logs.hpp"
 #include "Emu/system_config.h"
+#include "pbd_present_wait.h"
 #include <vulkan/vulkan_core.h>
 #ifdef __APPLE__
 #include <vulkan/vulkan_beta.h>
@@ -36,6 +37,8 @@ namespace vk
 		VkPhysicalDeviceFaultFeaturesEXT device_fault_info{};
 		VkPhysicalDeviceMultiDrawFeaturesEXT multidraw_info{};
 		VkPhysicalDeviceProvokingVertexFeaturesEXT provoking_vertex_info{};
+		VkPhysicalDevicePresentIdFeaturesKHR present_id_info{};
+		VkPhysicalDevicePresentWaitFeaturesKHR present_wait_info{};
 
 		// Core features
 		shader_support_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES;
@@ -96,7 +99,21 @@ namespace vk
 			features2.pNext             = &provoking_vertex_info;
 		}
 
+		// PBD: present-to-screen timing is a diagnostic; the features are not even queried without its switch.
+		const bool present_wait_query = pbd::present_wait::requested() &&
+			device_extensions.is_supported(VK_KHR_PRESENT_ID_EXTENSION_NAME) &&
+			device_extensions.is_supported(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
+		if (present_wait_query)
+		{
+			present_id_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
+			present_id_info.pNext = features2.pNext;
+			present_wait_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR;
+			present_wait_info.pNext = &present_id_info;
+			features2.pNext = &present_wait_info;
+		}
+
 		vkGetPhysicalDeviceFeatures2(dev, &features2);
+		optional_features_support.present_wait = present_wait_query && present_id_info.presentId && present_wait_info.presentWait;
 
 		shader_types_support.allow_float64 = !!features2.features.shaderFloat64;
 		shader_types_support.allow_float16 = !!shader_support_info.shaderFloat16;
@@ -845,11 +862,30 @@ namespace vk
 			device.pNext = &provoking_vertex_info;
 		}
 
+		VkPhysicalDevicePresentIdFeaturesKHR present_id_features{};
+		VkPhysicalDevicePresentWaitFeaturesKHR present_wait_features{};
+		if (pgpu->optional_features_support.present_wait)
+		{
+			requested_extensions.push_back(VK_KHR_PRESENT_ID_EXTENSION_NAME);
+			requested_extensions.push_back(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
+			device.enabledExtensionCount = ::size32(requested_extensions);
+			device.ppEnabledExtensionNames = requested_extensions.data();
+			present_id_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
+			present_id_features.presentId = VK_TRUE;
+			present_id_features.pNext = const_cast<void*>(device.pNext);
+			present_wait_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR;
+			present_wait_features.presentWait = VK_TRUE;
+			present_wait_features.pNext = &present_id_features;
+			device.pNext = &present_wait_features;
+		}
+
 		if (auto error = vkCreateDevice(*pgpu, &device, nullptr, &dev))
 		{
 			dump_debug_info(requested_extensions, enabled_features);
 			vk::die_with_error(error);
 		}
+
+		m_present_wait = pgpu->optional_features_support.present_wait && pbd::present_wait::tracer::get().start(dev);
 
 		// Dump some diagnostics to the log
 		rsx_log.notice("%u extensions loaded:", ::size32(requested_extensions));
