@@ -30,6 +30,21 @@ namespace pbd::spectator_ui
 	{
 		inline constexpr u16 l2 = 0x0001, r2 = 0x0002, l1 = 0x0004, r1 = 0x0008, triangle = 0x0010, circle = 0x0020, cross = 0x0040, square = 0x0080;
 		inline constexpr u16 select = 0x0100, l3 = 0x0200, r3 = 0x0400, start = 0x0800, up = 0x1000, right = 0x2000, down = 0x4000, left = 0x8000;
+
+		// The button a prompt's glyphs name ("{circle}"); of a pair ("{l1}/{r1}") the last, so a click on Tab moves forward.
+		inline constexpr u16 of(std::string_view keys) noexcept
+		{
+			const auto open = keys.rfind('{'), close = keys.rfind('}');
+			if (open == std::string_view::npos || close == std::string_view::npos || close < open)
+				return 0;
+			const auto name = keys.substr(open + 1, close - open - 1);
+			constexpr std::array<std::pair<std::string_view, u16>, 9> names{{{"circle", circle}, {"cross", cross}, {"square", square},
+				{"triangle", triangle}, {"start", start}, {"l1", l1}, {"r1", r1}, {"l2", l2}, {"r2", r2}}};
+			for (const auto& [glyph, bit] : names)
+				if (glyph == name)
+					return bit;
+			return 0;
+		}
 	} // namespace pad
 
 	// watch_ui limits, in bytes of UTF-8 (counts of entries where named so).
@@ -319,6 +334,13 @@ namespace pbd::spectator_ui
 		u32 highlight() const
 		{
 			return m_highlight;
+		}
+
+		// A click on a Quick line puts the highlight on it before its Cross is read.
+		void highlight_line(u32 index)
+		{
+			if (m_open && index < m_quick.size())
+				m_highlight = index;
 		}
 
 		// A newly applied watch_ui. A chat panel that opens, or one with other Quick lines or another selected=, puts the highlight

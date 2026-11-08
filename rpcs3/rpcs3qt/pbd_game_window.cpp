@@ -16,6 +16,7 @@
 #include "Emu/PBD/pbd_replay_viewer_menu.h"
 #include "Emu/PBD/pbd_practice_presentation.h"
 #include "Emu/Cell/pbd_practice_mouse.h"
+#include "Emu/Cell/pbd_spectator_mouse.h"
 #include "Emu/PBD/pbd_env.h"
 #include "Emu/PBD/pbd_held_presentation.h"
 #include "Emu/RSX/RSXThread.h"
@@ -40,7 +41,8 @@ namespace pbd::game_window
 {
 	bool hooks::event(gs_frame& frame, QEvent* ev)
 	{
-		return hosted_event(frame, ev) || menu_pointer(frame, ev) || replay_pointer(frame, ev) || practice_pointer(frame, ev);
+		return hosted_event(frame, ev) || menu_pointer(frame, ev) || replay_pointer(frame, ev) || spectator_pointer(frame, ev) ||
+		       practice_pointer(frame, ev);
 	}
 
 	hooks::game_area hooks::area(gs_frame& frame)
@@ -134,6 +136,29 @@ namespace pbd::game_window
 			pbd::replay_viewer::pointer_ui.press(position.x, position.y);
 		if (ev->type() == QEvent::MouseButtonPress && mouse->button() == Qt::RightButton)
 			pbd::replay_viewer::pointer_ui.back();
+		ev->accept();
+		return true;
+	}
+
+	// The watcher's controls take the mouse while the pointer is over one: a left click presses that control's button. Elsewhere
+	// the window keeps its own handling.
+	bool hooks::spectator_pointer(gs_frame& frame, QEvent* ev)
+	{
+		const auto type = ev->type();
+		if ((type != QEvent::MouseMove && type != QEvent::MouseButtonPress && type != QEvent::MouseButtonDblClick) || Emu.IsStopped() ||
+			!pbd::spectator::mouse::active())
+			return false;
+		const auto* mouse = static_cast<QMouseEvent*>(ev);
+		const auto game = area(frame);
+		const auto [x, y] = pixels(frame, game, mouse->position());
+		// QWindow sends the second press of a double click before its double-click notification: only the press clicks.
+		const bool press = type == QEvent::MouseButtonPress && mouse->button() == Qt::LeftButton;
+		const bool over = pbd::spectator::mouse::pointer(x, y, static_cast<float>(game.viewport.width()), static_cast<float>(game.viewport.height()), press,
+			static_cast<float>(game.viewport.x1), static_cast<float>(game.viewport.y1));
+		frame.handle_cursor(frame.visibility(), false, false, true);
+		frame.setCursor(over ? Qt::PointingHandCursor : Qt::ArrowCursor);
+		if (!over)
+			return false;
 		ev->accept();
 		return true;
 	}

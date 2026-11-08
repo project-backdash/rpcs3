@@ -228,6 +228,28 @@ namespace
 	};
 } // namespace
 
+PBD_TEST(PbdSpectatorChannel, ARoundWitnessStillToComeHoldsTheLargestLookahead)
+{
+	// An in-game select's begin_game cannot name the rule; its round witness may name an L from the round's first tick. Until
+	// it comes the watched game holds the largest L, so the frame running when it arrives already has the frames it reads.
+	sample_document f(951);
+	f.prepare();
+	f.begin(1, 0, nullptr, true, fixed_picks + "\"roundWitnessRequired\":true,");
+	check(!f.input.pbd_throw_break().any());
+	check(f.input.lookahead_frames() == pbd::throw_break::max_lookahead, "the largest L while the witness may name one");
+	const native_round round{4, 1, {0x1234, 0xabcd}};
+	f.control("\"type\":\"game_witness\",\"gameNumber\":1,\"nativeRound\":" + pbd::set_channel::detail::serialize(round.json()));
+	check(f.input.lookahead_frames() == 0, "a witness that names no L leaves none held");
+	sample_document g(952);
+	g.prepare();
+	g.begin(1, 0, nullptr, true, fixed_picks + R"("throwBreakLookahead":{"version":2,"left":2,"right":1},)");
+	check(g.input.lookahead_frames() == 2, "a named L holds only that many");
+	sample_document h(953);
+	h.prepare();
+	h.begin();
+	check(h.input.lookahead_frames() == 0, "a fixed set without the rule holds none");
+}
+
 PBD_TEST(PbdSpectatorChannel, TheThrowBreakRuleHoldsFramesAheadAndKeepsEachPacketsReport)
 {
 	// A watched game that reads ahead (its begin_game's throwBreakLookahead) runs a tick only once the stream holds the frames
@@ -248,10 +270,13 @@ PBD_TEST(PbdSpectatorChannel, TheThrowBreakRuleHoldsFramesAheadAndKeepsEachPacke
 	check(f.input.pbd_queued_pad(3, 0) == std::uint16_t{0x40} && f.input.pbd_queued_pad(2, 1) == std::uint16_t{0x20} && !f.input.pbd_queued_pad(4, 0),
 		"the pads of the frames held, and none past them");
 	check(f.input.verify_state(0, 1, 17, 0x8000004d, 7, {11, 22, 33}) && f.input.commit(0x01000000, 0x12efc, 0, f.completed(), {0x40, 0x20}));
+	check(f.input.pbd_queued_pad(0, 0) == std::uint16_t{0x40} && f.input.pbd_queued_pad(3, 1) == std::uint16_t{0x20},
+		"the battle's throw read follows the two-port post and still needs that tick and its queued lookahead");
 	check(!f.input.reserve(), "the second frame waits for the frame L past it");
 	f.packet(3, 1, 4, 4, 3);
 	check(f.input.poll_input(test_hash));
 	f.play(1);
+	check(!f.input.pbd_queued_pad(0, 0), "only the most recent posted tick is retained behind the queue");
 	// The consumed report of packet `chunk`, as many as there are.
 	const auto consumed = [&](u32 chunk, u32 through)
 	{
@@ -591,7 +616,7 @@ static void native_round_state_checks()
 		f.begin(1, 0, nullptr, true, fields);
 		f.control("\"type\":\"presentation\",\"hidden\":false,\"catchUp\":false,\"mode\":\"watch\",\"delayFrames\":120,\"score\":{\"left\":0,\"right\":0},\"leftName\":\"Left\",\"rightName\":\"Right\"");
 		check(f.input.needs_round_state() && !f.input.visible());
-		f.packet(1, 1, 0, 0);
+		f.packet(1, 1, 0, 0, 1 + pbd::throw_break::max_lookahead);
 		check(f.input.poll_input(test_hash));
 		check(!f.input.visible());
 		f.play(0);
@@ -603,16 +628,19 @@ static void native_round_state_checks()
 		check(f.input.verify_state(1, 1, 17, 0x8000004e, 7, {11, 22, 33}));
 		check(f.input.expose(0x01000000, 1, 17, 12, 32, 3, true, &round));
 		check(f.input.commit(0x01000000, 0x12efc, 1, f.completed(), {0x40, 0x20}));
-		f.control("\"type\":\"end_game\",\"gameNumber\":1,\"finalFrame\":2");
-		check(f.input.end(2, true));
-		f.begin(2, 2, nullptr, true, fields);
+		for (u32 boundary = 2; boundary <= pbd::throw_break::max_lookahead; ++boundary)
+			f.play(boundary);
+		const u32 final_frame = 1 + pbd::throw_break::max_lookahead;
+		f.control("\"type\":\"end_game\",\"gameNumber\":1,\"finalFrame\":" + std::to_string(final_frame));
+		check(f.input.end(final_frame, true));
+		f.begin(2, final_frame, nullptr, true, fields);
 		check(f.input.needs_round_state() && !f.input.visible());
 	}
 	{
 		sample_document f(402);
 		f.prepare();
 		f.begin(1, 0, nullptr, true, fixed_picks + "\"roundWitnessRequired\":true,");
-		f.packet(1, 1, 0, 0);
+		f.packet(1, 1, 0, 0, 1 + pbd::throw_break::max_lookahead);
 		check(f.input.poll_input(test_hash));
 		check(f.input.reserve());
 		const native_round round{4, 1, {0x1234, 0xabcd}};
@@ -910,7 +938,8 @@ static void rematch_option_readback()
 		const auto queued = f.input.take_rematch();
 		check(queued && queued->first == load);
 		check(queued->second.end_frame == 2 && queued->second.selected.stage == 17 && !f.input.take_rematch());
-		f.packet(2, 2, 0, 2);
+		// Its round witness has not come: the game holds the largest L before its first frame runs.
+		f.packet(2, 2, 0, 2, 1 + pbd::throw_break::max_lookahead);
 		check(f.input.poll_input(test_hash));
 		f.play(2);
 		check(!f.input.visible());
@@ -1074,6 +1103,70 @@ PBD_TEST(PbdSpectatorChannel, Checks)
 	rematch_load_and_game_number();
 	round_state_required_per_game();
 	repick_readback_matches_source();
+}
+
+PBD_TEST(PbdSpectatorChannel, ClicksOnTheWatcherScreenPressTheirButtons)
+{
+	// A click on a drawn control is the press its button makes: one press per click with a release read between, a Quick line
+	// highlighted before its Cross, a tab reached with L1/R1 presses, and nothing while the in-game menu holds the controller or
+	// once the screen has no controls.
+	namespace ui = pbd::spectator_ui;
+	namespace mouse = pbd::spectator::mouse;
+	check(ui::pad::of("{circle}") == ui::pad::circle && ui::pad::of("{start}") == ui::pad::start);
+	check(ui::pad::of("{l1}/{r1}") == ui::pad::r1 && ui::pad::of("Chat") == 0 && ui::pad::of("{up}") == 0);
+	sample_document f(954, true);
+	f.prepare();
+	f.begin(1, 0, nullptr, true, "");
+	f.control("\"type\":\"presentation\",\"hidden\":false,\"catchUp\":false,\"mode\":\"watch\",\"leftName\":\"Kai\",\"rightName\":\"Rook\",\"score\":{\"left\":0,\"right\":0},\"delayFrames\":180");
+	f.control("\"type\":\"watch_ui\",\"revision\":1,\"bar\":true,\"firstTo\":2,\"unread\":0");
+	f.input.observe_fight(true);
+	f.packet(1, 1, 0, 0);
+	check(f.input.poll_input(test_hash));
+	f.play(0, true, {5, 40, 41});
+	check(ui::load(9).shown);
+	f.input.read_pad(0);
+	const auto pressed = [&](u64 serial, std::string_view button)
+	{
+		std::ifstream in(f.directory / ("spectator-pad-" + std::to_string(serial) + ".json"), std::ios::binary);
+		check(in);
+		auto parsed = json_parser(std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>())).parse();
+		check(parsed.value);
+		return is(parsed.value->find("button"), button);
+	};
+	mouse::layout bar;
+	bar.add({56.f, 677.f, 120.f, 32.f, mouse::kind::button, ui::pad::square});
+	mouse::publish(bar);
+	// The viewport is 1920x1080 at (0, 0): canvas (100, 693) is window (150, 1039.5).
+	check(!mouse::pointer(150.f, 900.f, 1920.f, 1080.f, true) && mouse::active());
+	check(mouse::pointer(150.f, 1039.f, 1920.f, 1080.f, true) && mouse::pointer(150.f, 1039.f, 1920.f, 1080.f, true));
+	for (int read = 0; read < 4; ++read)
+		f.input.read_pad(0);
+	check(f.input.pad_events() == 2 && pressed(1, "square") && pressed(2, "square"));
+	// The chat open on its first tab: a click on the third tab is two R1 presses, a click on a Quick line its Cross.
+	f.control("\"type\":\"watch_ui\",\"revision\":2,\"bar\":true,\"firstTo\":2,\"unread\":0,"
+			  "\"chat\":{\"tabs\":[\"All\",\"Lobby\",\"Direct\"],\"tab\":0,\"quick\":[\"gg\",\"Nice!\"],\"selected\":0}");
+	mouse::layout chat;
+	chat.add({100.f, 198.f, 60.f, 34.f, mouse::kind::tab, 2});
+	chat.add({200.f, 530.f, 80.f, 28.f, mouse::kind::quick, 1});
+	mouse::publish(chat);
+	check(mouse::pointer(195.f, 320.f, 1920.f, 1080.f, true) && mouse::pointer(360.f, 816.f, 1920.f, 1080.f, true));
+	for (int read = 0; read < 6; ++read)
+		f.input.read_pad(0);
+	check(f.input.pad_events() == 5 && pressed(3, "r1") && pressed(4, "r1") && pressed(5, "cross"));
+	check(ui::load(9).highlight == 1);
+	// While the in-game menu holds the controller a click presses nothing, then or after.
+	check(mouse::pointer(360.f, 816.f, 1920.f, 1080.f, true));
+	f.input.read_pad(0, true);
+	f.input.read_pad(0);
+	f.input.read_pad(0);
+	check(f.input.pad_events() == 5);
+	// A screen without controls drops the clicks not yet read.
+	check(mouse::pointer(360.f, 816.f, 1920.f, 1080.f, true));
+	mouse::publish({});
+	check(!mouse::active() && !mouse::pointer(360.f, 816.f, 1920.f, 1080.f, true));
+	f.input.read_pad(0);
+	f.input.read_pad(0);
+	check(f.input.pad_events() == 5);
 }
 
 PBD_TEST(PbdSpectatorChannel, RecordedRankProfilesFollowTheWatchedCharacter)

@@ -159,11 +159,46 @@ namespace pbd::spectator
 			draw_ui();
 		}
 		const u32 before = m_pad.highlight();
+		word |= click_word(menu);
 		const auto presses = m_pad.read(word, m_ui ? &*m_ui : nullptr, ui_shown(), menu);
 		if (m_pad.highlight() != before)
 			draw_ui();
 		for (const auto& press : presses)
 			publish_pad(press);
+	}
+
+	inline std::uint16_t local_channel::click_word(bool menu)
+	{
+		while (const auto click = mouse::take())
+		{
+			if (click->what == mouse::kind::button)
+				m_clicks.push_back({static_cast<std::uint16_t>(click->value), std::nullopt});
+			else if (click->what == mouse::kind::quick)
+				m_clicks.push_back({spectator_ui::pad::cross, click->value});
+			else if (m_ui && m_ui->chat)
+			{
+				// A tab is reached with as many L1 or R1 presses as it lies away from the current one.
+				const u32 current = m_ui->chat->tab;
+				for (u32 step = current; step < click->value; ++step)
+					m_clicks.push_back({spectator_ui::pad::r1, std::nullopt});
+				for (u32 step = click->value; step < current; ++step)
+					m_clicks.push_back({spectator_ui::pad::l1, std::nullopt});
+			}
+		}
+		// The in-game menu holds the controller and draws over the screen the clicks were meant for.
+		if (menu)
+			m_clicks.clear();
+		if (m_click_held || m_clicks.empty())
+		{
+			m_click_held = false;
+			return 0;
+		}
+		const auto next = m_clicks.front();
+		m_clicks.pop_front();
+		if (next.line)
+			m_pad.highlight_line(*next.line);
+		m_click_held = true;
+		return next.word;
 	}
 
 	inline bool local_channel::prepare(u64 native_generation, u32 owner, u32 boundary, u32 counter, std::string_view checkpoint, std::string_view emulator)

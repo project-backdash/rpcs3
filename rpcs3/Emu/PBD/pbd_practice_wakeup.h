@@ -189,9 +189,11 @@ namespace pbd::practice
 			choice = pbd_resolve_wakeup(wanted, pbd_ground_position::face_up_feet_toward, seed);
 			armed = true;
 		}
+		// A landing tech is the game's own action, read while the fighter lands: flag 4 is already set then, so the action
+		// stays offered until the floor's input window opens (floor.started), when a missed tech becomes Stand Up.
 		std::optional<std::uint32_t> native_action() const noexcept
 		{
-			return armed && engaged && !active ? pbd_wakeup_native_action(choice) : std::nullopt;
+			return armed && engaged && !floor.started ? pbd_wakeup_native_action(choice) : std::nullopt;
 		}
 		std::optional<std::uint16_t> sample(const pbd_wakeup_observation& now) noexcept
 		{

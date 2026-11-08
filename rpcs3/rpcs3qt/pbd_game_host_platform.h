@@ -30,6 +30,20 @@ namespace pbd::game_host
 			const auto foreground = GetForegroundWindow();
 			return foreground && GetAncestor(foreground, GA_ROOT) == parent;
 		}
+		// Windows gives a background process only a flashing taskbar button when it asks for the foreground. The game's
+		// thread shares input with the window in front for the call, as an input the player made there would allow it.
+		bool bring_to_front(HWND root)
+		{
+			const auto front = GetForegroundWindow();
+			const DWORD front_thread = front ? GetWindowThreadProcessId(front, nullptr) : 0;
+			const DWORD own = GetCurrentThreadId();
+			const bool attached = front_thread && front_thread != own && AttachThreadInput(own, front_thread, TRUE);
+			BringWindowToTop(root);
+			const bool done = SetForegroundWindow(root) != FALSE;
+			if (attached)
+				AttachThreadInput(own, front_thread, FALSE);
+			return done;
+		}
 		HWND read_contract(DWORD& pid, WPARAM& token, bool& hosted, bool& painted_return, bool& external_overlay, bool& popup,
 			bool& force_hidden)
 		{

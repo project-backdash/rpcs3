@@ -11,11 +11,11 @@ to PROJECT BACKDASH, not to RPCS3.
 
 - Upstream: RPCS3 commit [`028d1e8f4a42df2292cdbcd35e540c9e71fc47aa`](https://github.com/RPCS3/rpcs3/commit/028d1e8f4a42df2292cdbcd35e540c9e71fc47aa) (2026-09-10, "Fix some VFS issues - #19378"), unchanged,
   as a source base; snapshot preparation fetches it shallowly and includes no private repository history.
-- Changes on top of it: 743 files (623 added, 114 changed, 6 deleted, 0 renamed), 157321 lines added and 1057 removed,
+- Changes on top of it: 744 files (624 added, 114 changed, 6 deleted, 0 renamed), 157696 lines added and 1057 removed,
   not counting this file. Line counts describe the recorded native revision; exported build adapters may differ.
-- Emulator source revision: `6fb64795a79b52effd436704c8518658fba4cc66`.
+- Emulator source revision: `8c760ca1a3a9e4ea2177966d48b11fc05c94c2e8`.
 - This release snapshot retains public build support and documentation, with PBD C++ formatting.
-- Release build: Project Backdash 0.62.1, `rpcs3.exe` SHA-256 `31bfc72bce7fddc232684d66227c09ea46805ddb5970136884e67ee469a6ca0a`.
+- Release build: Project Backdash 0.62.3, `rpcs3.exe` SHA-256 `aaf74d04fe6a9c4387890ad782b7aa11013a6e4bfaf5b705e26a72d8a287549c`.
 
 ## The GPL source in the installer
 
@@ -225,7 +225,7 @@ Practice mode: the dummy's recordings and movement, wall positions, the Practice
 | `rpcs3/Emu/PBD/pbd_practice_store_codec.h` | 454 |
 | `rpcs3/Emu/PBD/pbd_practice_store_model.h` | 149 |
 | `rpcs3/Emu/PBD/pbd_practice_throw_escape.h` | 96 |
-| `rpcs3/Emu/PBD/pbd_practice_wakeup.h` | 275 |
+| `rpcs3/Emu/PBD/pbd_practice_wakeup.h` | 277 |
 | `rpcs3/Emu/PBD/pbd_practice_wakeup_reading.h` | 140 |
 | `rpcs3/Emu/PBD/pbd_practice_wall_classification.h` | 309 |
 | `rpcs3/Emu/PBD/pbd_practice_wall_geometry.h` | 104 |
@@ -250,7 +250,7 @@ Watching a lobby game from its confirmed inputs, with the watcher's own screen a
 | File | Lines |
 |---|---|
 | `rpcs3/Emu/Cell/pbd_corner_chat.h` | 216 |
-| `rpcs3/Emu/Cell/pbd_spectator_ui.h` | 485 |
+| `rpcs3/Emu/Cell/pbd_spectator_ui.h` | 507 |
 
 ### Game window
 
@@ -262,14 +262,14 @@ The game window hosted inside the launcher's window: the emulator draws into a c
 | `rpcs3/Emu/PBD/pbd_presentation_rows.h` | 90 |
 | `rpcs3/rpcs3qt/pbd_game_host.cpp` | 344 |
 | `rpcs3/rpcs3qt/pbd_game_host.h` | 35 |
-| `rpcs3/rpcs3qt/pbd_game_host_platform.h` | 134 |
+| `rpcs3/rpcs3qt/pbd_game_host_platform.h` | 148 |
 | `rpcs3/rpcs3qt/pbd_game_host_policy.h` | 384 |
 | `rpcs3/rpcs3qt/pbd_game_host_shell.h` | 29 |
 | `rpcs3/rpcs3qt/pbd_game_host_surface.h` | 27 |
 | `rpcs3/rpcs3qt/pbd_game_host_visibility.h` | 168 |
-| `rpcs3/rpcs3qt/pbd_game_host_window.h` | 1053 |
-| `rpcs3/rpcs3qt/pbd_game_window.cpp` | 409 |
-| `rpcs3/rpcs3qt/pbd_game_window.h` | 61 |
+| `rpcs3/rpcs3qt/pbd_game_host_window.h` | 1062 |
+| `rpcs3/rpcs3qt/pbd_game_window.cpp` | 434 |
+| `rpcs3/rpcs3qt/pbd_game_window.h` | 62 |
 | `rpcs3/rpcs3qt/pbd_game_window_settings.cpp` | 644 |
 | `rpcs3/rpcs3qt/pbd_game_window_settings.h` | 89 |
 | `rpcs3/rpcs3qt/pbd_raw_keyboard.h` | 376 |
@@ -312,9 +312,9 @@ The in-game menus, the netplay stats block, in-game settings, the player's volum
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_menu_overlay.cpp` | 123 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_overlay_canvas.h` | 409 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_overlays.cpp` | 165 |
-| `rpcs3/Emu/RSX/Overlays/pbd/pbd_overlays.h` | 237 |
+| `rpcs3/Emu/RSX/Overlays/pbd/pbd_overlays.h` | 240 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_settings_overlay.cpp` | 368 |
-| `rpcs3/Emu/RSX/Overlays/pbd/pbd_spectator_overlay.cpp` | 474 |
+| `rpcs3/Emu/RSX/Overlays/pbd/pbd_spectator_overlay.cpp` | 507 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_status_overlay.cpp` | 471 |
 | `rpcs3/Emu/RSX/Utils/pbd_render_scale.h` | 44 |
 
@@ -405,7 +405,7 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/practice_store_test.cpp` | 1021 |
 | `rpcs3/tests/pbd/practice_streak_test.cpp` | 215 |
 | `rpcs3/tests/pbd/practice_throw_escape_test.cpp` | 76 |
-| `rpcs3/tests/pbd/practice_wakeup_test.cpp` | 463 |
+| `rpcs3/tests/pbd/practice_wakeup_test.cpp` | 466 |
 | `rpcs3/tests/pbd/practice_wall_model.h` | 135 |
 | `rpcs3/tests/pbd/practice_walls_test.cpp` | 459 |
 | `rpcs3/tests/pbd/presentation_rows_test.cpp` | 116 |
@@ -442,7 +442,7 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/skip_guard_test.cpp` | 119 |
 | `rpcs3/tests/pbd/sound_options_test.cpp` | 161 |
 | `rpcs3/tests/pbd/spectator_channel_model.h` | 198 |
-| `rpcs3/tests/pbd/spectator_channel_test.cpp` | 1091 |
+| `rpcs3/tests/pbd/spectator_channel_test.cpp` | 1184 |
 | `rpcs3/tests/pbd/spectator_packet_random_test.cpp` | 177 |
 | `rpcs3/tests/pbd/spectator_parser_audit_test.cpp` | 175 |
 | `rpcs3/tests/pbd/spectator_presentation_checks.h` | 190 |
@@ -521,6 +521,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/Cell/pbd_ppu_object_name.cpp` | 102 |
 | `rpcs3/Emu/Cell/pbd_ppu_object_name.h` | 254 |
 | `rpcs3/Emu/Cell/pbd_search_badge.h` | 243 |
+| `rpcs3/Emu/Cell/pbd_spectator_mouse.h` | 112 |
 | `rpcs3/Emu/Cell/pbd_versus.h` | 596 |
 | `rpcs3/Emu/Cell/pbd_versus_native.cpp` | 347 |
 | `rpcs3/Emu/Cell/pbd_versus_native.h` | 24 |
@@ -705,11 +706,11 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_settings_view.h` | 255 |
 | `rpcs3/Emu/PBD/pbd_shader_build.h` | 267 |
 | `rpcs3/Emu/PBD/pbd_spectator_boundary_steps.h` | 298 |
-| `rpcs3/Emu/PBD/pbd_spectator_channel_controls.h` | 360 |
-| `rpcs3/Emu/PBD/pbd_spectator_channel_input.h` | 219 |
+| `rpcs3/Emu/PBD/pbd_spectator_channel_controls.h` | 361 |
+| `rpcs3/Emu/PBD/pbd_spectator_channel_input.h` | 220 |
 | `rpcs3/Emu/PBD/pbd_spectator_channel_model.h` | 410 |
-| `rpcs3/Emu/PBD/pbd_spectator_channel_publication.h` | 187 |
-| `rpcs3/Emu/PBD/pbd_spectator_local_channel.h` | 302 |
+| `rpcs3/Emu/PBD/pbd_spectator_channel_publication.h` | 222 |
+| `rpcs3/Emu/PBD/pbd_spectator_local_channel.h` | 326 |
 | `rpcs3/Emu/PBD/pbd_spectator_standby.h` | 135 |
 | `rpcs3/Emu/PBD/pbd_stage_sync.h` | 73 |
 | `rpcs3/Emu/PBD/pbd_stall_metrics.h` | 208 |

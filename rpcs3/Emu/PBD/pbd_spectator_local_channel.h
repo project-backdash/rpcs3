@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pbd_spectator_channel_model.h"
+#include "../Cell/pbd_spectator_mouse.h"
 
 namespace pbd::spectator
 {
@@ -9,6 +10,12 @@ namespace pbd::spectator
 		std::filesystem::path m_directory;
 		manifest m_identity;
 		std::deque<frame> m_frames;
+		struct posted_pad
+		{
+			u32 boundary = 0;
+			std::array<std::uint16_t, 2> pads{};
+		};
+		std::optional<posted_pad> m_posted_pad;
 		presentation m_presentation;
 		u64 m_native_generation = 0, m_control_serial = 0, m_report_serial = 0;
 		u32 m_packet_serial = 0, m_game = 0, m_origin = 0, m_receipt = 0, m_consumed = 0, m_checked = 0;
@@ -63,6 +70,16 @@ namespace pbd::spectator
 		bool m_fight = false;
 		// The in-game menu holds the watcher's controller (read_pad): the screen does not show meanwhile.
 		bool m_menu = false;
+		// Clicks on the watcher's screen still to press (pbd_spectator_mouse.h), one per read with a release read between, so two
+		// clicks on one control are two presses. A Quick line carries its index for the highlight.
+		struct queued_click
+		{
+			std::uint16_t word = 0;
+			std::optional<u32> line;
+		};
+		std::deque<queued_click> m_clicks;
+		bool m_click_held = false;
+		std::uint16_t click_word(bool menu);
 		u64 m_pad_serial = 0, m_preview_since = 0;
 		// The arrival of the last waiting control that named the game this watch waits for (input_wait_outcome).
 		std::optional<std::chrono::steady_clock::time_point> m_alive_at;
@@ -260,9 +277,13 @@ namespace pbd::spectator
 		}
 		// How many frames past the one it runs the watcher holds: the throw break rule reads a held fighter's word up to L ticks
 		// ahead (pbd_throw_break.h), so a tick runs only once its stream holds those frames, or the game's last frame. The
-		// launcher keeps that many frames offered past the running one while the game's L is above 0.
+		// launcher keeps that many frames offered past the running one while the game's L is above 0. A game whose round
+		// witness may still name its L (an in-game select, before the round starts) holds the largest L: the rule applies
+		// from the round's first tick, and the frame running then was held before its L was known.
 		u32 lookahead_frames() const
 		{
+			if (m_round_required && !m_expected_round && !m_throw_break.any())
+				return pbd::throw_break::max_lookahead;
 			return std::max(m_throw_break.lookahead[0], m_throw_break.lookahead[1]);
 		}
 		std::optional<frame> reserve()
@@ -273,12 +294,15 @@ namespace pbd::spectator
 			m_reserved = true;
 			return m_frames.front();
 		}
-		// A port's pad at a native boundary from the reserved frame on, among the frames held; nothing for one not held.
+		// The battle reads throw breaks after the two-port post released its reservation. Keep that tick's raw pad and
+		// the held successors available until the next post; no input is available before the first reservation.
 		std::optional<std::uint16_t> pbd_queued_pad(u32 boundary, u32 port) const
 		{
 			const u32 source = pbd_source_boundary(boundary);
-			if (!m_reserved || port > 1 || source == ~0u)
+			if (!healthy() || !game_active() || (!m_reserved && !m_posted_pad) || port > 1 || source == ~0u)
 				return {};
+			if (m_posted_pad && m_posted_pad->boundary == source)
+				return m_posted_pad->pads[port];
 			for (const auto& item : m_frames)
 				if (item.boundary == source)
 					return item.pads[port];

@@ -179,6 +179,7 @@ namespace pbd::spectator
 		}
 		m_presentation.native_through = m_consumed + 1;
 		m_presentation.sync_mask = executed.mask;
+		m_posted_pad = posted_pad{executed.boundary, executed.pads};
 		++m_consumed;
 		m_reserved = false;
 		m_frames.pop_front();

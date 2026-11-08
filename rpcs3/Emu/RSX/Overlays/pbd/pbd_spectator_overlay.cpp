@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "pbd_overlays.h"
 #include "overlay_pbd_draw.h"
+#include "Emu/Cell/pbd_spectator_mouse.h"
 #include "Emu/System.h"
 
 #include <algorithm>
@@ -93,6 +94,14 @@ namespace rsx
 
 		using namespace pbd;
 		namespace ui = ::pbd::spectator_ui;
+		namespace pointer = ::pbd::spectator::mouse;
+
+		// A control-bar group as a click target: the bar's 32-unit line around its centre.
+		static void clickable(pointer::layout& targets, f32 x, f32 centre, f32 width, std::string_view keys)
+		{
+			if (const u16 bit = ui::pad::of(keys))
+				targets.add({x, centre - 16.f, width, 32.f, pointer::kind::button, bit});
+		}
 
 		struct watcher_screen_drawing
 		{
@@ -101,6 +110,7 @@ namespace rsx
 			const atlas_ref& atlas;
 			const ui::view& screen;
 			u64 now_ms;
+			pointer::layout& targets;
 			static constexpr f32 canvas_w = 1280.f, canvas_h = 720.f, bar_centre = 693.f;
 			static constexpr f32 chat_left = 40.f, chat_top = 196.f, chat_width = 480.f, chat_height = 412.f, chat_pad = 14.f, chat_inner = chat_width - 2.f * chat_pad;
 
@@ -137,6 +147,7 @@ namespace rsx
 						if (at + width > limit)
 							break;
 						const f32 k = rich_text(&out, atlas, keys, at, bar_centre, item.keys);
+						clickable(targets, at, bar_centre, width, item.keys);
 						const f32 label_w = out.text(type.caption, text_1, at + k + 7.f, baseline(type.caption, bar_centre), label);
 						if (!badge.empty())
 							tag(out, type.caption, gold, rgb(0x0B0304), at + k + 7.f + label_w + 6.f, false, bar_centre - 10.f, badge);
@@ -173,17 +184,26 @@ namespace rsx
 				const f32 tab_centre = chat_top + 19.f;
 				f32 tab_x = chat_left + chat_pad;
 				if (chat.tabs.size() > 1)
-					tab_x += rich_text(&out, atlas, {type.caption, white, 16.f}, tab_x, tab_centre, "{l1}") + 12.f;
+				{
+					const f32 glyph = rich_text(&out, atlas, {type.caption, white, 16.f}, tab_x, tab_centre, "{l1}");
+					clickable(targets, tab_x, tab_centre, glyph, "{l1}");
+					tab_x += glyph + 12.f;
+				}
 				for (usz i = 0; i < chat.tabs.size(); ++i)
 				{
 					const bool current = i == chat.tab;
 					const f32 tab_w = out.text(type.label, current ? text_1 : text_3, tab_x, baseline(type.label, tab_centre), utf8_to_u32string(chat.tabs[i]));
 					if (current)
 						out.rect(layer::b_lines, crimson, tab_x, chat_top + 34.f, tab_w, 2.f);
+					else
+						targets.add({tab_x - 6.f, chat_top + 2.f, tab_w + 12.f, 34.f, pointer::kind::tab, static_cast<u32>(i)});
 					tab_x += tab_w + 22.f;
 				}
 				if (chat.tabs.size() > 1)
-					rich_text(&out, atlas, {type.caption, white, 16.f}, tab_x - 10.f, tab_centre, "{r1}");
+				{
+					const f32 glyph = rich_text(&out, atlas, {type.caption, white, 16.f}, tab_x - 10.f, tab_centre, "{r1}");
+					clickable(targets, tab_x - 10.f, tab_centre, glyph, "{r1}");
+				}
 				out.rect(layer::b_lines, top_edge, chat_left, chat_top + 38.f, chat_width, 1.f);
 			}
 
@@ -265,6 +285,7 @@ namespace rsx
 					out.rect(layer::b_lines, edge, qx, chip_top + 1.f, 1.f, 26.f);
 					out.rect(layer::b_lines, edge, qx + chip_w - 1.f, chip_top + 1.f, 1.f, 26.f);
 					out.text(type.caption, focus ? gold : text_2, qx + 10.f, baseline(type.caption, row_centre), labels[chip.index]);
+					targets.add({qx, chip_top, chip_w, 28.f, pointer::kind::quick, static_cast<u32>(chip.index)});
 				}
 			}
 
@@ -316,7 +337,8 @@ namespace rsx
 				m_output_scale = std::min(width / 1280.f, height / 720.f);
 		}
 
-		static void draw_watch_preparation(layer& out, const fonts& type, const ::pbd::spectator::presentation& display, f32 output_scale)
+		static void draw_watch_preparation(layer& out, const fonts& type, const ::pbd::spectator::presentation& display, f32 output_scale,
+			pointer::layout& targets)
 		{
 			const auto centred = [&](font* f, color4f ink, f32 centre_y, std::string_view text)
 			{
@@ -348,7 +370,11 @@ namespace rsx
 				const auto atlas = atlas_ref::pick(output_scale, pbd_xbox_glyphs());
 				const std::array<prompt_item, 2> items{{{"{circle}", "Stop Watching"}, {"{start}", "Skip to Live"}}};
 				prompt_bar(out, atlas, type.caption, 56.f, 693.f, 1224.f,
-					std::span<const prompt_item>(items.data(), display.catch_up ? 2 : 1));
+					std::span<const prompt_item>(items.data(), display.catch_up ? 2 : 1),
+					[&](usz i, f32 at, f32 width)
+					{
+						clickable(targets, at, 693.f, width, items[i].keys);
+					});
 			}
 		}
 
@@ -417,6 +443,13 @@ namespace rsx
 
 		void pbd_spectator_overlay::update(u64)
 		{
+			pointer::layout targets;
+			compose(targets);
+			pointer::publish(targets);
+		}
+
+		void pbd_spectator_overlay::compose(pointer::layout& targets)
+		{
 			if (Emu.IsStopped())
 			{
 				visible = false;
@@ -433,7 +466,7 @@ namespace rsx
 			layer out;
 			if (m_cover)
 			{
-				draw_watch_preparation(out, type, display, m_output_scale);
+				draw_watch_preparation(out, type, display, m_output_scale, targets);
 				out.flush(m_compiled);
 				return;
 			}
@@ -448,7 +481,7 @@ namespace rsx
 				if (screen.shown && !display.broadcast)
 				{
 					const auto atlas = atlas_ref::pick(m_output_scale, pbd_xbox_glyphs());
-					watcher_screen_drawing draw{out, type, atlas, screen, ::pbd::spectator_ui::steady_ms()};
+					watcher_screen_drawing draw{out, type, atlas, screen, ::pbd::spectator_ui::steady_ms(), targets};
 					draw.draw();
 				}
 			}

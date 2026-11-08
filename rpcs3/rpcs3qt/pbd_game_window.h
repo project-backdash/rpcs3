@@ -44,6 +44,7 @@ namespace pbd::game_window
 		static bool hosted_event(gs_frame& frame, QEvent* ev);
 		static bool menu_pointer(gs_frame& frame, QEvent* ev);
 		static bool replay_pointer(gs_frame& frame, QEvent* ev);
+		static bool spectator_pointer(gs_frame& frame, QEvent* ev);
 		static bool practice_pointer(gs_frame& frame, QEvent* ev);
 		static void practice_point(gs_frame& frame, const QPointF& position, bool choose);
 	};

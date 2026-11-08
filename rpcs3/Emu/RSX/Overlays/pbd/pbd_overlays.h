@@ -10,6 +10,7 @@
 #include "Emu/PBD/pbd_practice_presentation.h"
 #include "Emu/Cell/pbd_corner_chat.h"
 #include "Emu/PBD/pbd_spectator_channel_input.h"
+#include "Emu/Cell/pbd_spectator_mouse.h"
 #include "Emu/Cell/pbd_session_wait.h"
 #include "Emu/Cell/pbd_select_band.h"
 #include "Emu/Cell/pbd_vs_cards.h"
@@ -121,6 +122,8 @@ namespace rsx
 			void set_render_viewport(u16 width, u16 height) override;
 
 		private:
+			// Draws the watch and fills in where its controls are, for the mouse (pbd_spectator_mouse.h).
+			void compose(::pbd::spectator::mouse::layout& targets);
 			compiled_resource m_compiled{};
 			f32 m_output_scale = 1.f;
 			bool m_cover = true;

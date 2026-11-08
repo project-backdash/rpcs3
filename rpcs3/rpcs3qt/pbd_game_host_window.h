@@ -838,6 +838,15 @@ namespace pbd::game_host
 						try_hand_back(child);
 					}
 				}
+				// A game the player started shows while they are in another app (a match found, a lobby turn): it comes to
+				// the front, so its first input reaches it and Windows runs it as the foreground program.
+				else if (shown && !foreground_within(parent) && !foreground_within(child))
+				{
+					const bool front = bring_to_front(detached ? child : parent);
+					game_host_log.notice("Hosted game shown behind another window; brought to the front: %s", front ? "yes" : "no");
+					if (front)
+						SetFocus(child);
+				}
 				else if (foreground_within(parent))
 				{
 					if (detached)

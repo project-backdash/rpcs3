@@ -360,6 +360,8 @@ PBD_TEST(PbdPracticeWakeup, LockedLandingPreservesEveryOpeningUntilTheGetupWindo
 			const auto now = memory.read(1);
 			check(now && now->on_floor && !now->actionable, "a grounded landing without an input window cannot consume a wake-up");
 			check(control.sample(*now) == 0 && control.floor.given == 0);
+			check(control.native_action() == pbd_wakeup_native_action(static_cast<option>(selected)),
+				"a landing tech stays offered while the fighter lands, before the floor's input window");
 		}
 		memory.words[actor + 0x96] = 60;
 		memory.words[0x1008f05c]++;
@@ -367,6 +369,7 @@ PBD_TEST(PbdPracticeWakeup, LockedLandingPreservesEveryOpeningUntilTheGetupWindo
 		check(now && now->actionable, "the end-command window admits the floor target's inputs on the same frame");
 		const auto plan = pbd_plan_wakeup(static_cast<option>(selected), now->position, false);
 		check(control.sample(*now) == (plan.count ? plan.words[0] : 0), "the requested opening survives the normal floor time");
+		check(!control.native_action(), "the floor's input window withdraws a tech that was not taken");
 		memory.words[commands + 24 + 8] = 0x8030;
 		check(!memory.read(1)->actionable, "an invalid terminal target is never followed");
 	}
