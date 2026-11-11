@@ -4,6 +4,7 @@ set(PBD_TESTS
     ${CMAKE_CURRENT_LIST_DIR}/window_geometry_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_moment_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/match_bind_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/checkpoint_versions_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/replay_entry_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/replay_resource_reference_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/replay_bank_offset_test.cpp

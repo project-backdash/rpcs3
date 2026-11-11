@@ -19,6 +19,9 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)match_bind_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)checkpoint_versions_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)peer_auth_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>

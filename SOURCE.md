@@ -11,11 +11,11 @@ to PROJECT BACKDASH, not to RPCS3.
 
 - Upstream: RPCS3 commit [`47599599a4cea37f350eb0936d7c5e4de6f7bf57`](https://github.com/RPCS3/rpcs3/commit/47599599a4cea37f350eb0936d7c5e4de6f7bf57) (2026-11-08, "atomic: Treat EPERM from the futex_waitv probe as unsupported"), unchanged,
   as a source base; snapshot preparation fetches it shallowly and includes no private repository history.
-- Changes on top of it: 763 files (638 added, 119 changed, 6 deleted, 0 renamed), 165296 lines added and 6020 removed,
+- Changes on top of it: 764 files (639 added, 119 changed, 6 deleted, 0 renamed), 165355 lines added and 6020 removed,
   not counting this file. Line counts describe the recorded native revision; exported build adapters may differ.
-- Emulator source revision: `e118fb9b00eaed31476ebda39eca0cb4f46ee3ec`.
+- Emulator source revision: `36b5606f49da491942c705fa88492a99c8685efa`.
 - This release snapshot retains public build support and documentation, with PBD C++ formatting.
-- Release build: Project Backdash 0.63.1, `rpcs3.exe` SHA-256 `86b8b7b03577e604624d959686481db58bff737cb2bd7075a6341d509d9a0d6d`.
+- Release build: Project Backdash 0.63.2, `rpcs3.exe` SHA-256 `e0f6a89962dfe061c00fbbdc830a11f3df405657aae809d0ceeb872ae5781e47`.
 
 ## The GPL source in the installer
 
@@ -326,6 +326,7 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | File | Lines |
 |---|---|
 | `rpcs3/tests/pbd/character_rule_test.cpp` | 191 |
+| `rpcs3/tests/pbd/checkpoint_versions_test.cpp` | 40 |
 | `rpcs3/tests/pbd/clip_buffer_test.cpp` | 215 |
 | `rpcs3/tests/pbd/clip_frames_test.cpp` | 287 |
 | `rpcs3/tests/pbd/clip_hud_test.cpp` | 202 |
@@ -370,8 +371,8 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/owner_flags_test.cpp` | 119 |
 | `rpcs3/tests/pbd/package_path_test.cpp` | 14 |
 | `rpcs3/tests/pbd/pbd_test.h` | 81 |
-| `rpcs3/tests/pbd/pbd_tests.cmake` | 127 |
-| `rpcs3/tests/pbd/pbd_tests.props` | 344 |
+| `rpcs3/tests/pbd/pbd_tests.cmake` | 128 |
+| `rpcs3/tests/pbd/pbd_tests.props` | 347 |
 | `rpcs3/tests/pbd/peer_auth_test.cpp` | 1117 |
 | `rpcs3/tests/pbd/peer_endpoint_test.cpp` | 118 |
 | `rpcs3/tests/pbd/peer_log_test.cpp` | 247 |
@@ -540,7 +541,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_boundary_completion.cpp` | 269 |
 | `rpcs3/Emu/PBD/pbd_boundary_dispatch.cpp` | 352 |
 | `rpcs3/Emu/PBD/pbd_checkpoint_capture.h` | 139 |
-| `rpcs3/Emu/PBD/pbd_checkpoint_compatibility.h` | 14 |
+| `rpcs3/Emu/PBD/pbd_checkpoint_compatibility.h` | 60 |
 | `rpcs3/Emu/PBD/pbd_checkpoint_memory.h` | 136 |
 | `rpcs3/Emu/PBD/pbd_checkpoint_setup.cpp` | 247 |
 | `rpcs3/Emu/PBD/pbd_checkpoint_write_plan.h` | 162 |
@@ -770,16 +771,6 @@ change with its date.
 | File | Added | Removed |
 |---|---|---|
 | `.github/CONTRIBUTING.md` | 33 | 55 |
-| `3rdparty/7zip/7zip` | 1 | 1 |
-| `3rdparty/FAudio` | 1 | 1 |
-| `3rdparty/GPUOpen/VulkanMemoryAllocator` | 1 | 1 |
-| `3rdparty/OpenAL/openal-soft` | 1 | 1 |
-| `3rdparty/curl/curl` | 1 | 1 |
-| `3rdparty/libpng/libpng` | 1 | 1 |
-| `3rdparty/libsdl-org/SDL` | 1 | 1 |
-| `3rdparty/rtmidi/rtmidi` | 1 | 1 |
-| `3rdparty/wolfssl/wolfssl` | 1 | 1 |
-| `3rdparty/zlib/zlib` | 1 | 1 |
 | `BUILDING.md` | 44 | 2 |
 | `CMakeLists.txt` | 4 | 0 |
 | `README.md` | 64 | 25 |
