@@ -87,6 +87,26 @@ namespace pbd::replay_memory
 	inline constexpr std::array<std::uint32_t, 5> previous_game_flow = {
 		0x1008ec6c, 0x1008f08c, 0x1008f090, 0x100932a8, 0x100932ac};
 
+	// The camera a finished game leaves behind. A fresh boot holds zeros here; the next game's initializer rewrites only
+	// part of it (0x81fe0 and 0x821e8 from 0x1603c), and stage objects read the rest before it is written: the view matrices
+	// at 0x10099730 (0x80df8, 0x80e34), the mode at +0x21c and the vector pair at 0x10099b10 (0x8329c and 0x832ac load it,
+	// 0x294038 compares it to choose a fade). From these they decide whether to draw, and so whether their effects spawn,
+	// each spawn drawing twice from the shared generator. Floats, a mode and frame counters; no pointers.
+	inline constexpr std::uint32_t camera_block = 0x100996a0;
+	inline constexpr std::uint32_t camera_block_bytes = 0x850;
+	// The KO camera variant: 0x8d55c picks it at a KO and stores (x+1)%3, so the next game's first KO continues from it.
+	inline constexpr std::uint32_t ko_camera_variant = 0x10099f10;
+	// A stage fade word that 0x294020 reads before 0x2940ac writes it again.
+	inline constexpr std::uint32_t stage_fade_word = 0x10084ea0;
+
+	// The fighters' effect controller, which the battle effect update 0x98b14 keeps across games: three cooldowns (+0, +4,
+	// +8; 0x99ea4 clears only these), a phase (+0xc) that 0x99dc8 adds one to every battle frame and nothing resets, both
+	// sides' seven movement accumulators (+0x10, +0x2c) and four angles (+0x48). 0x98e7c reads the phase and draws once
+	// from the shared generator at 0x99694 when (phase + 4 * side + 2 * slot) % 10 is 0, so a fresh boot's zeros draw on
+	// other frames than the game that followed game 1. Integers and floats; no pointers.
+	inline constexpr std::uint32_t effect_controller = 0x1009fdd0;
+	inline constexpr std::uint32_t effect_controller_bytes = 0x50;
+
 	inline constexpr std::uint32_t actors = 0x10090040;
 	inline constexpr std::uint32_t actor_stride = 0x8d0;
 	// Both fighters' actors, the block the per-frame check hashes as its first region.

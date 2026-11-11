@@ -2,6 +2,8 @@
 // start state.
 #include "stdafx.h"
 #include "../Cell/pbd_rollback_session_boundary.h"
+#include "../Cell/lv2/sys_prx.h"
+#include "Emu/IdManager.h"
 #include "pbd_env_parse.h"
 #include "pbd_emulator_identity.h"
 #include "pbd_replay_standby.h"
@@ -9,6 +11,28 @@
 #include "pbd_spectator_standby.h"
 
 #ifdef _WIN32
+// The writable segment of a loaded firmware module as whole pages [begin, end). Empty unless exactly one module of that
+// name is loaded and it has exactly one such segment.
+static std::pair<u64, u64> loaded_module_data_span(std::string_view module_name)
+{
+	std::pair<u64, u64> span{};
+	u32 found = 0;
+	idm::select<lv2_obj, lv2_prx>([&](u32, lv2_prx& prx)
+		{
+			if (module_name != prx.module_info_name)
+				return;
+			for (const auto& seg : prx.segs)
+			{
+				// A loaded PT_LOAD segment with PF_W.
+				if (seg.type != 0x1 || !(seg.flags & 0x2) || !seg.size)
+					continue;
+				span = {seg.addr & ~u64{4095}, (u64{seg.addr} + seg.size + 4095) & ~u64{4095}};
+				found++;
+			}
+		});
+	return found == 1 ? span : std::pair<u64, u64>{};
+}
+
 void pbd::rollback_session::read_checkpoint_pages(const wchar_t* checkpoint_pages, bool public_capture)
 {
 	if (public_capture)
@@ -21,6 +45,14 @@ void pbd::rollback_session::read_checkpoint_pages(const wchar_t* checkpoint_page
 		if (!m_storage->launch.direct())
 			m_storage->replay.input_port = 2;
 		m_storage->undo.deny.assign(pbd::replay_capture::pbd_undo_deny.begin(), pbd::replay_capture::pbd_undo_deny.end());
+		// Undoing libgcm's own data would rewind command-stream state the RSX has already consumed. The firmware modules
+		// are loaded before the first boundary and stay in place for the run; a session that cannot find the segment
+		// must not start.
+		const auto module_deny = loaded_module_data_span(pbd::replay_capture::pbd_undo_deny_module);
+		require(module_deny.first < module_deny.second, "undo_deny_module_data_not_found");
+		m_storage->undo.deny.push_back(module_deny);
+		pbd_session_log.notice("Undo capture never arms %s data at 0x%x-0x%x.", pbd::replay_capture::pbd_undo_deny_module.data(),
+			module_deny.first, module_deny.second);
 		m_storage->undo.admit_io_spans.assign(pbd::replay_capture::pbd_io_allowed.begin(), pbd::replay_capture::pbd_io_allowed.end());
 		// A player run uses the compiled byte policy. Diagnostic overrides require the explicit probe route.
 		for (const char* key : {"PBD_TICK_PROBE_OUTPUT", "PBD_TICK_EXCLUSIONS", "PBD_TICK_UNDO_ADMIT",

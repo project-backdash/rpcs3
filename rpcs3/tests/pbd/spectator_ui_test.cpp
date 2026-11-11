@@ -20,8 +20,7 @@ namespace
 	}
 	const std::string base = "\"revision\":1,\"bar\":true,\"firstTo\":2,\"unread\":0";
 	const std::string chat = ",\"chat\":{\"tabs\":[\"All\",\"Lobby\",\"Direct\"],\"tab\":1,\"to\":\"To: Lobby\","
-							 "\"lines\":[{\"author\":\"Rook\",\"text\":\"gg\"},{\"text\":\"Kai beat LowParry 2-1.\",\"system\":true}],"
-							 "\"quick\":[\"gg\",\"One more?\",\"Nice!\"],\"selected\":1}";
+							 "\"lines\":[{\"author\":\"Rook\",\"text\":\"gg\"},{\"text\":\"Kai beat LowParry 2-1.\",\"system\":true}]}";
 	void minimal_state_checks()
 	{
 		// The minimal screen: the four required fields, nothing open.
@@ -51,7 +50,6 @@ namespace
 		check(ui.new_line && ui.new_line->id == "msg-7" && ui.new_line->author == "Velvet" && ui.new_line->text == "Rook is one hit away");
 		check(ui.chat && ui.chat->tabs.size() == 3 && ui.chat->tab == 1 && ui.chat->to == "To: Lobby" && ui.chat->lines.size() == 2);
 		check(ui.chat->lines[0].author == "Rook" && !ui.chat->lines[0].system && ui.chat->lines[1].system && ui.chat->lines[1].author.empty());
-		check(ui.chat->quick.size() == 3 && ui.chat->selected == 1);
 		check(ui.profiles && (*ui.profiles)[0].name == "Kai" && (*ui.profiles)[0].lines.size() == 2 && (*ui.profiles)[1].lines.empty());
 		check(ui.cards && (*ui.cards)[0].region == "N. America" && (*ui.cards)[1].language.empty());
 		// A preview needs an identifier and a text; control characters and over-long text refuse the whole control.
@@ -61,12 +59,9 @@ namespace
 		check(!parse_text(base + ",\"preview\":{\"id\":\"m\",\"text\":\"a\\u0007b\"}").value);
 		check(!parse_text(base + ",\"preview\":{\"id\":\"m\",\"text\":\"" + std::string(line_bytes + 1, 'x') + "\"}").value);
 		check(parse_text(base + ",\"preview\":{\"id\":\"m\",\"text\":\"" + std::string(line_bytes, 'x') + "\"}").value);
-		// The chat's tab and selected= name entries that exist; at most six Quick lines and eight log lines.
+		// The chat's tab names an entry that exists; at most eight log lines.
 		check(!parse_text(base + ",\"chat\":{\"tabs\":[\"All\"],\"tab\":1}").value);
 		check(parse_text(base + ",\"chat\":{}").value);
-		check(!parse_text(base + ",\"chat\":{\"quick\":[\"gg\"],\"selected\":1}").value);
-		check(!parse_text(base + ",\"chat\":{\"quick\":[\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\"]}").value);
-		check(!parse_text(base + ",\"chat\":{\"quick\":[\"\"]}").value);
 		check(!parse_text(base + ",\"chat\":{\"lines\":[{\"author\":\"x\"}]}").value);
 		std::string nine = ",\"chat\":{\"lines\":[";
 		for (int i = 0; i < 9; ++i)
@@ -97,12 +92,12 @@ namespace
 		check(reader.read(pad::circle, &*closed, true).empty());
 		check(reader.read(0, &*closed, true).empty());
 		const auto stop = reader.read(pad::circle, &*closed, true);
-		check(stop.size() == 1 && stop[0].which == button::circle && !stop[0].chat_open && !stop[0].quick_line);
+		check(stop.size() == 1 && stop[0].which == button::circle && !stop[0].chat_open);
 		const auto skip = reader.read(pad::circle | pad::start | pad::select | pad::l2, &*closed, true);
 		check(skip.size() == 1 && skip[0].which == button::start && button_name(skip[0].which) == "start");
 		check(reader.read(pad::circle | pad::start, &*closed, true).empty());
 		check(reader.read(0, &*closed, true).empty());
-		// Several at once come back in a fixed order; Cross with no chat open is nothing.
+		// Several at once come back in a fixed order; Cross is nothing.
 		const auto many = reader.read(pad::cross | pad::r1 | pad::square | pad::r2 | pad::l1 | pad::triangle, &*closed, true);
 		check(many.size() == 5 && many[0].which == button::square && many[1].which == button::r2 && many[2].which == button::triangle &&
 			  many[3].which == button::l1 && many[4].which == button::r1);
@@ -124,106 +119,34 @@ namespace
 		check(reader.read(pad::start, nullptr, false).empty());
 		reader.read(0, nullptr, false);
 		const auto skip = reader.read(pad::start, nullptr, false);
-		check(skip.size() == 1 && skip[0].which == button::start && !skip[0].quick_line);
+		check(skip.size() == 1 && skip[0].which == button::start);
 	}
 
-	void chat_navigation_checks()
+	void chat_press_checks()
 	{
-		// The open chat: the highlight starts on selected=, the directions move it within the Quick lines, Cross reports it.
+		// The open chat: Cross and the directions report nothing (players type in the launcher's chat); R1 changes the tab and
+		// Circle ends the chat.
 		pad_reader reader;
 		const auto open = parse_text("\"revision\":1,\"bar\":true,\"firstTo\":2,\"unread\":0" + chat).value;
-		reader.apply(*open);
-		check(reader.highlight() == 1);
 		check(reader.read(0, &*open, true).empty());
-		check(reader.read(pad::right, &*open, true).empty() && reader.highlight() == 2);
+		check(reader.read(pad::cross | pad::left | pad::right | pad::up | pad::down, &*open, true).empty());
 		check(reader.read(0, &*open, true).empty());
-		check(reader.read(pad::down, &*open, true).empty() && reader.highlight() == 2); // the last line stays
-		check(reader.read(0, &*open, true).empty());
-		const auto send = reader.read(pad::cross, &*open, true);
-		check(send.size() == 1 && send[0].which == button::cross && send[0].chat_open && send[0].quick_line == 2u);
-		check(reader.read(0, &*open, true).empty());
-		check(reader.read(pad::left, &*open, true).empty() && reader.highlight() == 1);
+		const auto tab = reader.read(pad::r1, &*open, true);
+		check(tab.size() == 1 && tab[0].which == button::r1 && tab[0].chat_open);
 		check(reader.read(0, &*open, true).empty());
 		const auto end = reader.read(pad::circle, &*open, true);
 		check(end.size() == 1 && end[0].which == button::circle && end[0].chat_open);
-		// The same panel sent again (a new log line) keeps the watcher's highlight; other Quick lines or another selected= start
-		// over; a closed chat clears it.
-		auto again = *open;
-		again.revision = 2;
-		again.chat->lines.push_back({"Kai", "nice", false});
-		reader.apply(again);
-		check(reader.highlight() == 1);
-		check(reader.read(0, &again, true).empty() && reader.read(pad::left, &again, true).empty() && reader.highlight() == 0);
-		reader.apply(again);
-		check(reader.highlight() == 0);
-		auto other = again;
-		other.chat->selected = 2;
-		reader.apply(other);
-		check(reader.highlight() == 2);
-		auto closed = again;
-		closed.chat.reset();
-		reader.apply(closed);
-		check(reader.highlight() == 0);
-		// A chat with no Quick lines sends nothing on Cross.
-		auto empty = again;
-		empty.chat->quick.clear();
-		empty.chat->selected = 0;
-		reader.apply(empty);
-		check(reader.read(0, &empty, true).empty() && reader.read(pad::cross, &empty, true).empty());
-
-		std::string wide_chat = ",\"chat\":{\"quick\":[";
-		for (u32 i = 0; i < max_quick; ++i)
-			wide_chat += std::string(i ? "," : "") + "\"" + std::string(quick_bytes - 1, 'W') + std::to_string(i) + "\"";
-		const auto wide = parse_text(base + wide_chat + "],\"selected\":5}").value;
-		check(wide);
-		reader.apply(*wide);
-		check(reader.highlight() == 5);
-		// Six wide replies fit two at a time with these font measurements, so navigation must move the visible window.
-		constexpr std::array<float, max_quick> widths{300.f, 300.f, 300.f, 300.f, 300.f, 300.f};
-		const auto visible = [&]
-		{
-			const auto chips = quick_layout(widths, reader.highlight(), 452.f, 140.f);
-			check(chips.size() == 2);
-			bool highlighted = false;
-			for (const auto& chip : chips)
-			{
-				check(chip.row < 2 && chip.x >= 0.f && chip.x + widths[chip.index] <= 452.f);
-				highlighted |= chip.index == reader.highlight();
-			}
-			check(highlighted);
-			return chips;
-		};
-		check(visible().front().index == 4);
-		const auto send_highlight = [&]
-		{
-			reader.read(0, &*wide, true);
-			const auto sent = reader.read(pad::cross, &*wide, true);
-			check(sent.size() == 1 && sent[0].which == button::cross && sent[0].quick_line == reader.highlight());
-		};
-		send_highlight();
-		for (const auto direction : {pad::left, pad::right})
-		{
-			for (u32 step = 1; step < max_quick; ++step)
-			{
-				reader.read(0, &*wide, true);
-				check(reader.read(direction, &*wide, true).empty());
-				check(reader.highlight() == (direction == pad::left ? max_quick - 1 - step : step));
-				visible();
-				send_highlight();
-			}
-		}
 	}
 
 	void menu_capture_checks()
 	{
-		// The in-game menu captures Circle and directions so they cannot also stop the watch or move the Quick lines.
+		// The in-game menu captures the buttons so they cannot also stop the watch or open a panel.
 		// A button held across menu closure needs a release before another press can be reported.
 		pad_reader reader;
 		const auto open = parse_text("\"revision\":1,\"bar\":true,\"firstTo\":2,\"unread\":0" + chat).value;
-		reader.apply(*open);
 		check(reader.read(0, &*open, true).empty());
 		check(reader.read(pad::circle, &*open, true, true).empty());
-		check(reader.read(pad::down | pad::cross, &*open, true, true).empty() && reader.highlight() == 1);
+		check(reader.read(pad::down | pad::square, &*open, true, true).empty());
 		check(reader.read(pad::circle, &*open, false, true).empty());
 		// The menu has let go with Circle still down.
 		check(reader.read(pad::circle, &*open, true).empty());
@@ -260,12 +183,10 @@ namespace
 		check(bar.size() == 3 && bar[0].keys == "{circle}" && bar[1].keys == "{square}" && bar[1].badge == 3 && bar[2].keys == "{r2}");
 		shown.chat = chat_panel{};
 		shown.chat->tabs = {"All", "Lobby"};
-		shown.chat->quick = {"gg"};
 		const auto open = bar_items(shown);
-		check(open.size() == 4 && open[0].keys == "{cross}" && open[1].keys == "{circle}" && open[2].keys == "{triangle}" && open[3].keys == "{l1}/{r1}");
+		check(open.size() == 2 && open[0].keys == "{circle}" && open[1].keys == "{l1}/{r1}");
 		shown.chat->tabs.clear();
-		shown.chat->quick.clear();
-		check(bar_items(shown).size() == 2);
+		check(bar_items(shown).size() == 1);
 		shown.chat.reset();
 		shown.profiles = std::array<profile, 2>{};
 		const auto profiles = bar_items(shown);
@@ -296,7 +217,7 @@ PBD_TEST(PbdSpectatorUi, Checks)
 	fight_visibility_checks();
 	local_button_checks();
 	held_start_checks();
-	chat_navigation_checks();
+	chat_press_checks();
 	menu_capture_checks();
 	score_and_bar_checks();
 	view_publication_checks();

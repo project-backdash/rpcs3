@@ -43,6 +43,59 @@ namespace
 
 } // namespace
 
+PBD_TEST(PbdSettingsMenu, LauncherAudioRefreshesTheOpenMenuAndItsSavedBaseline)
+{
+	auto m = sample_model();
+	m.current.volume = 35;
+	launcher_audio(m, 60, true, 17);
+	check(m.current.volume == 60 && m.applied.volume == 60 && m.start.volume == 60);
+	check(value_text(m, row::volume) == "60 (Muted)");
+	check(changes_json(m).find("masterVolume") == std::string::npos);
+	check(changes_json(m).find("\"audioRevision\":17") != std::string::npos);
+	m.current.vsync = true;
+	check(changes_json(m).find("masterVolume") == std::string::npos);
+	m.current.volume = 45;
+	check(changes_json(m).find("\"masterVolume\":45") != std::string::npos);
+	launcher_audio(m, 45, false);
+	check(value_text(m, row::volume) == "45");
+}
+
+PBD_TEST(PbdSettingsMenu, CustomizeStartOpensOnceAndNeverLeaksOrReopensOnClose)
+{
+	struct restore_flags
+	{
+		bool claimed = claim.exchange(false);
+		bool requested = top_open_requested.exchange(false);
+		~restore_flags()
+		{
+			claim.store(claimed);
+			top_open_requested.store(requested);
+		}
+	} saved;
+	word previous = 0;
+	customize_start(false, start, previous);
+	check(!claimed() && !take_top_open_request(), "Start elsewhere stays with its game");
+	customize_start(true, 0, previous);
+	customize_start(true, start, previous);
+	check(claimed() && take_top_open_request(), "the opening press is owned before the guest read");
+	auto m = sample_model();
+	controller c;
+	c.show(start, true);
+	check(c.poll(m, start, 1) == effect::none && c.open, "the held opening press cannot also close the menu");
+	customize_start(true, start, previous);
+	check(!take_top_open_request(), "holding Start queues no second menu");
+	customize_start(true, 0, previous);
+	c.poll(m, 0, 2);
+	customize_start(true, start, previous);
+	check(!take_top_open_request() && c.poll(m, start, 3) == effect::close);
+	claim.store(false);
+	customize_start(true, start, previous);
+	check(!take_top_open_request(), "the closing hold cannot reopen after releasing the claim");
+	customize_start(true, 0, previous);
+	customize_start(true, start, previous);
+	check(claimed() && take_top_open_request(), "a later fresh Start opens normally");
+}
+
 void settings_page_return_checks(model& m, controller& c, auto& v)
 {
 	// Settings opens the settings page; Circle and its Back row go back up, applying the video rows; START closes.

@@ -21,6 +21,11 @@
 
 #ifdef _WIN32
 #include "Windows.h"
+
+namespace pbd::game_host
+{
+	class qt_shell_filter;
+}
 #endif
 
 class gs_frame;
@@ -87,7 +92,7 @@ private:
 	void LoadLanguage(const QString& language_code);
 	static QStringList GetAvailableLanguageCodes();
 
-	void InitializeCallbacks();
+	void create_callbacks() override;
 	void InitializeConnects();
 
 	void StartPlaytime(bool start_playtime);
@@ -133,6 +138,7 @@ private:
 	std::function<void()> m_show_next_dialog;
 
 #ifdef _WIN32
+	std::unique_ptr<pbd::game_host::qt_shell_filter> m_shell_filter;
 	void register_device_notification(WId window_id);
 	void unregister_device_notification();
 	HDEVNOTIFY m_device_notification_handle {};

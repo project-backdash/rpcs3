@@ -292,7 +292,7 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 		// Process the instructions
 		for (m_addr = block.first - base; m_addr < block.first + block.second - base; m_addr += 4)
 		{
-			if (m_ir->GetInsertBlock()->getTerminator())
+			if (llvm_has_terminator(m_ir->GetInsertBlock()))
 			{
 				break;
 			}
@@ -464,7 +464,7 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 		}
 
 		// Finalize current block if necessary (create branch to the next address)
-		if (!m_ir->GetInsertBlock()->getTerminator())
+		if (!llvm_has_terminator(m_ir->GetInsertBlock()))
 		{
 			FlushRegisters();
 			CallFunction(m_addr);
@@ -517,7 +517,7 @@ Function* PPUTranslator::GetSymbolResolver(const ppu_module<lv2_obj>& info)
 			continue;
 		}
 
-		if (std::count(info.excluded_funcs.begin(), info.excluded_funcs.end(), f.addr))
+		if (std::ranges::contains(info.excluded_funcs, f.addr))
 		{
 			// Excluded function (possibly patched)
 			continue;
@@ -640,6 +640,16 @@ Value* PPUTranslator::VecHandleResult(Value* val, bool flush_denormals_manually)
 	val = g_cfg.core.ppu_fix_vnan ? VecHandleNan(val) : val;
 	val = flush_denormals_manually || !g_cfg.core.set_daz_and_ftz ? VecHandleDenormal(val) : val;
 	return val;
+}
+
+Value* PPUTranslator::VecEstimate(StringRef name, u32 vr)
+{
+	auto& entry = m_function->getEntryBlock();
+	const auto data = IRBuilder<>(&entry, entry.getFirstInsertionPt()).CreateAlloca(GetType<u32[4]>());
+
+	m_ir->CreateStore(GetVr(vr, VrType::vi32), data);
+	Call(GetType<void>(), name, data, ZExt(RegLoad(m_nj), GetType<u32>()));
+	return m_ir->CreateLoad(GetType<u32[4]>(), data);
 }
 
 Value* PPUTranslator::GetAddr(u64 _add)
@@ -1481,14 +1491,12 @@ void PPUTranslator::VCTUXS(ppu_opcode_t op)
 
 void PPUTranslator::VEXPTEFP(ppu_opcode_t op)
 {
-	const auto b = get_vr<f32[4]>(op.vb);
-	set_vr(op.vd, vec_handle_result(llvm_calli<f32[4], decltype(b)>{"llvm.exp2.v4f32", {b}}, true));
+	SetVr(op.vd, VecEstimate("__vexptefp", op.vb));
 }
 
 void PPUTranslator::VLOGEFP(ppu_opcode_t op)
 {
-	const auto b = get_vr<f32[4]>(op.vb);
-	set_vr(op.vd, vec_handle_result(llvm_calli<f32[4], decltype(b)>{"llvm.log2.v4f32", {b}}, true));
+	SetVr(op.vd, VecEstimate("__vlogefp", op.vb));
 }
 
 void PPUTranslator::VMADDFP(ppu_opcode_t op)
@@ -1960,6 +1968,12 @@ void PPUTranslator::VPKUWUS(ppu_opcode_t op)
 
 void PPUTranslator::VREFP(ppu_opcode_t op)
 {
+	if (g_cfg.core.ppu_set_vest)
+	{
+		SetVr(op.vd, VecEstimate("__vrefp", op.vb));
+		return;
+	}
+
 	set_vr(op.vd, vec_handle_result(fsplat<f32[4]>(1.0) / get_vr<f32[4]>(op.vb)));
 }
 
@@ -2003,6 +2017,12 @@ void PPUTranslator::VRLW(ppu_opcode_t op)
 
 void PPUTranslator::VRSQRTEFP(ppu_opcode_t op)
 {
+	if (g_cfg.core.ppu_set_vest)
+	{
+		SetVr(op.vd, VecEstimate("__vrsqrtefp", op.vb));
+		return;
+	}
+
 	set_vr(op.vd, vec_handle_result(fsplat<f32[4]>(1.0) / callf<f32[4]>(get_intrinsic<f32[4]>(Intrinsic::sqrt), get_vr<f32[4]>(op.vb))));
 }
 
@@ -2701,7 +2721,7 @@ void PPUTranslator::MCRF(ppu_opcode_t op)
 
 void PPUTranslator::BCLR(ppu_opcode_t op)
 {
-	const auto target = RegLoad(m_lr);
+	const auto target = m_ir->CreateAnd(RegLoad(m_lr), ~3);
 
 	if (op.lk)
 	{
@@ -2764,7 +2784,7 @@ void PPUTranslator::CROR(ppu_opcode_t op)
 
 void PPUTranslator::BCCTR(ppu_opcode_t op)
 {
-	const auto target = RegLoad(m_ctr);
+	const auto target = m_ir->CreateAnd(RegLoad(m_ctr), ~3);
 
 	if (op.lk)
 	{

@@ -6,6 +6,8 @@
 #include "Emu/PBD/pbd_spectator_channel_input.h"
 #include <iterator>
 #include <optional>
+#include <cstdlib>
+#include <stdexcept>
 
 #ifdef _WIN32
 #include <fcntl.h>
@@ -18,6 +20,188 @@ using namespace pbd::json::detail;
 
 #include "spectator_channel_model.h"
 // namespace
+
+namespace
+{
+	struct paired_environment
+	{
+		std::array<std::string, 2> previous;
+		std::array<bool, 2> present{};
+		static constexpr std::array<const char*, 2> names{"PBD_SPECTATOR_NATIVE_2", "PBD_SPECTATOR_NATIVE_3"};
+		static void set(const char* name, const char* text)
+		{
+#ifdef _WIN32
+			_putenv_s(name, text ? text : "");
+#else
+			if (text)
+				setenv(name, text, 1);
+			else
+				unsetenv(name);
+#endif
+		}
+		paired_environment()
+		{
+			for (std::size_t i = 0; i < names.size(); ++i)
+			{
+				if (const auto* text = std::getenv(names[i]))
+				{
+					present[i] = true;
+					previous[i] = text;
+				}
+				set(names[i], "1");
+			}
+		}
+		~paired_environment()
+		{
+			for (std::size_t i = 0; i < names.size(); ++i)
+				set(names[i], present[i] ? previous[i].c_str() : nullptr);
+		}
+	};
+	// __FILE__ is relative to the repository when the build compiles relative paths, and the tests run from the build output
+	// folder, so the fixture is looked up from the working folder and each folder above it.
+	std::string paired_fixture(const char* name)
+	{
+		const auto relative = std::filesystem::path(__FILE__).parent_path() / "fixtures" / name;
+		for (auto folder = std::filesystem::current_path();; folder = folder.parent_path())
+		{
+			if (std::ifstream in(folder / relative, std::ios::binary); in)
+				return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+			if (folder == folder.parent_path())
+			{
+				check(false);
+				return {};
+			}
+		}
+	}
+	value& edit(value& item, std::string_view key)
+	{
+		for (auto& field : item.fields)
+			if (field.first == key)
+				return field.second;
+		throw std::runtime_error("missing_fixture_field");
+	}
+} // namespace
+
+PBD_TEST(PbdSpectatorChannel, OriginalPairedGameStartsRequireTheirOwnSessionVersion)
+{
+	const paired_environment environment;
+	for (const auto name : {"paired-start-5b8d8c7c-2f60-48b2-be00-4bf4c65c6f30.json", "paired-start-ed1e0225-12d2-45cf-aa8b-012775b14b29.json"})
+	{
+		sample_document f(750);
+		const auto text = paired_fixture(name);
+		f.write("spectator-session.json", text);
+		const auto admitted = read_manifest(f.directory);
+		check(admitted.value, "the two complete synthetic envelopes and their paired first frame admit");
+		auto root = pbd::set_channel::detail::json_parser(text, 16384, 262144, 262144).parse();
+		check(root.value);
+		edit(*root.value, "schema") = value::string("pbd-spectator-session-1");
+		f.write("spectator-session.json", pbd::set_channel::detail::serialize(*root.value));
+		check(!read_manifest(f.directory).value, "paired data cannot use the older exact-agreement session");
+		paired_environment::set("PBD_SPECTATOR_NATIVE_3", nullptr);
+		f.write("spectator-session.json", text);
+		check(!read_manifest(f.directory).value, "the new native capability must be enabled");
+		paired_environment::set("PBD_SPECTATOR_NATIVE_3", "1");
+		edit(*root.value, "schema") = value::string("pbd-spectator-session-2");
+		auto& pair = edit(edit(*root.value, "capsuleStart"), "pairedStart");
+		auto& capture = edit(edit(pair, "captures"), "right");
+		auto envelope = pbd::set_channel::detail::json_parser(edit(capture, "envelope").text, 16384, 65536, 65536).parse();
+		check(envelope.value);
+		auto& flow = edit(edit(edit(*envelope.value, "capsule"), "generatorContext"), "flowLcg");
+		u32 flow_word = 0;
+		check(pbd::json::detail::number32(&flow.items[0], 0, 0xffffffffu, flow_word));
+		flow.items[0] = value::number(flow_word ^ 1u);
+		edit(capture, "envelope") = value::string(pbd::set_channel::detail::serialize(*envelope.value));
+		f.write("spectator-session.json", pbd::set_channel::detail::serialize(*root.value));
+		check(!read_manifest(f.directory).value, "an unlisted generator difference refuses");
+	}
+}
+
+PBD_TEST(PbdSpectatorChannel, PairedFirstFrameMustExecuteItsOriginalFullProof)
+{
+	const paired_environment environment;
+	sample_document source(751);
+	const auto text = paired_fixture("paired-start-5b8d8c7c-2f60-48b2-be00-4bf4c65c6f30.json");
+	source.write("spectator-session.json", text);
+	auto parsed = read_manifest(source.directory);
+	check(parsed.value);
+	auto binding = *parsed.value;
+	binding.binding = identity().binding;
+	binding.generation = 123;
+	const auto root = pbd::set_channel::detail::json_parser(text, 16384, 262144, 262144).parse();
+	check(root.value);
+	const auto* pair = root.value->find("capsuleStart")->find("pairedStart");
+	std::array<std::uint8_t, 48> facts{};
+	check(pbd::json::parse_lower_hex(pair->find("proof")->find("factsHex")->text, facts));
+	const auto boundary = le32(facts.data()), segment = le32(facts.data() + 4), counter = le32(facts.data() + 8), scene = le32(facts.data() + 12);
+	for (unsigned variant = 0; variant < 3; ++variant)
+	{
+		sample_document f(752 + variant, false, binding);
+		check(f.input.prepare(9, 0x01000000, 0, 0x8000004d, binding.checkpoint, binding.emulator));
+		f.control("\"type\":\"begin_game\",\"gameNumber\":2,\"originBoundary\":" + std::to_string(binding.pbd_game_origin) +
+				  ",\"originCounter\":2147483725,\"kind\":\"capsule_start\",\"stageId\":" + std::to_string(binding.stage) +
+				  ",\"leftCharacterRow\":" + std::to_string(binding.left) + ",\"rightCharacterRow\":" + std::to_string(binding.right) + ",\"roundsPerGame\":3,\"throwBreakLookahead\":" +
+				  pbd::set_channel::detail::serialize(*root.value->find("capsuleStart")->find("capsule")->find("throwBreakLookahead")));
+		auto packet_facts = facts;
+		if (variant == 1)
+			packet_facts[24] ^= 1;
+		// The recorded throw-break rule holds one successor while the first frame executes.
+		f.packet(1, 2, binding.pbd_first_frame, boundary, 2, false, 0x40, {}, segment, scene, &packet_facts);
+		check(f.input.poll_input(test_hash) == (variant != 1));
+		if (variant == 1)
+		{
+			check(f.input.reason() == "capsule_proof_mismatch");
+			continue;
+		}
+		check(f.input.pbd_set_native_anchor(900));
+		check(f.input.reserve());
+		std::array<u64, 3> combat{le64(facts.data() + 24), le64(facts.data() + 32), le64(facts.data() + 40)};
+		if (variant == 2)
+			combat[1] ^= 1;
+		check(f.input.verify_state(900, segment, scene, counter, 7, combat) == (variant == 0));
+		if (variant == 2)
+			check(f.input.reason() == "peer_sync_hash_mismatch");
+	}
+}
+
+template <typename Manifest>
+void bind_capsule_input_segment(Manifest& binding, u32 segment)
+{
+	// Older manifests have no explicit input-segment member; the coordinate assertions still exercise their reader.
+	if constexpr (requires { binding.pbd_input_segment; })
+		binding.pbd_input_segment = segment;
+}
+
+PBD_TEST(PbdSpectatorChannel, CapsuleBindsTheFirstConfirmedInputSegment)
+{
+	for (const auto segment : {19u, 20u, 21u})
+	{
+		auto binding = identity();
+		binding.pbd_capsule = "{}";
+		binding.pbd_capsule_game = 2;
+		binding.pbd_source_origin = 13893;
+		binding.pbd_game_origin = 13553;
+		binding.pbd_first_frame = 341;
+		binding.pbd_source_segment = 19;
+		bind_capsule_input_segment(binding, 20);
+		sample_document f(710 + segment, false, binding);
+		f.prepare();
+		f.control("\"type\":\"begin_game\",\"gameNumber\":2,\"originBoundary\":13553,\"originCounter\":2147483725,"
+				  "\"kind\":\"capsule_start\"," +
+				  fixed_picks + "\"roundsPerGame\":3");
+		f.packet(1, 2, 341, 13894, 2, false, 0x40, {}, segment, 17);
+		check(f.input.poll_input(test_hash) == (segment == 20));
+		if (segment == 20)
+		{
+			check(f.input.pbd_set_native_anchor(900));
+			const auto first = f.input.reserve();
+			check(first && first->boundary == 13894 && first->segment == 20 && first->scene == 17);
+			check(f.input.pbd_native_boundary(first->boundary) == 900);
+			check(f.input.verify_state(900, 20, 17, 0x8000004d + 13894, 7, {11, 22, 33}));
+		}
+		else
+			check(f.input.reason() == "capsule_coordinate_mismatch");
+	}
+}
 
 PBD_TEST(PbdSpectatorChannel, TableSlotsTravelBesideTheWatchedButtons)
 {
@@ -129,7 +313,8 @@ PBD_TEST(PbdSpectatorChannel, CapsuleStartKeepsOriginalCoordinatesAndChecksEvery
 			m.pbd_first_frame = 7;
 			m.pbd_source_origin = origin + 56;
 			m.pbd_game_origin = origin;
-			m.pbd_source_segment = 1;
+			// The input segment is the source segment, as a manifest without inputSegment gives; the packets carry segment 1.
+			m.pbd_source_segment = m.pbd_input_segment = 1;
 			sample_document f(300 + game, false, m);
 			f.prepare();
 			check(f.input.pbd_set_native_anchor(5));
@@ -186,6 +371,7 @@ PBD_TEST(PbdSpectatorChannel, CapsuleStartCannotChangeItsAnchorOrSkipARequiredHa
 	m.pbd_first_frame = 7;
 	m.pbd_source_origin = 106;
 	m.pbd_game_origin = 100;
+	m.pbd_source_segment = m.pbd_input_segment = 1;
 	{
 		sample_document f(301, false, m);
 		f.prepare();
@@ -1107,9 +1293,8 @@ PBD_TEST(PbdSpectatorChannel, Checks)
 
 PBD_TEST(PbdSpectatorChannel, ClicksOnTheWatcherScreenPressTheirButtons)
 {
-	// A click on a drawn control is the press its button makes: one press per click with a release read between, a Quick line
-	// highlighted before its Cross, a tab reached with L1/R1 presses, and nothing while the in-game menu holds the controller or
-	// once the screen has no controls.
+	// A click on a drawn control is the press its button makes: one press per click with a release read between, a tab reached
+	// with L1/R1 presses, and nothing while the in-game menu holds the controller or once the screen has no controls.
 	namespace ui = pbd::spectator_ui;
 	namespace mouse = pbd::spectator::mouse;
 	check(ui::pad::of("{circle}") == ui::pad::circle && ui::pad::of("{start}") == ui::pad::start);
@@ -1142,31 +1327,29 @@ PBD_TEST(PbdSpectatorChannel, ClicksOnTheWatcherScreenPressTheirButtons)
 	for (int read = 0; read < 4; ++read)
 		f.input.read_pad(0);
 	check(f.input.pad_events() == 2 && pressed(1, "square") && pressed(2, "square"));
-	// The chat open on its first tab: a click on the third tab is two R1 presses, a click on a Quick line its Cross.
+	// The chat open on its first tab: a click on the third tab is two R1 presses; a click beside the controls is nothing.
 	f.control("\"type\":\"watch_ui\",\"revision\":2,\"bar\":true,\"firstTo\":2,\"unread\":0,"
-			  "\"chat\":{\"tabs\":[\"All\",\"Lobby\",\"Direct\"],\"tab\":0,\"quick\":[\"gg\",\"Nice!\"],\"selected\":0}");
+			  "\"chat\":{\"tabs\":[\"All\",\"Lobby\",\"Direct\"],\"tab\":0}");
 	mouse::layout chat;
 	chat.add({100.f, 198.f, 60.f, 34.f, mouse::kind::tab, 2});
-	chat.add({200.f, 530.f, 80.f, 28.f, mouse::kind::quick, 1});
 	mouse::publish(chat);
-	check(mouse::pointer(195.f, 320.f, 1920.f, 1080.f, true) && mouse::pointer(360.f, 816.f, 1920.f, 1080.f, true));
+	check(mouse::pointer(195.f, 320.f, 1920.f, 1080.f, true) && !mouse::pointer(360.f, 816.f, 1920.f, 1080.f, true));
 	for (int read = 0; read < 6; ++read)
 		f.input.read_pad(0);
-	check(f.input.pad_events() == 5 && pressed(3, "r1") && pressed(4, "r1") && pressed(5, "cross"));
-	check(ui::load(9).highlight == 1);
+	check(f.input.pad_events() == 4 && pressed(3, "r1") && pressed(4, "r1"));
 	// While the in-game menu holds the controller a click presses nothing, then or after.
-	check(mouse::pointer(360.f, 816.f, 1920.f, 1080.f, true));
+	check(mouse::pointer(195.f, 320.f, 1920.f, 1080.f, true));
 	f.input.read_pad(0, true);
 	f.input.read_pad(0);
 	f.input.read_pad(0);
-	check(f.input.pad_events() == 5);
+	check(f.input.pad_events() == 4);
 	// A screen without controls drops the clicks not yet read.
-	check(mouse::pointer(360.f, 816.f, 1920.f, 1080.f, true));
+	check(mouse::pointer(195.f, 320.f, 1920.f, 1080.f, true));
 	mouse::publish({});
-	check(!mouse::active() && !mouse::pointer(360.f, 816.f, 1920.f, 1080.f, true));
+	check(!mouse::active() && !mouse::pointer(195.f, 320.f, 1920.f, 1080.f, true));
 	f.input.read_pad(0);
 	f.input.read_pad(0);
-	check(f.input.pad_events() == 5);
+	check(f.input.pad_events() == 4);
 }
 
 PBD_TEST(PbdSpectatorChannel, RecordedRankProfilesFollowTheWatchedCharacter)

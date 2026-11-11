@@ -213,7 +213,7 @@ namespace rsx
 				// The log: an author in gold and the text wrapped to two lines; a lobby line in the dim ink without an author. As
 				// many of the newest lines as fit, the newest at the bottom.
 				constexpr f32 pitch = 22.f;
-				const f32 log_top = chat_top + 46.f, log_bottom = chat_top + chat_height - 120.f;
+				const f32 log_top = chat_top + 46.f, log_bottom = chat_top + chat_height - 64.f;
 				struct log_entry
 				{
 					std::u32string author;
@@ -252,41 +252,10 @@ namespace rsx
 						centre += pitch;
 					}
 				}
-				out.rect(layer::b_lines, top_edge, chat_left + chat_pad, chat_top + chat_height - 116.f, chat_inner, 1.f);
+				out.rect(layer::b_lines, top_edge, chat_left + chat_pad, chat_top + chat_height - 60.f, chat_inner, 1.f);
 				if (!chat.to.empty())
-					out.text(type.caption, text_2, chat_left + chat_pad, baseline(type.caption, chat_top + chat_height - 102.f), fit_text(type.caption, utf8_to_u32string(chat.to), chat_inner));
-				out.text(type.body, text_3, chat_left + chat_pad, baseline(type.body, chat_top + chat_height - 80.f), U"Type anything else in the launcher's chat.");
-			}
-
-			void chat_quick()
-			{
-				const auto& chat = *screen.chat;
-				// Two rows of Quick lines, scrolled to keep the highlighted reply visible and framed in gold.
-				const f32 quick_centre = chat_top + chat_height - 52.f;
-				const f32 heading_width = rich_text(&out, atlas, rich_style{type.caption, text_3, 16.f}, chat_left + chat_pad, quick_centre, "{triangle} Quick lines") + 10.f;
-				std::vector<std::u32string> labels;
-				std::vector<f32> widths;
-				for (usz i = 0; i < chat.quick.size(); ++i)
-				{
-					labels.push_back(fit_text(type.caption, utf8_to_u32string(chat.quick[i]), chat_inner - 20.f));
-					widths.push_back(text_width(type.caption, labels.back()) + 20.f);
-				}
-				for (const auto& chip : ui::quick_layout(widths, screen.highlight, chat_inner, heading_width))
-				{
-					const f32 qx = chat_left + chat_pad + chip.x;
-					const f32 row_centre = quick_centre + 32.f * chip.row;
-					const f32 chip_w = widths[chip.index];
-					const bool focus = chip.index == screen.highlight;
-					const f32 chip_top = row_centre - 14.f;
-					const color4f edge = focus ? gold : rgb(0xE9EEED, .2f);
-					out.rect(layer::b_bars, focus ? rgb(0xF4B63F, .08f) : row_bar, qx, chip_top, chip_w, 28.f);
-					out.rect(layer::b_lines, edge, qx, chip_top, chip_w, 1.f);
-					out.rect(layer::b_lines, edge, qx, chip_top + 27.f, chip_w, 1.f);
-					out.rect(layer::b_lines, edge, qx, chip_top + 1.f, 1.f, 26.f);
-					out.rect(layer::b_lines, edge, qx + chip_w - 1.f, chip_top + 1.f, 1.f, 26.f);
-					out.text(type.caption, focus ? gold : text_2, qx + 10.f, baseline(type.caption, row_centre), labels[chip.index]);
-					targets.add({qx, chip_top, chip_w, 28.f, pointer::kind::quick, static_cast<u32>(chip.index)});
-				}
+					out.text(type.caption, text_2, chat_left + chat_pad, baseline(type.caption, chat_top + chat_height - 46.f), fit_text(type.caption, utf8_to_u32string(chat.to), chat_inner));
+				out.text(type.body, text_3, chat_left + chat_pad, baseline(type.body, chat_top + chat_height - 24.f), U"Type in the launcher's chat.");
 			}
 
 			void profiles()
@@ -315,7 +284,6 @@ namespace rsx
 				{
 					chat_tabs();
 					chat_log();
-					chat_quick();
 				}
 				else if (screen.profiles)
 					profiles();

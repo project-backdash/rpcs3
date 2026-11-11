@@ -33,6 +33,40 @@ namespace pbd::live_stats
 		return static_cast<std::int32_t>(milli);
 	}
 
+	// Completed live fight frames per wall-clock interval. Peer waits and rendering can both reduce game pace.
+	class fight_pace
+	{
+		std::uint32_t first = 0, previous = 0;
+		std::uint64_t started = 0, last = 0;
+		bool seen = false, slow = false;
+
+	public:
+		bool observe(std::uint32_t frame, std::uint64_t now_us, bool fighting) noexcept
+		{
+			if (!fighting || (seen && (previous == 0xffffffffu || frame != previous + 1 || now_us <= last)))
+				*this = {};
+			if (!fighting)
+				return false;
+			if (!seen)
+			{
+				first = frame;
+				started = now_us;
+				seen = true;
+			}
+			previous = frame;
+			last = now_us;
+			const auto elapsed = now_us - started;
+			if (elapsed >= 2'000'000)
+			{
+				// Compare against 90% of 60 Hz without multiplying an unbounded time interval.
+				slow = std::uint64_t{frame - first} * 1'000'000 / 54 < elapsed;
+				first = frame;
+				started = now_us;
+			}
+			return slow;
+		}
+	};
+
 	// Owner-private running statistics (the latch's owner PPU only).
 	struct running
 	{
@@ -148,6 +182,7 @@ namespace pbd::live_stats
 			b.in_match.store(0, r);
 			b.depth_recent.store(0, r);
 			b.loss_permille.store(0, r);
+			b.game_slow.store(0, r);
 			b.relayed.store(c.relayed ? 1 : 0, r);
 			b.leave_select.store(0, r);
 			b.leave_hold_ms.store(0, r);
@@ -231,6 +266,11 @@ namespace pbd::live_stats
 		void match(bool in_match) noexcept
 		{
 			m_block->in_match.store(in_match ? 1u : 0u, r);
+		}
+
+		void pace(std::uint32_t index, std::uint64_t now_us, bool fighting) noexcept
+		{
+			m_block->game_slow.store(m_pace.observe(index, now_us, fighting) ? 1u : 0u, r);
 		}
 
 		// The local player's leave prompt (filter_local_sample): Select held, and the Start + Select hold so far.
@@ -360,6 +400,7 @@ namespace pbd::live_stats
 		running m_restore{}, m_tick{}, m_correction{};
 		rtt_window m_rtt{};
 		jitter_filter m_jitter{};
+		fight_pace m_pace{};
 		std::uint64_t m_tick_previous_ns = 0;
 		bool m_tick_open = false;
 		std::uint32_t m_corrections = 0, m_depth_max = 0, m_hash_checks = 0;

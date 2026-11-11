@@ -494,8 +494,8 @@ struct pbd::rollback_session::record_writer
 		// This thread is not joined when emulation aborts. The id manager's shared lock keeps the semaphore and its
 		// sleeping threads alive while they are walked (only creation and removal take it exclusively), and a stopping
 		// emulator is not read at all.
-		if (!Emu.IsStopped())
-			idm::check<lv2_obj, lv2_sema>(probe::semaphore_id, [&](lv2_sema& sema)
+		if (const auto semaphore_id = probe::semaphore_id(manager); semaphore_id && !Emu.IsStopped())
+			idm::check<lv2_obj, lv2_sema>(*semaphore_id, [&](lv2_sema& sema)
 				{
 					std::shared_lock object_lock(sema.mutex, std::try_to_lock);
 					if (!object_lock.owns_lock())

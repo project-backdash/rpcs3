@@ -93,6 +93,8 @@ struct pbd::rollback_session::boundary_call
 	bool store_game_profiles(const std::array<std::string_view, 2>& names, const std::array<u32, 2>& ranks);
 	bool store_game_records(const std::array<pbd::game_profile::record, 2>& records);
 	std::array<std::optional<pbd::game_profile::record>, 2> shown_game_records();
+	std::array<std::optional<u32>, 2> shown_game_ranks();
+	pbd::player_plates::plan shown_friend_plates();
 	std::array<std::optional<pbd::game_profile::record>, 2> agreed_game_records(std::optional<u32> segment);
 	void write_game_profiles(u32 boundary, u32 scene, std::optional<u32> segment = std::nullopt);
 	void write_custom_looks(u32 boundary, u32 scene);

@@ -28,10 +28,22 @@ bool pbd_direct_match::state::enter_match(ppu_thread& owner)
 	// rather than before scene7/10. No RNG return is injected. Resource pointers come from the source only inside the
 	// fighters' records, over the COM banks, styles and models this boot loaded (apply_actor_records refuses any
 	// other); each fighter keeps its own bone-root object.
-	if (!carry(owner, ordinal) || !before_match->apply(owner) || !store_word(0x1008f07c, frame_counter))
+	if (!carry(owner, ordinal) || !before_match->apply(owner, preserve_ambient) || !store_word(0x1008f07c, frame_counter))
 		return refuse("native_match_initializer_context");
 	if (!apply_actor_carry(owner))
 		return false;
+	if (carry_values.camera)
+	{
+		if (!pbd::replay_carry::apply_stage_camera(owner, generation, *carry_values.camera))
+			return refuse("native_match_stage_camera");
+		event("native_stage_camera_applied", "", {{"koCameraVariant", json::number(carry_values.camera->ko_variant)}, {"fadeWord", json::number(carry_values.camera->fade_word)}});
+	}
+	if (carry_values.effects)
+	{
+		if (!pbd::replay_carry::apply_effect_controller(owner, generation, *carry_values.effects))
+			return refuse("native_match_effect_controller");
+		event("native_effect_controller_applied");
+	}
 	if (!pbd::anchor_dump::replay_anchor(game))
 		return refuse("test_anchor_paste");
 	event("native_handicap_options_applied", "", {{"leftPercent", json::number(handicaps[0])}, {"rightPercent", json::number(handicaps[1])}, {"vitalityWritten", json::boolean(false)}});
@@ -82,7 +94,7 @@ bool pbd_direct_match::function_event(ppu_thread& owner, u32 address) noexcept
 		if (address == 0x5a554 && !s.redirected)
 		{
 			if (++s.producer_calls != 1 || word(pbd::t5dr::scene_address) != 2 || !s.carry(owner, s.pre_ordinal) ||
-				!s.before_styles->apply(owner))
+				!s.before_styles->apply(owner, s.preserve_ambient))
 				return s.refuse("pre_style_generator_context");
 			s.event("stock_style_producer_started");
 		}

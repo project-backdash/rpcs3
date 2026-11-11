@@ -31,8 +31,9 @@ namespace pbd::practice::native
 	std::optional<pbd::practice::throw_escape_view> read_throw_escape() noexcept;
 	// Called at every Practice boundary with the Dummy Action the player chose for the dummy (umax when the player drives
 	// the dummy or the choice cannot be read): removes the dummy's guard while it gets up from a knockdown if that action
-	// never guards (pbd::practice::pbd_getup_guard). The Movement dummy (`movement`) never guards at all.
-	void getup_guard(u32 chosen_action, bool movement = false) noexcept;
+	// never guards (pbd::practice::pbd_getup_guard). The Movement dummy (`movement`) never guards at all. While recording,
+	// the player's own fighter uses the same no-guard flags; stopping restores the flags this route still owns.
+	void getup_guard(u32 chosen_action, bool movement = false, bool recording = false) noexcept;
 	// option_restore writes all five menu options at once (values packed by pbd::practice::pack_game_options).
 	enum class operation : u8
 	{

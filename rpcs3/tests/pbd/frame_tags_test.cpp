@@ -3,6 +3,7 @@
 #include "Emu/RSX/pbd_frame_tags.h"
 #include "Emu/PBD/pbd_fight_timing.h"
 #include "Emu/RSX/pbd_present_pacing.h"
+#include "Emu/RSX/pbd_display_rate.h"
 
 #include <array>
 
@@ -377,4 +378,24 @@ PBD_TEST(PbdPresentPacing, FramesLeaveOnASteadyGridThatFollowsThem)
 	base += 50 * period;
 	const std::uint64_t after_pause = rhythm.target(base, far, period);
 	check(after_pause == base + cadence::margin_us, "after a pause the rhythm starts again at the next frame");
+}
+
+PBD_TEST(PbdPresentPacing, DisplayLimitNeverRunsBelowTheGame)
+{
+	for (const double refresh : {0., 1., 20., 23.976, 24., 29.97, 30., 48., 50., 59., 59.94, 60.})
+	{
+		const double limit = pbd::display_rate::frame_limit(refresh);
+		check(limit == 60., "a slow or unknown display keeps the game's 60 fps limit");
+		check(static_cast<std::uint64_t>(1'000'000 / limit) == 16'666, "the flip limiter cannot add a longer frame period");
+	}
+}
+
+PBD_TEST(PbdPresentPacing, DisplayLimitKeepsFasterRefreshRates)
+{
+	for (const double refresh : {60.001, 72., 90., 119.88, 120., 144., 165., 240.})
+	{
+		const double limit = pbd::display_rate::frame_limit(refresh);
+		check(limit == refresh, "a faster display keeps its existing cap ahead of early present and grid pacing");
+		check(static_cast<std::uint64_t>(1'000'000 / limit) <= 16'666);
+	}
 }

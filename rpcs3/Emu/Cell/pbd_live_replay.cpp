@@ -105,6 +105,7 @@ struct pbd_live_replay::state
 	u32 seed = 0, game = 0, anchor = 0, next = 0;
 	std::filesystem::path directory;
 	std::array<player, 2> players;
+	names_source names;
 	records_source records;
 	looks_source looks;
 	throw_break_source throw_break;
@@ -178,6 +179,7 @@ struct pbd_live_replay::state
 		// The numbers the bars show in this game: what the set's last scene barrier wrote, which they keep from the end of the
 		// VS screen to the end of the fight (pbd::game_profile::records_may_change), so the replay and the watchers' capsule
 		// name what the players saw.
+		const auto labels = names ? names() : std::array<std::string, 2>{players[0].name, players[1].name};
 		const auto shown = records ? records() : std::array<std::optional<pbd::game_profile::record>, 2>{};
 		const auto worn = looks ? looks() : pbd::custom_wire::pair{};
 		for (u32 side = 0; side < 2; ++side)
@@ -189,7 +191,7 @@ struct pbd_live_replay::state
 				return false;
 			if (!vm::try_access(pbd::game_profile::rank_address(side), &rank, sizeof(rank), false))
 				return false;
-			selected.push_back(pbd::replay_start::capsule_player(players[side].id, players[side].name, u16{definition[0]}, u16{definition[1]},
+			selected.push_back(pbd::replay_start::capsule_player(players[side].id, labels[side], u16{definition[0]}, u16{definition[1]},
 				row, pbd::game_profile::rank_byte(rank), shown[side], worn[side]));
 		}
 		const auto epoch = pbd::fn_hook::takeover_counters();
@@ -358,6 +360,19 @@ void pbd_live_replay::pbd_throw_break(throw_break_source source) noexcept
 			return;
 		std::lock_guard lock(data->mutex);
 		data->throw_break = std::move(source);
+	}
+	catch (...)
+	{
+	}
+}
+void pbd_live_replay::pbd_names(names_source source) noexcept
+{
+	try
+	{
+		if (!data)
+			return;
+		std::lock_guard lock(data->mutex);
+		data->names = std::move(source);
 	}
 	catch (...)
 	{

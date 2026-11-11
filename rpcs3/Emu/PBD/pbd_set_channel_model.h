@@ -379,7 +379,7 @@ namespace pbd::set_channel
 		if (const auto* rank = value->find("rank"); rank && rank->kind != json_kind::null && !detail::number32(rank, 0, max_rank, out.rank))
 			return false;
 		if (const auto* ranks = value->find("ranks"))
-			out.ranks = read_rank_table(ranks).value_or(std::vector<rank_group>{});
+			out.ranks = read_rank_table(ranks);
 		if (in_game_selection)
 		{
 			out.custom_fields = value->find("lookTable") || value->find("look");
@@ -471,6 +471,9 @@ namespace pbd::set_channel
 			out.left.member_id == out.right.member_id || out.local_member_id != (out.local_side == side::left ? out.left.member_id : out.right.member_id))
 			return {{}, "bad_fighters"};
 		out.rank_profiles = value.find("rankProfiles") && value.find("rankProfiles")->kind == json_kind::boolean && value.find("rankProfiles")->truth;
+		for (const auto& [key, player] : {std::pair{"left", &out.left}, std::pair{"right", &out.right}})
+			if (value.find(key)->find("ranks") && !player->ranks)
+				out.ignored.push_back(std::string(key) + ".ranks");
 		read_records(*value.find("left"), "left", chosen_in_game, out.left.record, out.left.records, out.ignored);
 		read_records(*value.find("right"), "right", chosen_in_game, out.right.record, out.right.records, out.ignored);
 		const auto* stage = value.find("stage");

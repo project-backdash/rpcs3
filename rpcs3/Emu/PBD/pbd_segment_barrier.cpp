@@ -174,7 +174,13 @@ u32 pbd::rollback_session::boundary_call::prepare_peer_segment(u32 k, const std:
 	// the set during the wait shows from the next barrier on (write_game_profiles).
 	data.session.segments.prev_records = data.session.segments.records;
 	data.lobby.records_plan = shown_game_records();
-	data.session.segments.records = pbd::game_profile::records_word(data.lobby.records_plan);
+	data.lobby.ranks_plan = shown_game_ranks();
+	data.session.segments.records = pbd::game_profile::profiles_word(data.lobby.records_plan, data.lobby.ranks_plan);
+	if (!data.lobby.channel && data.lobby.friend_plates)
+	{
+		data.lobby.friend_plan = shown_friend_plates();
+		data.session.segments.records = pbd::player_plates::word(data.lobby.friend_plan);
+	}
 	data.session.segments.prev_look_slot = data.session.segments.look_slot;
 	data.session.segments.look_slot = data.lobby.look_slot_own;
 	const u32 n = data.session.segments.number;

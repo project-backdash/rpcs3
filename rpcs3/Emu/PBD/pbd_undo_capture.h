@@ -125,7 +125,12 @@ struct pbd::rollback_session::undo_capture
 		const auto render = rsx::get_current_renderer();
 		if (!render)
 			return false;
-		if ((render->label_addr & ~u32{4095}) == page || (render->dma_address & ~u32{4095}) == page)
+		bool label_page = false;
+		render->for_each_context([&](rsx::context* ctx)
+			{
+				label_page |= (ctx->fw.label_addr & ~u32{4095}) == page;
+			});
+		if (label_page || (render->dma_address & ~u32{4095}) == page)
 			return true;
 		if (!render->ctrl)
 			return false;

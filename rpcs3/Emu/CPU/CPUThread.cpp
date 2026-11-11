@@ -482,7 +482,7 @@ extern f64 get_cpu_program_usage_percent(u64 hash)
 		{
 			u64 total = 0;
 
-			for (auto [name, count] : prof->all_spu_threads_info.freq)
+			for (const auto& [name, count] : prof->all_spu_threads_info.freq)
 			{
 				if ((name & -65536) == hash)
 				{
@@ -693,7 +693,6 @@ void cpu_thread::operator()()
 	static thread_local struct thread_cleanup_t
 	{
 		cpu_thread* _this = nullptr;
-		std::string name;
 		std::string(*log_prefix)() = nullptr;
 
 		void cleanup()
@@ -730,22 +729,11 @@ void cpu_thread::operator()()
 
 		~thread_cleanup_t()
 		{
-			if (_this)
-			{
-				cleanup();
-
-				auto log_thread = named_thread("CPU Thread Cleanup Logger", [name = name]()
-				{
-					sys_log.warning("CPU Thread '%s' terminated abnormally!", name);
-				});
-
-				log_thread();
-			}
+			cleanup();
 		}
 	} cleanup;
 
 	cleanup._this = this;
-	cleanup.name = thread_ctrl::get_name();
 	cleanup.log_prefix = old_prefix;
 
 	// Check thread status
@@ -1297,8 +1285,8 @@ u32 cpu_thread::get_pc() const
 	}
 	case thread_class::rsx:
 	{
-		const auto ctrl = static_cast<const rsx::thread*>(this)->ctrl;
-		return ctrl ? ctrl->get.load() : umax;
+		const auto& ctrl = static_cast<const rsx::thread*>(this)->fifo_ctrl;
+		return ctrl ? ctrl->get_pos() : umax;
 	}
 	default: break;
 	}

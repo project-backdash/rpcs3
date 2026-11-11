@@ -399,6 +399,25 @@ std::array<std::optional<pbd::game_profile::record>, 2> pbd::rollback_session::b
 	return data.lobby.channel->shown_records(rows);
 }
 
+pbd::player_plates::plan pbd::rollback_session::boundary_call::shown_friend_plates()
+{
+	std::array<u32, 2> rows{~0u, ~0u};
+	if (!read_word(0x10093f50, rows[0]) || !read_word(0x10093f54, rows[1]))
+		rows = {~0u, ~0u};
+	return data.lobby.friend_plates ? pbd::player_plates::selected(*data.lobby.friend_plates, rows) : pbd::player_plates::plan{};
+}
+
+// Plan the selected character's table rank before announcing the display word to the peer.
+std::array<std::optional<u32>, 2> pbd::rollback_session::boundary_call::shown_game_ranks()
+{
+	if (!data.lobby.channel)
+		return {};
+	std::array<u32, 2> rows{~0u, ~0u};
+	if (!read_word(0x10093f50, rows[0]) || !read_word(0x10093f54, rows[1]))
+		rows = {~0u, ~0u};
+	return data.lobby.channel->shown_ranks(rows);
+}
+
 // The PLAYER DATA numbers the bars change to at this boundary. Each launcher gives its own PC the records in its own time (a
 // Quick Match manifest may go without one, a rank_stakes record may reach one PC after a barrier and the other before it), so
 // at a scene barrier these are the numbers this PC announced (prepare_peer_segment) only when the other PC announced the same,
@@ -430,13 +449,33 @@ void pbd::rollback_session::boundary_call::write_game_profiles(u32 boundary, u32
 {
 	write_custom_looks(boundary, scene);
 	if (!data.lobby.channel)
-		return;
-	// Loading and VS barriers follow selection on both PCs; refresh after every repick and continued set.
-	if (scene != 3u)
 	{
-		std::array<u32, 2> rows{~0u, ~0u};
-		if (read_word(0x10093f50, rows[0]) && read_word(0x10093f54, rows[1]))
-			data.lobby.channel->select_ranks(rows);
+		if (data.lobby.friend_plates)
+		{
+			if (pbd::game_profile::records_may_change(scene))
+			{
+				const bool same = !data.peer.enabled || (segment && data.session.segments.records == data.session.segments.peer_records[*segment % 8]);
+				data.lobby.friend_shown = pbd::player_plates::agreed(data.peer.enabled ? data.lobby.friend_plan : shown_friend_plates(), same);
+			}
+			const auto& shown = data.lobby.friend_shown;
+			const bool named = store_game_profiles({shown.names[0], shown.names[1]}, shown.ranks);
+			const bool counted = store_game_records({});
+			if (!named || !counted)
+				pbd_session_log.warning("Friend player profiles could not be written at boundary %u.", boundary);
+			if (scene == 16u || scene == 17u)
+				pbd_session_log.notice("Friend game: %s (%s) and %s (%s), both 0 W 0 L, from boundary %u.",
+					shown.names[0], pbd::game_profile::rank_names[pbd::game_profile::rank_byte(shown.ranks[0])],
+					shown.names[1], pbd::game_profile::rank_names[pbd::game_profile::rank_byte(shown.ranks[1])], boundary);
+		}
+		return;
+	}
+	if (pbd::game_profile::records_may_change(scene))
+	{
+		const bool agreed = !data.peer.enabled || (segment && data.session.segments.records == data.session.segments.peer_records[*segment % 8]);
+		data.lobby.ranks_shown = pbd::game_profile::agreed_ranks(data.peer.enabled ? data.lobby.ranks_plan : shown_game_ranks(), agreed);
+		for (u32 side = 0; side < 2; ++side)
+			if (data.lobby.ranks_shown[side])
+				data.lobby.channel->hold_rank(side == 0 ? pbd::set_channel::side::left : pbd::set_channel::side::right, *data.lobby.ranks_shown[side]);
 	}
 	keep_promoted_ranks(boundary);
 	const auto& set = data.lobby.channel->identity();
@@ -875,7 +914,7 @@ const char* pbd::rollback_session::accept_spectator(const std::filesystem::path&
 	pbd::character_rule::configure(s.generation, manifest.ban_jinpachi);
 	if (!manifest.pbd_capsule.empty() &&
 		!s.lobby.direct_match.pbd_configure_capsule_start(s.generation, !s.peer.enabled && !s.replay.session_replay && !s.practice.rewind,
-			s.session.seed, manifest.pbd_source_game, manifest.pbd_capsule))
+			s.session.seed, manifest.pbd_source_game, manifest.pbd_capsule, manifest.pbd_paired))
 		return "spectator_capsule_initializer_refused";
 	s.spectator.channel = std::make_unique<pbd::spectator::local_channel>(root, std::move(manifest));
 	if (!s.spectator.channel->healthy())

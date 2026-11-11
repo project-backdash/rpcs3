@@ -492,6 +492,80 @@ namespace pbd::replay_carry
 			return false;
 		}
 	}
+	bool read_stage_camera(ppu_thread& ppu, u64 generation, stage_camera& out) noexcept
+	{
+		try
+		{
+			stage_camera sample;
+			be_t<u32> ko{}, fade{};
+			if (!vs_history_context(ppu, generation) ||
+				!vm::try_access(mem::camera_block, sample.bytes.data(), mem::camera_block_bytes, false) ||
+				!vm::try_access(mem::ko_camera_variant, &ko, sizeof(ko), false) ||
+				!vm::try_access(mem::stage_fade_word, &fade, sizeof(fade), false))
+				return false;
+			sample.ko_variant = ko;
+			sample.fade_word = fade;
+			out = sample;
+			return true;
+		}
+		catch (...)
+		{
+			return false;
+		}
+	}
+	bool apply_stage_camera(ppu_thread& ppu, u64 generation, const stage_camera& saved) noexcept
+	{
+		try
+		{
+			if (!owner_ready(ppu, generation) || !vs_history_context(ppu, generation))
+				return false;
+			auto image = saved.bytes;
+			be_t<u32> ko = saved.ko_variant, fade = saved.fade_word;
+			if (!vm::try_access(mem::camera_block, image.data(), mem::camera_block_bytes, true) ||
+				!vm::try_access(mem::ko_camera_variant, &ko, sizeof(ko), true) ||
+				!vm::try_access(mem::stage_fade_word, &fade, sizeof(fade), true))
+				return false;
+			stage_camera observed;
+			return read_stage_camera(ppu, generation, observed) && observed == saved;
+		}
+		catch (...)
+		{
+			return false;
+		}
+	}
+	bool read_effect_controller(ppu_thread& ppu, u64 generation, effect_controller& out) noexcept
+	{
+		try
+		{
+			effect_controller sample;
+			if (!vs_history_context(ppu, generation) ||
+				!vm::try_access(mem::effect_controller, sample.bytes.data(), mem::effect_controller_bytes, false))
+				return false;
+			out = sample;
+			return true;
+		}
+		catch (...)
+		{
+			return false;
+		}
+	}
+	bool apply_effect_controller(ppu_thread& ppu, u64 generation, const effect_controller& saved) noexcept
+	{
+		try
+		{
+			if (!owner_ready(ppu, generation) || !vs_history_context(ppu, generation))
+				return false;
+			auto image = saved.bytes;
+			if (!vm::try_access(mem::effect_controller, image.data(), mem::effect_controller_bytes, true))
+				return false;
+			effect_controller observed;
+			return read_effect_controller(ppu, generation, observed) && observed == saved;
+		}
+		catch (...)
+		{
+			return false;
+		}
+	}
 	bool read_actor_records(ppu_thread& ppu, u64 generation, actor_records& out) noexcept
 	{
 		try

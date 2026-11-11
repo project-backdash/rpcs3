@@ -120,8 +120,8 @@ PBD_TEST(PbdHookConfiguration, DirectReplayRetainsRequiredCameraUpdates)
 	} memory;
 	constexpr u32 base = 0x10050000, size = 0x10000, camera_mode = 0x10053694, stage_draw = 0x260d44;
 	constexpr u32 stage_base = 0x10080000, stage = 0x1008f088;
-	check(vm::map(base, size, vm::page_size_64k));
-	check(vm::map(stage_base, size, vm::page_size_64k));
+	check(vm::map(base, size, vm::block_size_64k));
+	check(vm::map(stage_base, size, vm::block_size_64k));
 	struct construction_id
 	{
 		u32 previous = std::exchange(id_manager::g_id, ppu_thread::id_base);

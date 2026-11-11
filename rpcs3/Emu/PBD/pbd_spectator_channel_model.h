@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pbd_env.h"
+#include "pbd_paired_game_start.h"
 #include "../Cell/pbd_set_channel.h"
 #include "../Cell/pbd_corner_chat.h"
 #include "../Cell/pbd_spectator_ui.h"
@@ -145,7 +146,10 @@ namespace pbd::spectator
 		bool applied = false, policy_present = false, start_skip = true, exit_gate = true, phase_delay = false, keyed_draws = false;
 		bool ban_jinpachi = false, direct_start = false;
 		u32 pbd_capsule_game = 0, pbd_source_game = 0, pbd_first_frame = 0, pbd_source_origin = 0, pbd_source_segment = 0, pbd_game_origin = 0;
+		u32 pbd_input_segment = 0;
 		std::string pbd_capsule;
+		bool pbd_paired = false;
+		std::array<std::uint8_t, 48> pbd_pair_first{};
 		u32 battle_clock_version = 2, menu_hash_mask = 0;
 		// The throw break rule the capsule's game started with (pbd_throw_break_record.h): none in a capsule without it. Every
 		// other game names its own as it begins (local_channel::begin_game).
@@ -226,6 +230,11 @@ namespace pbd::spectator
 				!pbd::set_channel::detail::number32(capsule->find("sourceSegment"), 0, 255, out.pbd_source_segment) ||
 				out.pbd_first_frame > out.pbd_source_origin + 1 - out.pbd_game_origin)
 				return "spectator_capsule_invalid";
+			out.pbd_input_segment = out.pbd_source_segment;
+			if (const auto* input = capsule->find("inputSegment"); input &&
+																   (!pbd::set_channel::detail::number32(input, 0, 255, out.pbd_input_segment) ||
+																	   (out.pbd_input_segment != out.pbd_source_segment && out.pbd_input_segment != out.pbd_source_segment + 1)))
+				return "spectator_capsule_invalid";
 			u32 seed = 0, segment = 0;
 			const auto* host = payload->find("hostContext");
 			const auto* selection = payload->find("selection");
@@ -245,6 +254,26 @@ namespace pbd::spectator
 				return "spectator_capsule_look_mismatch";
 			if (out.in_game && out.custom_fields && !pbd::custom_wire::capsule_matches_tables(*payload, out.look_tables))
 				return "spectator_capsule_look_mismatch";
+			const auto* paired = capsule->find("pairedStart");
+			const bool version_two = pbd::set_channel::detail::is(root.find("schema"), "pbd-spectator-session-2");
+			if (version_two != (paired != nullptr))
+				return "spectator_paired_start_required";
+			if (paired)
+			{
+				const auto* paired_enabled = pbd::env::find("PBD_SPECTATOR_NATIVE_3");
+				if (!paired_enabled || std::string_view(paired_enabled) != "1")
+					return "spectator_paired_start_unavailable";
+				const auto* recording = capsule->find("recordingEmulatorSha256");
+				digest recording_hash{};
+				if (!recording || recording->kind != json_kind::string || !unhex(recording->text, recording_hash))
+					return "spectator_paired_start_invalid";
+				const auto first = pbd::paired_start::read(*paired, *payload, out.pbd_capsule_game, out.pbd_source_origin,
+					out.pbd_input_segment, out.pbd_first_frame, recording->text);
+				if (!first)
+					return "spectator_paired_start_invalid";
+				out.pbd_pair_first = *first;
+				out.pbd_paired = true;
+			}
 			out.pbd_capsule = pbd::set_channel::detail::serialize(*payload);
 		}
 		return {};
@@ -270,7 +299,9 @@ namespace pbd::spectator
 			return true;
 		};
 		const auto* generation = root.find("generation");
-		if (!pbd::set_channel::detail::is(root.find("schema"), "pbd-spectator-session-1") || !generation || generation->kind != json_kind::string ||
+		if (!(pbd::set_channel::detail::is(root.find("schema"), "pbd-spectator-session-1") ||
+				pbd::set_channel::detail::is(root.find("schema"), "pbd-spectator-session-2")) ||
+			!generation || generation->kind != json_kind::string ||
 			generation->text.empty() || generation->text.size() > 16)
 			return {{}, "spectator_session_invalid"};
 		const auto integer = std::from_chars(generation->text.data(), generation->text.data() + generation->text.size(), out.generation);
@@ -305,6 +336,8 @@ namespace pbd::spectator
 		}
 		if (const auto error = read_manifest_policy(root, out); !error.empty())
 			return {{}, std::string(error)};
+		if (pbd::set_channel::detail::is(root.find("schema"), "pbd-spectator-session-2") && !root.find("capsuleStart"))
+			return {{}, "spectator_paired_start_required"};
 		if (const auto error = read_manifest_capsule(root, out); !error.empty())
 			return {{}, std::string(error)};
 		return {std::move(out), {}};

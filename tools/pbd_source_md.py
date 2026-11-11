@@ -15,7 +15,7 @@ import fnmatch
 import subprocess
 from pathlib import Path
 
-BASE = "028d1e8f4a42df2292cdbcd35e540c9e71fc47aa"
+BASE = "47599599a4cea37f350eb0936d7c5e4de6f7bf57"
 
 # Corresponding source includes the complete committed tree, including this inventory and the native tests.
 PATCH_EXCLUDES = []
@@ -101,8 +101,9 @@ You need:
 
 Everything else is pinned with its hash in `tools/pbd/dependencies.lock.json`: Qt 6.11.2 for MSVC 2022 x64 (qtbase,
 qtdeclarative, qttools, qtmultimedia, qtsvg, qttranslations), RPCS3's prebuilt LLVM 22.1.8, 7-Zip's `7zr.exe` and the
-GoogleTest 1.8.1.8 NuGet package. The lock follows upstream's own `.ci/setup-windows.sh` at the base commit. All of it
-goes inside the clone, under `build\\` and `packages\\`, which git ignores. Every path the scripts use is relative to
+GoogleTest 1.8.1.8 NuGet package. The lock still records the September 10 source revision; the merged upstream
+Windows CI uses Qt 6.12.0. Dependency compatibility with the merged revision has not yet been build-validated.
+All of it goes inside the clone, under `build\\` and `packages\\`, which git ignores. Every path the scripts use is relative to
 the repository.
 
 1. In a source snapshot, run `python prepare.py --output C:\\pbd-emulator`, then enter that checkout. Preparation

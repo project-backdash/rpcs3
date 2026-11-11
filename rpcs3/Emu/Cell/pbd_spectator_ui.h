@@ -9,14 +9,13 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
-#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 // The launcher supplies each watch_ui snapshot through pbd_spectator_channel_model.h / pbd_spectator_channel_controls.h;
-// the watcher's game controls fight-only visibility and the Quick-line highlight. Host controller presses return as immutable
+// the watcher's game controls fight-only visibility. Host controller presses return as immutable
 // pad event files, without reaching the game's neutral virtual ports or changing what either fighter executes.
 namespace pbd::spectator_ui
 {
@@ -48,8 +47,8 @@ namespace pbd::spectator_ui
 	} // namespace pad
 
 	// watch_ui limits, in bytes of UTF-8 (counts of entries where named so).
-	inline constexpr std::size_t max_tabs = 4, max_lines = 8, max_quick = 6, max_profile_lines = 4;
-	inline constexpr std::size_t tab_bytes = 16, to_bytes = 48, author_bytes = 16, line_bytes = 160, quick_bytes = 32;
+	inline constexpr std::size_t max_tabs = 4, max_lines = 8, max_profile_lines = 4;
+	inline constexpr std::size_t tab_bytes = 16, to_bytes = 48, author_bytes = 16, line_bytes = 160;
 	inline constexpr std::size_t name_bytes = 16, profile_line_bytes = 48, preview_id_bytes = 64, language_bytes = 16, region_bytes = 32;
 	inline constexpr u32 max_unread = 99, max_first_to = 10;
 	// Preview lifetime starts when the watcher UI first becomes visible, fading over the last fade_ms.
@@ -66,50 +65,10 @@ namespace pbd::spectator_ui
 	{
 		std::vector<std::string> tabs; // "All", "Lobby", "Direct"; L1/R1 change them (the launcher redraws the panel)
 		u32 tab = 0;
-		std::string to;                 // "To: Lobby"
-		std::vector<line> lines;        // the newest last
-		std::vector<std::string> quick; // the Quick lines Cross sends
-		u32 selected = 0;               // where the highlight starts on a newly opened panel
+		std::string to;          // "To: Lobby"
+		std::vector<line> lines; // the newest last
 		bool operator==(const chat_panel&) const = default;
 	};
-
-	struct quick_chip
-	{
-		std::size_t index;
-		float x;
-		u32 row;
-	};
-
-	// Measured chip widths include their padding. Shift the first visible reply until the highlight fits in two rows;
-	// the first row reserves space for the Quick lines heading. Indices remain those of the full reply list.
-	inline std::vector<quick_chip> quick_layout(std::span<const float> widths, u32 highlight, float width, float heading_width)
-	{
-		std::vector<quick_chip> chips;
-		if (widths.empty())
-			return chips;
-		highlight = std::min<u32>(highlight, static_cast<u32>(widths.size() - 1));
-		for (std::size_t first = 0; first <= highlight; ++first)
-		{
-			chips.clear();
-			float x = heading_width;
-			u32 row = 0;
-			for (std::size_t i = first; i < widths.size(); ++i)
-			{
-				if (x + widths[i] > width)
-				{
-					if (row == 1)
-						break;
-					row = 1;
-					x = 0.f;
-				}
-				chips.push_back({i, x, row});
-				x += widths[i] + 6.f;
-			}
-			if (chips.back().index >= highlight)
-				break;
-		}
-		return chips;
-	}
 
 	struct preview
 	{
@@ -199,11 +158,6 @@ namespace pbd::spectator_ui
 					out.lines.push_back(std::move(entry));
 				}
 			}
-			if (const auto* quick = value.find("quick"); !absent(quick) && !texts(quick, max_quick, 1, quick_bytes, out.quick))
-				return false;
-			if (const auto* selected = value.find("selected"); !absent(selected) &&
-															   (!pbd::set_channel::detail::number32(selected, 0, static_cast<u32>(max_quick - 1), out.selected) || out.selected >= std::max<std::size_t>(out.quick.size(), 1)))
-				return false;
 			return true;
 		}
 		inline bool side_pair(const json* value, auto&& read_side)
@@ -312,8 +266,7 @@ namespace pbd::spectator_ui
 	struct press
 	{
 		button which = button::circle;
-		bool chat_open = false;        // a chat panel was open (Circle then ends the chat instead of watching)
-		std::optional<u32> quick_line; // Cross with the chat open: the Quick line highlighted when it was pressed
+		bool chat_open = false; // a chat panel was open (Circle then ends the chat instead of watching)
 		bool operator==(const press&) const = default;
 	};
 
@@ -324,45 +277,8 @@ namespace pbd::spectator_ui
 	{
 		u16 m_previous = 0;
 		bool m_primed = false;
-		u32 m_highlight = 0;
-		// The chat panel the highlight belongs to: its Quick lines and the selected= it came with.
-		bool m_open = false;
-		std::vector<std::string> m_quick;
-		u32 m_from = 0;
 
 	public:
-		u32 highlight() const
-		{
-			return m_highlight;
-		}
-
-		// A click on a Quick line puts the highlight on it before its Cross is read.
-		void highlight_line(u32 index)
-		{
-			if (m_open && index < m_quick.size())
-				m_highlight = index;
-		}
-
-		// A newly applied watch_ui. A chat panel that opens, or one with other Quick lines or another selected=, puts the highlight
-		// on its selected=; the same panel sent again (a new line in the log, a new count) keeps the watcher's highlight, so a
-		// redraw never moves it under the watcher's thumb.
-		void apply(const state& ui)
-		{
-			if (!ui.chat)
-			{
-				m_open = false;
-				m_quick.clear();
-				m_highlight = m_from = 0;
-				return;
-			}
-			const auto& chat = *ui.chat;
-			if (!m_open || m_quick != chat.quick || m_from != chat.selected)
-				m_highlight = chat.quick.empty() ? 0 : std::min<u32>(chat.selected, static_cast<u32>(chat.quick.size() - 1));
-			m_open = true;
-			m_quick = chat.quick;
-			m_from = chat.selected;
-		}
-
 		// Presses come back in a fixed order; Circle precedes Start when both are pressed together.
 		// `menu`: the in-game menu holds the controller (pbd::settings_menu::claimed); the read reports nothing and moves nothing.
 		std::vector<press> read(u16 word, const state* ui, bool shown, bool menu = false)
@@ -380,26 +296,16 @@ namespace pbd::spectator_ui
 			if (!shown)
 			{
 				if (down & pad::circle)
-					out.push_back({button::circle, chat, std::nullopt});
+					out.push_back({button::circle, chat});
 				if (down & pad::start)
-					out.push_back({button::start, chat, std::nullopt});
+					out.push_back({button::start, chat});
 				return out;
-			}
-			const u32 quick = chat ? static_cast<u32>(ui->chat->quick.size()) : 0;
-			if (quick)
-			{
-				if ((down & (pad::left | pad::up)) && m_highlight)
-					m_highlight--;
-				if ((down & (pad::right | pad::down)) && m_highlight + 1 < quick)
-					m_highlight++;
 			}
 			static constexpr std::array<std::pair<u16, button>, 7> order{{{pad::circle, button::circle}, {pad::start, button::start}, {pad::square, button::square}, {pad::r2, button::r2},
 				{pad::triangle, button::triangle}, {pad::l1, button::l1}, {pad::r1, button::r1}}};
 			for (const auto& [bit, which] : order)
 				if (down & bit)
-					out.push_back({which, chat, std::nullopt});
-			if ((down & pad::cross) && quick)
-				out.push_back({button::cross, true, m_highlight});
+					out.push_back({which, chat});
 			return out;
 		}
 	};
@@ -418,7 +324,6 @@ namespace pbd::spectator_ui
 		std::optional<preview> new_line;
 		u64 new_line_since_ms = 0; // host steady milliseconds when this preview first showed (0 until it has)
 		std::optional<chat_panel> chat;
-		u32 highlight = 0;
 		std::optional<std::array<profile, 2>> profiles;
 		bool operator==(const view&) const = default;
 	};
@@ -450,11 +355,7 @@ namespace pbd::spectator_ui
 	{
 		if (shown.chat)
 		{
-			std::vector<bar_item> out;
-			if (!shown.chat->quick.empty())
-				out.push_back({"{cross}", "Send", 0});
-			out.push_back({"{circle}", "End Chat", 0});
-			out.push_back({"{triangle}", "Quick Lines", 0});
+			std::vector<bar_item> out{{"{circle}", "End Chat", 0}};
 			if (shown.chat->tabs.size() > 1)
 				out.push_back({"{l1}/{r1}", "Tab", 0});
 			return out;

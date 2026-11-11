@@ -2,11 +2,34 @@
 
 #include "rpcs3qt/pbd_game_host_policy.h"
 #include "rpcs3qt/pbd_game_host_visibility.h"
+#include "rpcs3qt/pbd_game_host_shell.h"
 #include "Emu/PBD/pbd_screen_check.h"
 
 #include <string>
 
 using pbd::test::check;
+
+PBD_TEST(PbdGameHost, AudioRequiresExactTokenRangeAndMute)
+{
+	using namespace pbd::game_host;
+	audio_control audio{33, false};
+	for (const int volume : {0, 35, 100})
+		for (const int muted : {0, 1})
+		{
+			check(parse_control("PBD1 42 audio " + std::to_string(volume) + " " + std::to_string(muted) + " 17\n", 42, &audio) == 9);
+			check(audio.volume == volume && audio.muted == (muted == 1) && audio.revision == 17);
+		}
+	for (const auto request : {"PBD1 41 audio 50 0\n", "PBD1 42 audio -1 0\n", "PBD1 42 audio 101 0\n",
+			 "PBD1 42 audio 50 2\n", "PBD1 42 audio 50 true\n", "PBD1 42 audio 50\n", "PBD1 42 audio 050 0\n",
+			 "PBD1 42 audio 50 0 \n", "PBD1 42 audio 50 0\nclose\n", "PBD1 42 audio 50.0 0\n", "PBD1 42 audio +50 0\n",
+			 "PBD1 42 audio 50 0 0\n", "PBD1 42 audio 50 0 01\n", "PBD1 42 audio 50 0 4294967296\n",
+			 "PBD1 42 audio 50 0 17 extra\n", "PBD1 41 audio 50 0 17\n"})
+	{
+		const auto previous = audio;
+		check(parse_control(request, 42, &audio) == 0);
+		check(audio.volume == previous.volume && audio.muted == previous.muted && audio.revision == previous.revision);
+	}
+}
 
 PBD_TEST(PbdGameHost, RecordingKeysNeverToggleFullscreen)
 {
@@ -44,6 +67,8 @@ PBD_TEST(PbdGameHost, Checks)
 	check(parse_control("PBD1 42 game\n", 42) == 4);
 	check(parse_control("PBD1 42 visible\n", 42) == 5);
 	check(parse_control("PBD1 42 recover\n", 42) == 6);
+	check(parse_control("PBD1 42 escape\n", 42) == 8);
+	check(parse_control("PBD1 41 escape\n", 42) == 0);
 	for (const auto request : {"", "PBD1 42 close", "PBD1 41 close\n", "PBD1 -42 close\n", "PBD1 4294967296 close\n",
 			 "PBD1 42 kill\n", "PBD1 42 close extra\n", "PBD1 42 close\nclose\n", "PBD1 42  close\n", "PBD1 42close\n",
 			 "PBD1  close\n", "PBD1 42 \n"})
@@ -511,6 +536,35 @@ PBD_TEST(PbdGameHost, AForcedHiddenVerdictFailsTheCheckForHardwareTests)
 }
 
 #ifdef _WIN32
+PBD_TEST(PbdGameHost, QtShellPolicyCoversHostedStandaloneAndQuietProcesses)
+{
+	using pbd::game_host::qt_shell_required;
+	check(!qt_shell_required(nullptr, nullptr));
+	check(!qt_shell_required("", "0"));
+	check(!qt_shell_required("", "true"));
+	check(!qt_shell_required("", "10"));
+	check(qt_shell_required(nullptr, "1"));
+	check(qt_shell_required("hosted contract", nullptr));
+	check(qt_shell_required("standalone contract", "0"));
+	check(qt_shell_required("Steam contract", "1"));
+}
+
+PBD_TEST(PbdGameHost, QtShellStylePreservesEveryUnrelatedBit)
+{
+	using namespace pbd::game_host;
+	for (const DWORD original : {DWORD{0}, DWORD{WS_EX_APPWINDOW}, DWORD{WS_EX_TOOLWINDOW},
+			 DWORD{WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE}, DWORD{0xffffffff}})
+	{
+		const auto style = qt_shell_ex_style(original);
+		check(style & WS_EX_TOOLWINDOW);
+		check(!(style & WS_EX_APPWINDOW));
+		check((style & ~(WS_EX_TOOLWINDOW | WS_EX_APPWINDOW)) == (original & ~(WS_EX_TOOLWINDOW | WS_EX_APPWINDOW)));
+		check(qt_shell_ex_style(style) == style);
+	}
+	check(surface_ex_style(false) == WS_EX_TOOLWINDOW);
+	check(surface_ex_style(true) == WS_EX_APPWINDOW);
+}
+
 PBD_TEST(PbdGameHost, ObservesHiddenWindowsAndRejectsWrongRoot)
 {
 	using pbd::game_host::observe_window_visibility;

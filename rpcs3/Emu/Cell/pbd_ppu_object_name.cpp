@@ -55,7 +55,7 @@ namespace pbd::ppu_object_name
 		// tag, or objects cached under the older revision are reused (docs/design/ppu-object-names.md). A firmware library's
 		// name is this prefix and its hashes alone, so a new revision makes every player compile all of the firmware again on
 		// the next boot. A change that reaches only game code is fenced with a tag in part_tags instead, which firmware lacks.
-		return fmt::format("v8-dr2026-abi7-l%x-%x-%x-%x-", sizeof(ppu_thread), ::offset32(&ppu_thread::state),
+		return fmt::format("v9-dr2026-abi7-l%x-%x-%x-%x-", sizeof(ppu_thread), ::offset32(&ppu_thread::state),
 			::offset32(&ppu_thread::gpr), ::offset32(&ppu_thread::hv_ctx));
 	}
 

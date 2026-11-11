@@ -59,6 +59,12 @@ namespace pbd::replay_carry
 	bool read_actor_retained_scalars(ppu_thread& owner, u64 generation, actor_retained_scalars& out) noexcept;
 	bool apply_actor_retained_scalars(ppu_thread& owner, u64 generation, const game_values& saved) noexcept;
 	bool read_actor_records(ppu_thread& owner, u64 generation, actor_records& out) noexcept;
+	bool read_stage_camera(ppu_thread& owner, u64 generation, stage_camera& out) noexcept;
+	// Writes the saved camera before the stock initializer runs, which then rewrites what it always rewrites; read back.
+	bool apply_stage_camera(ppu_thread& owner, u64 generation, const stage_camera& saved) noexcept;
+	bool read_effect_controller(ppu_thread& owner, u64 generation, effect_controller& out) noexcept;
+	// Writes the saved controller before the stock initializer runs, which leaves it as it is; read back.
+	bool apply_effect_controller(ppu_thread& owner, u64 generation, const effect_controller& saved) noexcept;
 	// Writes the records over both actors at the match initializer as plan_actor_records places them, checked against
 	// the COM images and bone-root objects this boot loaded; `changed` counts the bytes that differed from what the
 	// actors held.

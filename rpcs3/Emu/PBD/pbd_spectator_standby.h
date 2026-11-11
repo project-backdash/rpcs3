@@ -2,15 +2,14 @@
 
 #include "pbd_env.h"
 #include "pbd_json.h"
+#include "Utilities/File.h"
 
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <system_error>
 
 // A standby watcher. While its player waits in line the launcher starts a watcher with this PC's own start state and no
 // set. The watcher boots, proves its clean character select at the first boundary, says so in spectator-standby.json and
@@ -115,21 +114,9 @@ namespace pbd::spectator_standby
 	// file is never replaced.
 	inline bool publish(const std::filesystem::path& file, std::string_view text)
 	{
-		std::error_code ec;
-		if (std::filesystem::exists(file, ec) || ec)
-			return false;
-		auto temporary = file;
-		temporary.replace_filename("." + file.filename().string() + ".tmp");
-		{
-			std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
-			out.write(text.data(), static_cast<std::streamsize>(text.size()));
-			if (!out.flush())
-				return false;
-		}
-		std::filesystem::rename(temporary, file, ec);
-		if (!ec)
-			return true;
-		std::filesystem::remove(temporary, ec);
-		return false;
+		// fs converts UTF-8 paths to extended-length Windows paths for both the write and the rename.
+		const auto path = file.u8string();
+		fs::pending_file out(std::string(path.begin(), path.end()));
+		return out.file && out.file.write(text.data(), text.size()) == text.size() && out.commit(false);
 	}
 } // namespace pbd::spectator_standby

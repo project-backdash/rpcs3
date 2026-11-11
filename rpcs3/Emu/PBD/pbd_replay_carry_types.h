@@ -119,6 +119,19 @@ namespace pbd::replay_carry
 		std::array<std::uint8_t, replay_memory::actor_records_bytes> bytes{};
 		bool operator==(const actor_records&) const = default;
 	};
+	// The camera and two stage words a finished game leaves (pbd_t5dr_memory.h camera_block), byte for byte.
+	struct stage_camera
+	{
+		std::array<std::uint8_t, replay_memory::camera_block_bytes> bytes{};
+		std::uint32_t ko_variant = 0, fade_word = 0;
+		bool operator==(const stage_camera&) const = default;
+	};
+	// The effect controller a finished game leaves (pbd_t5dr_memory.h effect_controller), byte for byte.
+	struct effect_controller
+	{
+		std::array<std::uint8_t, replay_memory::effect_controller_bytes> bytes{};
+		bool operator==(const effect_controller&) const = default;
+	};
 	// Missing fields in older files stay absent; playback must not invent their values.
 	struct game_values
 	{
@@ -139,5 +152,7 @@ namespace pbd::replay_carry
 		std::optional<actor_segment_deltas> segment_deltas;
 		std::optional<actor_scalar_bits> prior_life, reaction_scalar, previous_blend_weight;
 		std::optional<actor_records> records;
+		std::optional<stage_camera> camera;
+		std::optional<effect_controller> effects;
 	};
 } // namespace pbd::replay_carry

@@ -88,6 +88,14 @@ namespace pbd::spectator
 		std::deque<frame> incoming;
 		if (!decode_frames(bytes.data(), count, stride, applied, incoming))
 			return false;
+		// The initializer precedes the intro or battle barrier. Bind its successor to the paired input's own segment.
+		if (!m_identity.pbd_capsule.empty() && m_game == m_identity.pbd_capsule_game && first == m_identity.pbd_first_frame &&
+			(incoming.front().boundary != m_identity.pbd_source_origin + 1 || incoming.front().segment != m_identity.pbd_input_segment ||
+				(m_identity.pbd_input_segment != m_identity.pbd_source_segment && incoming.front().scene != 8 && incoming.front().scene != 16 && incoming.front().scene != 17)))
+			return refuse("capsule_coordinate_mismatch");
+		if (m_identity.pbd_paired && m_game == m_identity.pbd_capsule_game && first == m_identity.pbd_first_frame &&
+			!std::equal(m_identity.pbd_pair_first.begin(), m_identity.pbd_pair_first.end(), bytes.data() + header_bytes + 16))
+			return refuse("capsule_proof_mismatch");
 		if (!m_frames.empty() && incoming.front().boundary <= m_frames.back().boundary)
 			return refuse("sync_facts_invalid");
 		m_frames.insert(m_frames.end(), incoming.begin(), incoming.end());

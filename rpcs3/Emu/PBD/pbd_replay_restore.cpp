@@ -85,7 +85,7 @@ namespace pbd::replay_restore
 		eligibility = hex<8>(field(moku, "eligibilityHex"));
 	}
 
-	bool generators::apply(ppu_thread& owner) const
+	bool generators::apply(ppu_thread& owner, bool preserve_ambient) const
 	{
 		const u32 tls = static_cast<u32>(owner.gpr[13]);
 		if (owner.gpr[13] > 0xffffffffu || tls < 0x7000 || tls > 0xffff6000u ||
@@ -99,7 +99,7 @@ namespace pbd::replay_restore
 		std::copy_n(libc.begin() + 4, 136, tail.begin());
 		return store(tls - 0x7000, seed) && store(tls + 0x9094, tail) &&
 		       store_word(0x1008f0c4, flow[0]) && store_word(0x1008f0d0, flow[1]) &&
-		       store(0x10095168, mt) && store_word(0x10053578, mt_index) && store(0x1061d47c, network) &&
+		       (preserve_ambient || (store(0x10095168, mt) && store_word(0x10053578, mt_index))) && store(0x1061d47c, network) &&
 		       store(0x100934a0, eligibility);
 	}
 

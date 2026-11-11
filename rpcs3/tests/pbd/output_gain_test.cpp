@@ -1,6 +1,8 @@
 #include "pbd_test.h"
 
 #include "Emu/PBD/pbd_output_gain.h"
+#include "Emu/PBD/pbd_player_audio.h"
+#include "Emu/Cell/pbd_player_volume.h"
 #include "Emu/PBD/pbd_replay_standby.h"
 
 #include <cmath>
@@ -8,6 +10,80 @@
 #include <vector>
 
 using pbd::test::check;
+
+PBD_TEST(PbdOutputGain, RememberedMuteAndHostMutePreserveTheChosenLevel)
+{
+	using namespace pbd::player_audio;
+	check(startup_muted(R"({"audio":{"masterVolume":60,"muted":true}})"));
+	for (const auto settings : {"", "{}", R"({"audio":{"muted":false}})", R"({"audio":{"muted":"true"}})", "{"})
+		check(!startup_muted(settings));
+	check(audible_volume(60, false, false) == 60);
+	check(audible_volume(60, true, false) == 0);
+	check(audible_volume(75, true, true) == 0);
+	check(audible_volume(75, false, true) == 0);
+	check(audible_volume(75, false, false) == 75);
+	check(audible_volume(-1, false, false) == 0 && audible_volume(201, false, false) == 200);
+}
+
+PBD_TEST(PbdOutputGain, LivePlayerChoicesCannotReleaseAHostMute)
+{
+	using namespace pbd::player_volume;
+	struct restore_state
+	{
+		int configured = static_cast<int>(g_cfg.audio.volume.get());
+		int player;
+		bool host_muted, user_muted;
+		std::uint64_t revision;
+		restore_state()
+		{
+			auto& s = state();
+			std::lock_guard lock(s.mutex);
+			player = s.player;
+			host_muted = s.muted;
+			user_muted = s.player_muted;
+			revision = s.launcher_revision;
+		}
+		~restore_state()
+		{
+			auto& s = state();
+			std::lock_guard lock(s.mutex);
+			s.player = player;
+			s.muted = host_muted;
+			s.player_muted = user_muted;
+			s.launcher_revision = revision;
+			g_cfg.audio.volume.set(configured);
+		}
+	} saved;
+	{
+		auto& s = state();
+		std::lock_guard lock(s.mutex);
+		s.player = -1;
+		s.player_muted = s.muted = false;
+		g_cfg.audio.volume.set(0);
+	}
+	check(output() == 0);
+	g_cfg.audio.volume.set(75);
+	check(output() == 75, "hidden output did not freeze the chosen volume at zero");
+	mute();
+	check(get() == 75 && output() == 0);
+	restore();
+	check(output() == 75);
+	set(60, false, 1);
+	restore();
+	check(output() == 60);
+	mute();
+	set(75, true, 2);
+	check(output() == 0 && get() == 75);
+	restore();
+	check(output() == 0, "a host restore keeps the player's mute");
+	set(35);
+	check(read().volume == 35 && read().muted && output() == 0);
+	mute();
+	set(80, false, 3);
+	check(output() == 0, "unmuting the player keeps a host mute");
+	restore();
+	check(output() == 80 && read().revision == 3);
+}
 
 namespace
 {

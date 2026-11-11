@@ -63,7 +63,7 @@ namespace pbd::spectator
 		bool m_draw_closed = false;
 		std::string m_reason;
 		// The watcher's own screen (pbd_spectator_ui): the launcher's last watch_ui, whether the watched game has a fight on screen
-		// at the last boundary, the open chat's Quick-line highlight, and the serial of the last pad event file. Display and pad
+		// at the last boundary, and the serial of the last pad event file. Display and pad
 		// events only: none of it reaches the watched game.
 		std::optional<spectator_ui::state> m_ui;
 		spectator_ui::pad_reader m_pad;
@@ -71,13 +71,8 @@ namespace pbd::spectator
 		// The in-game menu holds the watcher's controller (read_pad): the screen does not show meanwhile.
 		bool m_menu = false;
 		// Clicks on the watcher's screen still to press (pbd_spectator_mouse.h), one per read with a release read between, so two
-		// clicks on one control are two presses. A Quick line carries its index for the highlight.
-		struct queued_click
-		{
-			std::uint16_t word = 0;
-			std::optional<u32> line;
-		};
-		std::deque<queued_click> m_clicks;
+		// clicks on one control are two presses.
+		std::deque<std::uint16_t> m_clicks;
 		bool m_click_held = false;
 		std::uint16_t click_word(bool menu);
 		u64 m_pad_serial = 0, m_preview_since = 0;

@@ -22,7 +22,7 @@ namespace pbd::test
 			vm::init();
 			for (const auto base : blocks)
 			{
-				check(vm::map(base, 0x10000, vm::page_size_64k));
+				check(vm::map(base, 0x10000, vm::block_size_64k));
 				check(vm::falloc(base, 0x10000));
 			}
 			struct construction_id
@@ -270,7 +270,7 @@ namespace pbd::test
 #endif
 			const_cast<std::string&>(Emu.GetTitleID()) = pbd::t5dr::title_id;
 			Emu.SetExecutableHash(pbd::t5dr::executable_hash);
-			check(vm::map(0x10050000, 0x10000, vm::page_size_64k));
+			check(vm::map(0x10050000, 0x10000, vm::block_size_64k));
 			check(vm::falloc(0x10050000, 0x10000));
 			vm::write32(pbd::t5dr::game_mode_address, 10);
 			vm::write32(pbd::t5dr::scene_address, 17);

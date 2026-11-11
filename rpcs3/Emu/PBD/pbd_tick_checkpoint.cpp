@@ -46,6 +46,25 @@ void pbd::rollback_session::tick_dispatch::capture_tick_checkpoint(tick_sample& 
 		const auto ring_context_done = session_clock::now();
 		entry.previous_held = data.previous_held;
 		tick.ring_captured = ok;
+		if (!ok)
+		{
+			// An unreadable page fails every capture of the session and every correction after it; name the pages once.
+			static std::atomic<bool> named{false};
+			if (!named.exchange(true))
+			{
+				std::string pages;
+				u32 unreadable = 0;
+				for (const u32 page : data.checkpoint.checkpoint_pages)
+				{
+					if (vm::check_addr(page, vm::page_readable))
+						continue;
+					if (unreadable++ < 16)
+						fmt::append(pages, " 0x%08x (%s)", page, vm::check_addr(page, 0) ? "mapped, not readable" : "not mapped");
+				}
+				pbd_session_log.error("Checkpoint capture failed at boundary %u: %u of %u pages unreadable:%s", index, unreadable,
+					data.checkpoint.checkpoint_pages.size(), pages);
+			}
+		}
 		tick.ring_capture_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(session_clock::now() - ring_begin).count();
 		tick.ring_pages_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(ring_pages_done - ring_begin).count();
 		tick.ring_context_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(ring_context_done - ring_context_begin).count();

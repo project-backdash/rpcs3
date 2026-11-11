@@ -12,6 +12,7 @@ class VKFragmentProgram;
 
 namespace rsx
 {
+	struct context;
 	struct shader_loading_dialog;
 }
 
@@ -25,7 +26,7 @@ namespace vk
 		using async_build_fn_callback = std::function<void(std::shared_ptr<glsl::program>&)>;
 
 		VkDevice m_device = VK_NULL_HANDLE;
-		VkPipelineCache m_driver_pipeline_cache = VK_NULL_HANDLE;
+		rsx::context* m_ctx = nullptr;
 
 		struct pipeline_key
 		{
@@ -130,8 +131,11 @@ namespace vk
 		// A pipeline state's hash with its pointers cleared, the same in every process.
 		static u64 state_hash(const vk::pipeline_props& properties);
 
-		void init(const vk::render_device& dev);
+		void init(rsx::context* ctx, const vk::render_device& dev);
 		void destroy();
+
+		// Follows the backend's bound context
+		void set_context(rsx::context* ctx) { m_ctx = ctx; }
 
 		void preload(rsx::shader_loading_dialog* dlg);
 

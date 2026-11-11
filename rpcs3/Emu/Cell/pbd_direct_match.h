@@ -59,7 +59,7 @@ public:
 	}
 	bool configure(u64 generation, bool isolated, u32 seed) noexcept;
 	// An isolated live watcher uses the same stock initializer, then takes its inputs from the spectator channel.
-	bool pbd_configure_capsule_start(u64 generation, bool isolated, u32 seed, u32 source_game, std::string_view capsule) noexcept;
+	bool pbd_configure_capsule_start(u64 generation, bool isolated, u32 seed, u32 source_game, std::string_view capsule, bool preserve_ambient = false) noexcept;
 	bool pbd_live_inputs() const noexcept;
 	u32 pbd_start_boundary() const noexcept;
 	bool pbd_configure_file(u64 generation, bool isolated, u32 seed, const std::filesystem::path& file,

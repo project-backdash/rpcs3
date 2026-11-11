@@ -76,10 +76,10 @@ struct gdb_cmd
 bool check_errno_again()
 {
 #ifdef _WIN32
-	int err = WSAGetLastError();
+	const int err = WSAGetLastError();
 	return (err == WSAEWOULDBLOCK);
 #else
-	int err = errno;
+	const int err = errno;
 	return (err == EAGAIN) || (err == EWOULDBLOCK);
 #endif
 }
@@ -141,8 +141,8 @@ void gdb_thread::start_server()
 		hints.ai_flags    = AI_PASSIVE;
 		hints.ai_socktype = SOCK_STREAM;
 
-		std::string bind_addr = match[1].str();
-		std::string bind_port = match[2].str();
+		const std::string bind_addr = match[1].str();
+		const std::string bind_port = match[2].str();
 
 		if (getaddrinfo(bind_addr.c_str(), bind_port.c_str(), &hints, &info) == 0)
 		{
@@ -191,7 +191,7 @@ void gdb_thread::start_server()
 
 	set_nonblocking(server_socket);
 
-	sockaddr_un unix_saddr;
+	sockaddr_un unix_saddr {};
 	unix_saddr.sun_family = AF_UNIX;
 	strcpy_trunc(unix_saddr.sun_path, sname);
 
@@ -346,7 +346,7 @@ bool gdb_thread::send(const char* buf, int cnt)
 	int sent = 0;
 	while (sent < cnt && thread_ctrl::state() != thread_state::aborting)
 	{
-		int res = ::send(client_socket, buf + sent, cnt - sent, 0);
+		const int res = ::send(client_socket, buf + sent, cnt - sent, 0);
 		if (res == -1)
 		{
 			if (check_errno_again())
@@ -424,8 +424,8 @@ u8 gdb_thread::append_encoded_char(char c, std::string& str)
 std::string gdb_thread::to_hexbyte(u8 i)
 {
 	std::string result = "00";
-	u8 i1 = i & 0xF;
-	u8 i2 = i >> 4;
+	const u8 i1 = i & 0xF;
+	const u8 i2 = i >> 4;
 	result[0] = i2 > 9 ? 'a' + i2 - 10 : '0' + i2;
 	result[1] = i1 > 9 ? 'a' + i1 - 10 : '0' + i1;
 	return result;
@@ -553,7 +553,7 @@ bool gdb_thread::wait_with_interrupts()
 	char c;
 	while (!paused && thread_ctrl::state() != thread_state::aborting)
 	{
-		int result = recv(client_socket, &c, 1, 0);
+		const int result = recv(client_socket, &c, 1, 0);
 
 		if (result == 0)
 		{
@@ -577,22 +577,22 @@ bool gdb_thread::wait_with_interrupts()
 	return thread_ctrl::state() != thread_state::aborting || fail_session("Emulator is stopping");
 }
 
-bool gdb_thread::cmd_extended_mode(gdb_cmd&)
+bool gdb_thread::cmd_extended_mode(const gdb_cmd&)
 {
 	return send_cmd_ack("OK");
 }
 
-bool gdb_thread::cmd_reason(gdb_cmd&)
+bool gdb_thread::cmd_reason(const gdb_cmd&)
 {
 	return send_reason();
 }
 
-bool gdb_thread::cmd_supported(gdb_cmd&)
+bool gdb_thread::cmd_supported(const gdb_cmd&)
 {
 	return send_cmd_ack("PacketSize=1200;DR2026SafeDetach+");
 }
 
-bool gdb_thread::cmd_thread_info(gdb_cmd&)
+bool gdb_thread::cmd_thread_info(const gdb_cmd&)
 {
 	std::string result;
 	const auto on_select = [&](u32, cpu_thread& cpu)
@@ -612,12 +612,12 @@ bool gdb_thread::cmd_thread_info(gdb_cmd&)
 	return send_cmd_ack(result);
 }
 
-bool gdb_thread::cmd_current_thread(gdb_cmd&)
+bool gdb_thread::cmd_current_thread(const gdb_cmd&)
 {
 	return send_cmd_ack(selected_thread && selected_thread->state.none_of(cpu_flag::exit) ? ("QC" + u64_to_padded_hex(selected_thread->id)) : "");
 }
 
-bool gdb_thread::cmd_read_register(gdb_cmd& cmd)
+bool gdb_thread::cmd_read_register(const gdb_cmd& cmd)
 {
 	if (!select_thread(general_ops_thread_id))
 	{
@@ -634,7 +634,7 @@ bool gdb_thread::cmd_read_register(gdb_cmd& cmd)
 		u32 rid{};
 		if (!hex_to(cmd.data, rid))
 			return send_cmd_ack("E01");
-		std::string result = get_reg(ppu, rid);
+		const std::string result = get_reg(ppu, rid);
 		if (result.empty())
 		{
 			GDB.warning("Wrong register id %d.", rid);
@@ -647,7 +647,7 @@ bool gdb_thread::cmd_read_register(gdb_cmd& cmd)
 	return send_cmd_ack("");
 }
 
-bool gdb_thread::cmd_write_register(gdb_cmd& cmd)
+bool gdb_thread::cmd_write_register(const gdb_cmd& cmd)
 {
 	if (!select_thread(general_ops_thread_id))
 	{
@@ -661,7 +661,8 @@ bool gdb_thread::cmd_write_register(gdb_cmd& cmd)
 
 	if (auto ppu = selected_thread->try_get<named_thread<ppu_thread>>())
 	{
-		usz eq_pos = cmd.data.find('=');
+		const std::string_view cmd_data = cmd.data;
+		const usz eq_pos = cmd_data.find('=');
 		if (eq_pos == umax)
 		{
 			GDB.warning("Wrong write_register cmd data '%s'.", cmd.data);
@@ -670,7 +671,7 @@ bool gdb_thread::cmd_write_register(gdb_cmd& cmd)
 		u32 rid{};
 		if (!hex_to(std::string_view(cmd.data).substr(0, eq_pos), rid))
 			return send_cmd_ack("E01");
-		std::string value = cmd.data.substr(eq_pos + 1);
+		const std::string_view value = cmd_data.substr(eq_pos + 1);
 		if (!set_reg(ppu, rid, value))
 		{
 			GDB.warning("Wrong register id %d.", rid);
@@ -682,9 +683,10 @@ bool gdb_thread::cmd_write_register(gdb_cmd& cmd)
 	return send_cmd_ack("");
 }
 
-bool gdb_thread::cmd_read_memory(gdb_cmd& cmd)
+bool gdb_thread::cmd_read_memory(const gdb_cmd& cmd)
 {
-	usz s = cmd.data.find(',');
+	const std::string_view cmd_data = cmd.data;
+	const usz s = cmd_data.find(',');
 	u32 addr{}, len{};
 	if (s == umax || !hex_to(std::string_view(cmd.data).substr(0, s), addr) ||
 		!hex_to(std::string_view(cmd.data).substr(s + 1), len) ||
@@ -714,11 +716,13 @@ bool gdb_thread::cmd_read_memory(gdb_cmd& cmd)
 	return send_cmd_ack(result);
 }
 
-bool gdb_thread::cmd_write_memory(gdb_cmd& cmd)
+bool gdb_thread::cmd_write_memory(const gdb_cmd& cmd)
 {
-	usz s = cmd.data.find(',');
-	usz s2 = cmd.data.find(':');
-	if ((s == umax) || (s2 == umax) || s2 <= s)
+	const std::string_view cmd_data = cmd.data;
+	const usz s = cmd_data.find(',');
+	const usz s2 = cmd_data.find(':');
+
+	if (s == umax || s2 == umax || s2 <= s)
 	{
 		GDB.warning("Malformed write memory request received: '%s'.", cmd.data);
 		return send_cmd_ack("E01");
@@ -745,7 +749,7 @@ bool gdb_thread::cmd_write_memory(gdb_cmd& cmd)
 	return send_cmd_ack("OK");
 }
 
-bool gdb_thread::cmd_read_all_registers(gdb_cmd&)
+bool gdb_thread::cmd_read_all_registers(const gdb_cmd&)
 {
 	std::string result;
 	select_thread(general_ops_thread_id);
@@ -758,7 +762,7 @@ bool gdb_thread::cmd_read_all_registers(gdb_cmd&)
 	if (auto ppu = selected_thread->try_get<named_thread<ppu_thread>>())
 	{
 		//68 64-bit registers, and 3 32-bit
-		result.reserve(68*16 + 3*8);
+		result.reserve(68 * 16 + 3 * 8);
 		for (int i = 0; i < 71; ++i)
 		{
 			result += get_reg(ppu, i);
@@ -770,7 +774,7 @@ bool gdb_thread::cmd_read_all_registers(gdb_cmd&)
 	return send_cmd_ack("");
 }
 
-bool gdb_thread::cmd_write_all_registers(gdb_cmd& cmd)
+bool gdb_thread::cmd_write_all_registers(const gdb_cmd& cmd)
 {
 	select_thread(general_ops_thread_id);
 
@@ -781,8 +785,20 @@ bool gdb_thread::cmd_write_all_registers(gdb_cmd& cmd)
 
 	if (auto ppu = selected_thread->try_get<named_thread<ppu_thread>>())
 	{
-		if (cmd.data.size() != 68 * 16 + 3 * 8)
+		usz total = 0;
+
+		for (int i = 0; i < 71; ++i)
+		{
+			const int sz = get_reg_size(ppu, i);
+			total += sz * 2;
+		}
+
+		if (cmd.data.size() != total)
+		{
+			GDB.warning("Received request to write all registers insufficient data length %d, required: %d, data: '%s'.", cmd.data.size(), total, cmd.data);
 			return send_cmd_ack("E01");
+		}
+
 		// Check every implemented value before committing any register writes.
 		int ptr = 0;
 		for (int i = 0; i < 71; ++i)
@@ -810,12 +826,12 @@ bool gdb_thread::cmd_write_all_registers(gdb_cmd& cmd)
 	return send_cmd_ack("E01");
 }
 
-bool gdb_thread::cmd_set_thread_ops(gdb_cmd& cmd)
+bool gdb_thread::cmd_set_thread_ops(const gdb_cmd& cmd)
 {
 	if (cmd.data.size() < 2 || (cmd.data[0] != 'c' && cmd.data[0] != 'g'))
 		return send_cmd_ack("E01");
-	char type = cmd.data[0];
-	std::string thread = cmd.data.substr(1);
+	const char type = cmd.data[0];
+	const std::string_view thread = std::string_view(cmd.data).substr(1);
 	u64 id = ALL_THREADS;
 	if (thread != "-1" && !hex_to(thread, id))
 		return send_cmd_ack("E01");
@@ -835,29 +851,36 @@ bool gdb_thread::cmd_set_thread_ops(gdb_cmd& cmd)
 	return send_cmd_ack("E01");
 }
 
-bool gdb_thread::cmd_attached_to_what(gdb_cmd&)
+bool gdb_thread::cmd_attached_to_what(const gdb_cmd&)
 {
 	//creating processes from client is not available yet
 	return send_cmd_ack("1");
 }
 
-bool gdb_thread::cmd_kill(gdb_cmd&)
+bool gdb_thread::cmd_kill(const gdb_cmd&)
 {
 	GDB.notice("Kill command issued");
 	Emu.CallFromMainThread([](){ Emu.GracefulShutdown(); });
 	return true;
 }
 
-bool gdb_thread::cmd_continue_support(gdb_cmd&)
+bool gdb_thread::cmd_continue_support(const gdb_cmd&)
 {
 	return send_cmd_ack("vCont;c;s;C;S");
 }
 
-bool gdb_thread::cmd_vcont(gdb_cmd& cmd)
+bool gdb_thread::cmd_vcont(const gdb_cmd& cmd)
 {
 	//todo: handle multiple actions and thread ids
 	this->from_breakpoint = false;
-	if (cmd.data.size() >= 2 && (cmd.data[1] == 'c' || cmd.data[1] == 's'))
+
+	if (cmd.data.size() < 2)
+	{
+		GDB.warning("Received vcont request with data of length < 2, data: '%s'", cmd.data);
+		return send_cmd_ack("E01");
+	}
+
+	if (cmd.data[1] == 'c' || cmd.data[1] == 's')
 	{
 		resume_on_disconnect = true;
 		select_thread(continue_ops_thread_id);
@@ -921,11 +944,15 @@ bool gdb_thread::cmd_vcont(gdb_cmd& cmd)
 
 static const u32 INVALID_PTR = 0xffffffff;
 
-bool gdb_thread::cmd_set_breakpoint(gdb_cmd& cmd)
+bool gdb_thread::cmd_set_breakpoint(const gdb_cmd& cmd)
 {
 	if (cmd.data.empty())
+	{
+		GDB.warning("Received request to set breakpoint with empty data.");
 		return send_cmd_ack("E01");
-	char type = cmd.data[0];
+	}
+
+	const char type = cmd.data[0];
 	//software breakpoint
 	if (type == '0')
 	{
@@ -960,11 +987,15 @@ bool gdb_thread::cmd_set_breakpoint(gdb_cmd& cmd)
 	return send_cmd_ack("");
 }
 
-bool gdb_thread::cmd_remove_breakpoint(gdb_cmd& cmd)
+bool gdb_thread::cmd_remove_breakpoint(const gdb_cmd& cmd)
 {
 	if (cmd.data.empty())
+	{
+		GDB.warning("Received request to remove breakpoint with empty data.");
 		return send_cmd_ack("E01");
-	char type = cmd.data[0];
+	}
+
+	const char type = cmd.data[0];
 	//software breakpoint
 	if (type == '0')
 	{
@@ -993,7 +1024,7 @@ bool gdb_thread::cmd_remove_breakpoint(gdb_cmd& cmd)
 
 }
 
-bool gdb_thread::cmd_detach(gdb_cmd&)
+bool gdb_thread::cmd_detach(const gdb_cmd&)
 {
 	send_cmd_ack("OK");
 	return false; // Per-session cleanup removes the breakpoints this stub set and restores execution.
@@ -1085,7 +1116,7 @@ void gdb_thread::operator()()
 
 	for (u64 sleep_until = get_system_time(); server_socket != -1 && thread_ctrl::state() != thread_state::aborting;)
 	{
-		sockaddr_in client;
+		sockaddr_in client {};
 		socklen_t client_len = sizeof(client);
 		client_socket = static_cast<int>(accept(server_socket, reinterpret_cast<struct sockaddr*>(&client), &client_len));
 

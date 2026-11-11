@@ -106,6 +106,12 @@ namespace pbd::game_host
 			return (held.shift ? Qt::ShiftModifier : Qt::NoModifier) | (held.control ? Qt::ControlModifier : Qt::NoModifier) |
 			       (held.alt ? Qt::AltModifier : Qt::NoModifier) | (held.meta ? Qt::MetaModifier : Qt::NoModifier);
 		}
+		// The layout the player types with is the foreground window's: the raw keyboard thread never holds the keyboard
+		// focus, so its own layout need not be the one in use.
+		HKL foreground_layout()
+		{
+			return GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), nullptr));
+		}
 		int qt_key(WPARAM key, LPARAM flags)
 		{
 			if (key >= '0' && key <= 'Z')
@@ -139,7 +145,13 @@ namespace pbd::game_host
 			case VK_SUBTRACT: return Qt::Key_Minus;
 			case VK_DECIMAL: return Qt::Key_Period;
 			case VK_DIVIDE: return Qt::Key_Slash;
-			default: return static_cast<int>(MapVirtualKeyW(static_cast<UINT>(key), MAPVK_VK_TO_CHAR) & 0x7fffffff);
+			default:
+			{
+				// A character key is named by its unshifted character, upper-cased as Qt's own key mapper names it: the
+				// Brazilian ABNT2 key gives 'ç' and a binding names it Qt::Key_Ccedilla. The top bit marks a dead key.
+				const UINT character = MapVirtualKeyExW(static_cast<UINT>(key), MAPVK_VK_TO_CHAR, foreground_layout()) & 0x7fffffff;
+				return static_cast<int>(QChar(static_cast<char16_t>(character)).toUpper().unicode());
+			}
 			}
 		}
 	} // namespace

@@ -18,6 +18,7 @@ namespace pbd::live_stats
 		std::uint32_t hash_checks = 0;
 		std::int32_t hash_tick = -1, mismatch_tick = -1;
 		std::uint32_t in_match = 0, depth_recent = 0, loss_permille = 0;
+		std::uint32_t game_slow = 0;
 		std::uint32_t relayed = 0;
 		std::uint32_t leave_select = 0, leave_hold_ms = 0;
 		std::uint32_t replay_state = 0, replay_speed = 2, replay_control = 0, replay_match = 0, replay_frame = 0;
@@ -70,6 +71,7 @@ namespace pbd::live_stats
 		s.in_match = b.in_match.load(r);
 		s.depth_recent = b.depth_recent.load(r);
 		s.loss_permille = b.loss_permille.load(r);
+		s.game_slow = b.game_slow.load(r);
 		s.relayed = b.relayed.load(r);
 		s.leave_select = b.leave_select.load(r);
 		s.leave_hold_ms = b.leave_hold_ms.load(r);
@@ -282,6 +284,8 @@ namespace pbd::live_stats
 
 	inline std::uint32_t net_bars(const snapshot& s) noexcept
 	{
+		if (s.game_slow)
+			return 1;
 		if (!s.rtt_samples)
 			return 0; // no measurement yet: all bars dim
 		return net_bars((s.rtt_avg_us + 500) / 1000, (s.rtt_jitter_us + 500) / 1000, s.loss_permille);
@@ -301,7 +305,8 @@ namespace pbd::live_stats
 	inline std::string net_text(const snapshot& s)
 	{
 		const auto rtt = s.rtt_samples ? std::to_string((s.rtt_avg_us + 500) / 1000) + " ms" : std::string("-- ms");
-		return rtt + "  \xC2\xB7  Delay " + std::to_string(s.input_delay) + "f  \xC2\xB7  Rollback " + std::to_string(s.depth_recent) + "f";
+		return rtt + "  \xC2\xB7  Delay " + std::to_string(s.input_delay) + "f  \xC2\xB7  Rollback " + std::to_string(s.depth_recent) + "f" +
+		       (s.game_slow ? "  \xC2\xB7  Game slow" : "");
 	}
 
 	// Keep the connection text readable when an older installation lacks the notice fonts.

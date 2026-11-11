@@ -120,6 +120,41 @@ PBD_TEST(PbdSpectatorStandby, AReportIsPublishedWholeAndNeverReplaced)
 	std::filesystem::remove_all(root);
 }
 
+PBD_TEST(PbdSpectatorStandby, ReportsPublishThroughLongUnicodePaths)
+{
+	struct cleanup
+	{
+		std::string root;
+		~cleanup()
+		{
+			fs::remove_all(root);
+		}
+	} temporary{fs::get_temp_dir() + "pbd-standby-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "/"};
+	std::string directory = temporary.root;
+	for (unsigned i = 0; i < 6; ++i)
+		directory += std::string(48, 'a' + i) + "-\xe4\xb8\xad\xe6\x96\x87/";
+	check(directory.size() > 320 && fs::create_path(directory));
+	for (const auto name : {ready_file, end_file, std::string_view{"match-standby.json"}, std::string_view{"match-bound.json"}})
+	{
+		const std::string destination = directory + std::string(name);
+		const auto path = std::filesystem::u8path(destination);
+		check(publish(path, "first\n"), "ready, ended and match-bind reports support long Unicode channel paths");
+		check(!publish(path, "second\n"), "a long-path report cannot replace an existing report");
+		fs::file in(destination);
+		check(in && in.to_string() == "first\n");
+	}
+	unsigned files = 0;
+	for (const auto& entry : fs::dir(directory))
+	{
+		if (entry.name == "." || entry.name == "..")
+			continue;
+		check(!entry.is_directory && !entry.name.ends_with(".tmp"), "pending files are removed after success and refusal");
+		++files;
+	}
+	check(files == 4);
+	check(!publish(std::filesystem::u8path(directory + "missing/report.json"), "x"));
+}
+
 PBD_TEST(PbdSpectatorStandby, OnlyTheExactSwitchAsksForAStandby)
 {
 	put("PBD_SPECTATOR_STANDBY", nullptr);

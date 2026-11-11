@@ -125,12 +125,13 @@ u32 pbd_direct_match::pbd_start_boundary() const noexcept
 	return data && data->redirected && !data->failed ? data->anchor : ~0u;
 }
 
-bool pbd_direct_match::pbd_configure_capsule_start(u64 generation, bool isolated, u32 seed, u32 source_game, std::string_view capsule) noexcept
+bool pbd_direct_match::pbd_configure_capsule_start(u64 generation, bool isolated, u32 seed, u32 source_game, std::string_view capsule, bool preserve_ambient) noexcept
 {
 	try
 	{
 		const auto* enabled = pbd::env::find("PBD_SPECTATOR_NATIVE_2");
-		if (!enabled || std::string_view(enabled) != "1" || data || !isolated || !generation || !seed ||
+		const auto* paired_enabled = pbd::env::find("PBD_SPECTATOR_NATIVE_3");
+		if ((preserve_ambient && (!paired_enabled || std::string_view(paired_enabled) != "1")) || !enabled || std::string_view(enabled) != "1" || data || !isolated || !generation || !seed ||
 			!source_game || source_game > 65535 || capsule.empty() || capsule.size() > 256 * 1024 ||
 			Emu.GetTitleID() != pbd::t5dr::title_id || Emu.GetExecutableHash() != pbd::t5dr::executable_hash ||
 			pbd::anchor_dump::replay_refuses_test_switches())
@@ -143,6 +144,7 @@ bool pbd_direct_match::pbd_configure_capsule_start(u64 generation, bool isolated
 		s->seed = seed;
 		s->game = source_game;
 		s->pbd_external_inputs = true;
+		s->preserve_ambient = preserve_ambient;
 		if (!s->load_capsule(*parsed.value) || !s->recorded_input_context)
 			return false;
 		s->rank_screens = pbd::rank_stakes::read_values(parsed.value->find("rankScreens"));
@@ -154,7 +156,7 @@ bool pbd_direct_match::pbd_configure_capsule_start(u64 generation, bool isolated
 			return false;
 		}
 		pbd::character_rule::configure(generation, !data->allow_jinpachi);
-		data->event("capsule_start_configured", "", {{"runtimeGeneration", json::number(generation)}, {"sourceGame", json::number(source_game)}, {"liveInputs", json::boolean(true)}});
+		data->event("capsule_start_configured", "", {{"runtimeGeneration", json::number(generation)}, {"sourceGame", json::number(source_game)}, {"liveInputs", json::boolean(true)}, {"ambientGeneratorLocal", json::boolean(data->preserve_ambient)}});
 		return true;
 	}
 	catch (...)

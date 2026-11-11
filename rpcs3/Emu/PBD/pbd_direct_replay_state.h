@@ -63,6 +63,7 @@ struct pbd_direct_match::state
 	u32 recorded_input_counter = 0, recorded_mob_batches = 0;
 	u32 input_clock_differences = 0;
 	bool recorded_input_context = false;
+	bool preserve_ambient = false;
 	pbd::replay_native::choices choices;
 	bool allow_jinpachi = true;
 	std::array<u8, 13> options{};
@@ -518,6 +519,8 @@ struct pbd_direct_match::state
 		return saved.carry && saved.carry->records && carry(owner, saved.ordinal, &*saved.carry) &&
 		       pbd::replay_carry::pbd_apply_round_actor_records(owner, generation, *saved.carry->records, changed) ==
 		           pbd::replay_carry::records_refusal::none &&
+		       (!saved.carry->camera || pbd::replay_carry::apply_stage_camera(owner, generation, *saved.carry->camera)) &&
+		       (!saved.carry->effects || pbd::replay_carry::apply_effect_controller(owner, generation, *saved.carry->effects)) &&
 		       saved.rng && saved.rng->style_readback() &&
 		       saved.rng->apply(owner) && store_word(0x1008f07c, saved.frame_counter) &&
 		       store_word(0x10091cf0, saved.spawn_selector) &&

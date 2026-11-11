@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "swapchain.h"
+#include "Emu/system_config.h"
 #include "Emu/PBD/pbd_presentation_journal.h"
 #include "Emu/PBD/pbd_swapchain_rebuild.h"
 #include "pbd_present_wait.h"
@@ -361,12 +362,12 @@ namespace vk
 			std::string pbd_modes;
 			for (VkPresentModeKHR mode : present_modes)
 				pbd_modes += fmt::format("%s%d", pbd_modes.empty() ? "" : ",", static_cast<int>(mode));
-			const char* pbd_exclusive = !dev.get_full_screen_exclusive_support() ? "not enabled" :
+			const char* pbd_exclusive = !dev.get_full_screen_exclusive_support()  ? "not enabled" :
 			                            should_specify_exclusive_full_screen_mode ? "enabled, surface supports it" :
-			                                                                         "enabled, surface does not support it";
+			                                                                        "enabled, surface does not support it";
 			rsx_log.notice("PBD swapchain: vsync setting %d, supported modes [%s], mode %d, images %u (surface min %u max %u), "
-				"extent %ux%u (current %ux%u, min %ux%u, max %ux%u), transform 0x%x (current 0x%x), usage 0x%x (supported 0x%x), "
-				"window size reports %s, full screen exclusive %s",
+						   "extent %ux%u (current %ux%u, min %ux%u, max %ux%u), transform 0x%x (current 0x%x), usage 0x%x (supported 0x%x), "
+						   "window size reports %s, full screen exclusive %s",
 				static_cast<int>(g_cfg.video.vsync.get()), pbd_modes, static_cast<int>(swapchain_present_mode), nb_swap_images,
 				surface_descriptors.minImageCount, surface_descriptors.maxImageCount, swap_info.imageExtent.width, swap_info.imageExtent.height,
 				surface_descriptors.currentExtent.width, surface_descriptors.currentExtent.height, surface_descriptors.minImageExtent.width,

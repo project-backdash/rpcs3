@@ -4,6 +4,14 @@
 
 namespace pbd::settings_menu
 {
+	// A launcher choice is already saved. It becomes the new audio baseline so a later video edit cannot send an old volume back.
+	inline void launcher_audio(model& m, int volume, bool muted, std::uint64_t revision = 0)
+	{
+		m.start.volume = m.current.volume = m.applied.volume = std::clamp(volume, 0, 100);
+		m.audio_muted = muted;
+		m.audio_revision = revision;
+	}
+
 	// Empty for the two rows that stay in the game.
 	inline constexpr std::string_view navigate_schema = "pbd-navigate-1";
 
@@ -53,7 +61,8 @@ namespace pbd::settings_menu
 		if (!mapping.empty())
 			patch += std::string(patch.empty() ? "" : ",") + "\"controls\":{\"buttonMapping\":" + join(mapping) + "}";
 		const std::string controller = b.input.device != a.input.device ? ",\"controllerLastUsed\":" + pbd::json::quoted(b.input.device) : "";
-		return "{\"schema\":" + pbd::json::quoted(changes_schema) + ",\"patch\":{" + patch + "}" + controller + "}\n";
+		return "{\"schema\":" + pbd::json::quoted(changes_schema) + ",\"patch\":{" + patch + "}" + controller +
+		       ",\"audioRevision\":" + std::to_string(m.audio_revision) + "}\n";
 	}
 
 	namespace detail
@@ -218,6 +227,19 @@ namespace pbd::settings_menu
 	inline bool take_top_open_request() noexcept
 	{
 		return top_open_requested.exchange(false, std::memory_order_acq_rel);
+	}
+
+	// Customize has no stock pause menu. Claim its fresh Start press before the guest reads it, then keep that press for
+	// the menu's normal release gate. A Start used to close the menu cannot queue another open while the claim is held.
+	inline void customize_start(bool customize, word held, word& previous) noexcept
+	{
+		const bool pressed = (held & start) && !(previous & start);
+		previous = held;
+		if (customize && pressed && !claimed())
+		{
+			claim.store(true, std::memory_order_release);
+			request_top_open();
+		}
 	}
 
 	// Offline play's Button setup (pbd_player_seats.h): the Controls page alone, on that controller's own layout.

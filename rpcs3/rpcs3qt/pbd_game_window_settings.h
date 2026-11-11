@@ -47,6 +47,7 @@ namespace pbd::game_window
 			pbd::controllers::display input_display;
 			// The first open takes the session's starting values, which the changes file is measured against.
 			bool started = false;
+			std::uint64_t audio_revision = 0;
 			// Closed, still holding the controller until every button is up.
 			bool releasing = false;
 			u64 published = 0;

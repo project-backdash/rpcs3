@@ -13,6 +13,8 @@
 #include "util/video_provider.h"
 #include "Emu/Cell/timers.hpp"
 
+#include "Emu/RSX/NV47/HW/context_accessors.define.h"
+
 LOG_CHANNEL(screenshot_log, "SCREENSHOT");
 
 extern atomic_t<bool> g_user_asked_for_screenshot;
@@ -27,18 +29,22 @@ void GLGSRender::clips_resolve()
 		clip_readback* oldest = nullptr;
 		for (auto& item : m_clip_readbacks)
 		{
-			if (item && item->ready && (!oldest || item->time_us < oldest->time_us)) oldest = item.get();
+			if (item && item->ready && (!oldest || item->time_us < oldest->time_us))
+				oldest = item.get();
 		}
-		if (!oldest) return;
+		if (!oldest)
+			return;
 		auto& slot = *oldest;
 		const auto ready = glClientWaitSync(slot.ready, 0, 0);
-		if (ready != GL_ALREADY_SIGNALED && ready != GL_CONDITION_SATISFIED) return;
-		glDeleteSync(slot.ready); slot.ready = nullptr;
+		if (ready != GL_ALREADY_SIGNALED && ready != GL_CONDITION_SATISFIED)
+			return;
+		glDeleteSync(slot.ready);
+		slot.ready = nullptr;
 		if (!m_clip_copies.offer(slot.mapped, slot.width * 4, slot.width, slot.height, false, slot.time_us, slot.copying,
-			[this](std::vector<u8>&& pixels, unsigned pitch, unsigned width, unsigned height, bool bgra, u64 time)
-			{
-				m_frame->present_frame_timed(std::move(pixels), pitch, width, height, bgra, time);
-			}))
+				[this](std::vector<u8>&& pixels, unsigned pitch, unsigned width, unsigned height, bool bgra, u64 time)
+				{
+					m_frame->present_frame_timed(std::move(pixels), pitch, width, height, bgra, time);
+				}))
 		{
 			g_fxo->get<utils::video_provider>().frame_dropped();
 		}
@@ -48,27 +54,38 @@ void GLGSRender::clips_resolve()
 // False when the presented frame could not be read back; the caller counts it as dropped.
 bool GLGSRender::clips_record(gl::texture* image, u32 width, u32 height)
 {
-	if (!image || !width || !height || width > 8192 || height > 8192 || !gl::get_driver_caps().ARB_buffer_storage_supported) return false;
+	if (!image || !width || !height || width > 8192 || height > 8192 || !gl::get_driver_caps().ARB_buffer_storage_supported)
+		return false;
 	for (auto& item : m_clip_readbacks)
 	{
-		if (!item) item = std::make_unique<clip_readback>();
+		if (!item)
+			item = std::make_unique<clip_readback>();
 		auto& slot = *item;
-		if (slot.ready || slot.copying->load(std::memory_order_acquire)) continue;
+		if (slot.ready || slot.copying->load(std::memory_order_acquire))
+			continue;
 		if (!slot.mapped || slot.width != width || slot.height != height)
 		{
-			if (slot.mapped) { slot.pixels.unmap(); slot.pixels.remove(); slot.mapped = nullptr; }
+			if (slot.mapped)
+			{
+				slot.pixels.unmap();
+				slot.pixels.remove();
+				slot.mapped = nullptr;
+			}
 			const auto size = static_cast<GLsizeiptr>(width) * height * 4;
 			slot.pixels.create(gl::buffer::target::pixel_pack, size, nullptr, gl::buffer::memory_type::host_visible,
 				gl::buffer::host_read | gl::buffer::persistent_map);
 			slot.mapped = slot.pixels.map(0, size, static_cast<gl::buffer::access>(GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT));
-			slot.width = width; slot.height = height;
+			slot.width = width;
+			slot.height = height;
 		}
-		if (!slot.mapped) return false;
+		if (!slot.mapped)
+			return false;
 		const gl::buffer::save_binding_state binding(gl::buffer::target::pixel_pack);
 		const coord3u region{{}, {width, height, 1}};
 		image->copy_to(slot.pixels, 0, gl::texture::format::rgba, gl::texture::type::ubyte, 0, region, gl::pixel_pack_settings{});
 		glMemoryBarrier(GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
-		slot.time_us = get_system_time(); slot.ready = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+		slot.time_us = get_system_time();
+		slot.ready = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 		return true;
 	}
 	return false;
@@ -116,7 +133,7 @@ gl::texture* GLGSRender::get_present_source(gl::present_surface_info* info, cons
 	// Check the surface store first
 	gl::command_context cmd = { gl_state };
 	const auto format_bpp = rsx::get_format_block_size_in_bytes(info->format);
-	const auto overlap_info = m_rtts.get_merged_texture_memory_region(cmd,
+	const auto overlap_info = res()->surface_cache.get_merged_texture_memory_region(cmd,
 		info->address, info->width, info->height, info->pitch, format_bpp, rsx::surface_access::transfer_read);
 
 	if (!overlap_info.empty())
@@ -153,13 +170,13 @@ gl::texture* GLGSRender::get_present_source(gl::present_surface_info* info, cons
 				image = section.surface->get_surface(rsx::surface_access::transfer_read);
 
 				std::tie(info->width, info->height) = rsx::apply_resolution_scale<true>(
-					resolution_scaling_config,
+					RSX(m_ctx)->resolution_scaling_config,
 					std::min(surface_width, info->width),
 					std::min(surface_height, info->height));
 			}
 		}
 	}
-	else if (auto surface = m_gl_texture_cache.find_texture_from_dimensions<true>(info->address, info->format);
+	else if (auto surface = res()->texture_cache.find_texture_from_dimensions<true>(info->address, info->format);
 			 surface && surface->get_width() >= info->width && surface->get_height() >= info->height)
 	{
 		// Hack - this should be the first location to check for output
@@ -189,7 +206,7 @@ gl::texture* GLGSRender::get_present_source(gl::present_surface_info* info, cons
 
 		gl::command_context cmd{ gl_state };
 		const auto range = utils::address_range32::start_length(info->address, info->pitch * info->height);
-		m_gl_texture_cache.invalidate_range(cmd, range, rsx::invalidation_cause::read);
+		res()->texture_cache.invalidate_range(cmd, range, rsx::invalidation_cause::read);
 
 		const rsx::io_buffer read_buf = { vm::base(info->address), range.length() };
 		flip_image->copy_from(read_buf, static_cast<gl::texture::format>(expected_format), gl::texture::type::uint_8_8_8_8, unpack_settings);
@@ -217,22 +234,30 @@ gl::texture* GLGSRender::get_present_source(gl::present_surface_info* info, cons
 	return image;
 }
 
-void GLGSRender::flip(const rsx::display_flip_info_t& info)
+bool GLGSRender::present_frame(const rsx::display_flip_info_t& info)
 {
+	// The frame boundary is where a GPU reset gets noticed
+	// TODO: What would a lost OpenGL context cost us? Can we reuse the gl_gs_frame window?
+	if (gl::command_context::is_lost(true))
+	{
+		RSX(m_ctx)->raise_backend_interrupt();
+		return false;
+	}
+
 	if (pbd::held_presentation::output().parked())
-		return;
+		return false;
 	if (info.skip_frame)
 	{
 		m_frame->flip(m_context, true);
-		rsx::thread::flip(info);
-		return;
+		return false;
 	}
 
 	gl::command_context cmd{ gl_state };
 
-	u32 buffer_width = display_buffers[info.buffer].width;
-	u32 buffer_height = display_buffers[info.buffer].height;
-	u32 buffer_pitch = display_buffers[info.buffer].pitch;
+	const auto& display_buffer = m_ctx->display_buffers[info.buffer];
+	u32 buffer_width = display_buffer.width;
+	u32 buffer_height = display_buffer.height;
+	u32 buffer_pitch = display_buffer.pitch;
 
 	u32 av_format;
 	const auto& avconfig = g_fxo->get<rsx::avconf>();
@@ -269,12 +294,12 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 	gl::texture* image_to_flip = nullptr;
 	gl::texture* image_to_flip2 = nullptr;
 
-	if (info.buffer < display_buffers_count && buffer_width && buffer_height)
+	if (res() && info.buffer < m_ctx->display_buffers_count && buffer_width && buffer_height)
 	{
 		// Find the source image
 		gl::present_surface_info present_info
 		{
-			.address = rsx::get_address(display_buffers[info.buffer].offset, CELL_GCM_LOCATION_LOCAL),
+			.address = rsx::get_address(m_ctx, display_buffer.offset, CELL_GCM_LOCATION_LOCAL),
 			.format = av_format,
 			.width = buffer_width,
 			.height = buffer_height,
@@ -286,14 +311,14 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 
 		if (avconfig.stereo_enabled) [[unlikely]]
 		{
-			const auto [unused, min_expected_height] = rsx::apply_resolution_scale<true>(resolution_scaling_config, RSX_SURFACE_DIMENSION_IGNORED, buffer_height + 30);
+			const auto [unused, min_expected_height] = rsx::apply_resolution_scale<true>(RSX(m_ctx)->resolution_scaling_config, RSX_SURFACE_DIMENSION_IGNORED, buffer_height + 30);
 			if (image_to_flip->height() < min_expected_height)
 			{
 				// Get image for second eye
-				const u32 image_offset = (buffer_height + 30) * buffer_pitch + display_buffers[info.buffer].offset;
+				const u32 image_offset = (buffer_height + 30) * buffer_pitch + display_buffer.offset;
 				present_info.width = buffer_width;
 				present_info.height = buffer_height;
-				present_info.address = rsx::get_address(image_offset, CELL_GCM_LOCATION_LOCAL);
+				present_info.address = rsx::get_address(m_ctx, image_offset, CELL_GCM_LOCATION_LOCAL);
 				present_info.eye = 1;
 
 				image_to_flip2 = get_present_source(&present_info, avconfig);
@@ -301,7 +326,7 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 			else
 			{
 				// Account for possible insets
-				const auto [unused2, scaled_buffer_height] = rsx::apply_resolution_scale<true>(resolution_scaling_config, RSX_SURFACE_DIMENSION_IGNORED, buffer_height);
+				const auto [unused2, scaled_buffer_height] = rsx::apply_resolution_scale<true>(RSX(m_ctx)->resolution_scaling_config, RSX_SURFACE_DIMENSION_IGNORED, buffer_height);
 				buffer_height = std::min<u32>(image_to_flip->height() - min_expected_height, scaled_buffer_height);
 			}
 		}
@@ -312,13 +337,22 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 
 	if (info.emu_flip)
 	{
-		evaluate_cpu_usage_reduction_limits();
+		RSX(m_ctx)->display_ctrl().evaluate_cpu_usage_reduction_limits();
 		update_swap_interval();
 	}
 
 	// Get window state
 	const int width = m_frame->client_width();
 	const int height = m_frame->client_height();
+
+	// Qt on Wayland only resizes the window surface when the context is made current.
+	// Make it current again whenever the window size changes, so the surface matches the new size before we draw.
+	if (width != m_last_client_width || height != m_last_client_height)
+	{
+		m_frame->set_current(m_context);
+		m_last_client_width = width;
+		m_last_client_height = height;
+	}
 
 	// Calculate blit coordinates
 	areai aspect_ratio;
@@ -340,26 +374,27 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 		gl::screen.clear(gl::buffers::color);
 	}
 
-	if (m_overlay_manager && m_overlay_manager->has_dirty())
+	const auto overlay_manager = RSX(m_ctx)->overlay_manager();
+	if (overlay_manager && overlay_manager->has_dirty())
 	{
-		m_overlay_manager->lock_shared();
+		overlay_manager->lock_shared();
 
 		std::vector<u32> uids_to_dispose;
-		uids_to_dispose.reserve(m_overlay_manager->get_dirty().size());
+		uids_to_dispose.reserve(overlay_manager->get_dirty().size());
 
-		for (const auto& view : m_overlay_manager->get_dirty())
+		for (const auto& view : overlay_manager->get_dirty())
 		{
 			m_ui_renderer.remove_temp_resources(view->uid);
 			uids_to_dispose.push_back(view->uid);
 		}
 
-		m_overlay_manager->unlock_shared();
-		m_overlay_manager->dispose(uids_to_dispose);
+		overlay_manager->unlock_shared();
+		overlay_manager->dispose(uids_to_dispose);
 	}
 
-	const auto render_overlays = [this, &cmd](gl::texture* dst, const areau& aspect_ratio, bool flip_vertically = false)
+	const auto render_overlays = [this, &cmd, overlay_manager](gl::texture* dst, const areau& aspect_ratio, bool flip_vertically = false)
 	{
-		if (m_overlay_manager && m_overlay_manager->has_visible())
+		if (overlay_manager && overlay_manager->has_visible())
 		{
 			GLuint target = 0;
 
@@ -375,10 +410,10 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 			}
 
 			// Lock to avoid modification during run-update chain
-			std::lock_guard lock(*m_overlay_manager);
+			std::lock_guard lock(*overlay_manager);
 
 			const areau display_area = {0, 0, static_cast<u32>(m_frame->client_width()), static_cast<u32>(m_frame->client_height())};
-			for (const auto& view : m_overlay_manager->get_views())
+			for (const auto& view : overlay_manager->get_views())
 			{
 				// An offscreen target is a screenshot or recording frame.
 				if (dst && view->screen_only)
@@ -442,25 +477,26 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 			}
 			else
 			{
-			std::vector<u8> sshot_frame(buffer_height * buffer_width * 4);
-			glGetError();
+				std::vector<u8> sshot_frame(buffer_height * buffer_width * 4);
+				glGetError();
 
-			tex->copy_to(std::span<const u8>(sshot_frame), gl::texture::format::rgba, gl::texture::type::ubyte, pack_settings);
+				const coord3u region = {{}, {buffer_width, buffer_height, 1}};
+				tex->copy_to(std::span<const u8>(sshot_frame), gl::texture::format::rgba, gl::texture::type::ubyte, 0, region, pack_settings);
 
-			m_sshot_tex.reset();
+				m_sshot_tex.reset();
 
-			if (GLenum err = glGetError(); err != GL_NO_ERROR)
-			{
-				screenshot_log.error("Failed to capture image: 0x%x", err);
-			}
-			else if (user_asked_for_screenshot)
-			{
-				m_frame->take_screenshot(std::move(sshot_frame), buffer_width, buffer_height, false);
-			}
-			else
-			{
-				m_frame->present_frame(std::move(sshot_frame), buffer_width * 4, buffer_width, buffer_height, false);
-			}
+				if (GLenum err = glGetError(); err != GL_NO_ERROR)
+				{
+					screenshot_log.error("Failed to capture image: 0x%x", err);
+				}
+				else if (user_asked_for_screenshot)
+				{
+					m_frame->take_screenshot(std::move(sshot_frame), buffer_width, buffer_height, false);
+				}
+				else
+				{
+					m_frame->present_frame(std::move(sshot_frame), buffer_width * 4, buffer_width, buffer_height, false);
+				}
 			}
 		}
 
@@ -515,20 +551,20 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 
 	render_overlays(nullptr, areau(aspect_ratio));
 
-	if (g_cfg.video.debug_overlay)
+	if (g_cfg.video.debug_overlay && res())
 	{
-		const auto num_dirty_textures = m_gl_texture_cache.get_unreleased_textures_count();
-		const auto texture_memory_size = m_gl_texture_cache.get_texture_memory_in_use() / (1024 * 1024);
-		const auto num_flushes = m_gl_texture_cache.get_num_flush_requests();
-		const auto num_mispredict = m_gl_texture_cache.get_num_cache_mispredictions();
-		const auto num_speculate = m_gl_texture_cache.get_num_cache_speculative_writes();
-		const auto num_misses = m_gl_texture_cache.get_num_cache_misses();
-		const auto num_unavoidable = m_gl_texture_cache.get_num_unavoidable_hard_faults();
-		const auto cache_miss_ratio = static_cast<u32>(ceil(m_gl_texture_cache.get_cache_miss_ratio() * 100));
-		const auto num_texture_upload = m_gl_texture_cache.get_texture_upload_calls_this_frame();
-		const auto num_texture_upload_miss = m_gl_texture_cache.get_texture_upload_misses_this_frame();
-		const auto texture_upload_miss_ratio = m_gl_texture_cache.get_texture_upload_miss_percentage();
-		const auto texture_copies_ellided = m_gl_texture_cache.get_texture_copies_ellided_this_frame();
+		const auto num_dirty_textures = res()->texture_cache.get_unreleased_textures_count();
+		const auto texture_memory_size = res()->texture_cache.get_texture_memory_in_use() / (1024 * 1024);
+		const auto num_flushes = res()->texture_cache.get_num_flush_requests();
+		const auto num_mispredict = res()->texture_cache.get_num_cache_mispredictions();
+		const auto num_speculate = res()->texture_cache.get_num_cache_speculative_writes();
+		const auto num_misses = res()->texture_cache.get_num_cache_misses();
+		const auto num_unavoidable = res()->texture_cache.get_num_unavoidable_hard_faults();
+		const auto cache_miss_ratio = static_cast<u32>(ceil(res()->texture_cache.get_cache_miss_ratio() * 100));
+		const auto num_texture_upload = res()->texture_cache.get_texture_upload_calls_this_frame();
+		const auto num_texture_upload_miss = res()->texture_cache.get_texture_upload_misses_this_frame();
+		const auto texture_upload_miss_ratio = res()->texture_cache.get_texture_upload_miss_percentage();
+		const auto texture_copies_ellided = res()->texture_cache.get_texture_copies_ellided_this_frame();
 		const auto vertex_cache_hit_count = (info.stats.vertex_cache_request_count - info.stats.vertex_cache_miss_count);
 		const auto vertex_cache_hit_ratio = info.stats.vertex_cache_request_count
 			? (vertex_cache_hit_count * 100) / info.stats.vertex_cache_request_count
@@ -553,8 +589,8 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 			"Texture uploads: %11u (%u from CPU - %02u%%, %u copies avoided)\n"
 			"Vertex cache hits: %9u/%u (%u%%)\n"
 			"Program cache lookup ellision: %u/%u (%u%%)",
-			info.stats.framebuffer_stats.to_string(resolution_scaling_config, !backend_config.supports_hw_msaa),
-			get_load(), info.stats.draw_calls, info.stats.setup_time, info.stats.vertex_upload_time,
+			info.stats.framebuffer_stats.to_string(RSX(m_ctx)->resolution_scaling_config, !m_config.supports_hw_msaa),
+			RSX(m_ctx)->get_load(), info.stats.draw_calls, info.stats.setup_time, info.stats.vertex_upload_time,
 			info.stats.textures_upload_time, info.stats.draw_exec_time, num_dirty_textures, texture_memory_size,
 			num_flushes, num_misses, cache_miss_ratio, num_unavoidable, num_mispredict, num_speculate,
 			num_texture_upload, num_texture_upload_miss, texture_upload_miss_ratio, texture_copies_ellided,
@@ -591,7 +627,12 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 	m_frame->flip(m_context);
 	if (info.emu_flip && pbd::held_presentation::output().swaps() != replay_swaps)
 		pbd::held_presentation::output().picture(m_frame->shown());
-	rsx::thread::flip(info);
+	return true;
+}
+
+void GLGSRender::post_present()
+{
+	gl::command_context cmd{ gl_state };
 
 	// Data sync
 	const rsx::surface_scaling_config_t active_res_scaling_config =
@@ -600,17 +641,21 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 		.min_scalable_dimension = static_cast<u16>(g_cfg.video.min_scalable_dimension),
 	};
 
-	if (active_res_scaling_config != this->resolution_scaling_config)
+	if (res() && active_res_scaling_config != res()->surface_cache.scaling_config())
 	{
-		m_rtts.sync_scaling_config(cmd, active_res_scaling_config);
-		this->resolution_scaling_config = active_res_scaling_config;
+		res()->surface_cache.sync_scaling_config(cmd, active_res_scaling_config);
+		RSX(m_ctx)->resolution_scaling_config = active_res_scaling_config;
 	}
 
 	// Cleanup
-	m_gl_texture_cache.on_frame_end();
-	m_vertex_cache->purge();
+	std::vector<GLuint> removed_textures;
+	if (const auto resources = res())
+	{
+		resources->texture_cache.on_frame_end();
+		resources->vertex_cache->purge();
+		removed_textures = resources->surface_cache.trim(cmd);
+	}
 
-	auto removed_textures = m_rtts.trim(cmd);
 	m_framebuffer_cache.remove_if([&](auto& fbo)
 	{
 		if (fbo.unused_check_count() >= 2) return true; // Remove if stale
@@ -619,11 +664,11 @@ void GLGSRender::flip(const rsx::display_flip_info_t& info)
 		return false;
 	});
 
-	if (m_draw_fbo && !m_graphics_state.test(rsx::rtt_config_dirty))
+	if (m_draw_fbo && !m_ctx->graphics_state.test(rsx::rtt_config_dirty))
 	{
 		// Always restore the active framebuffer
 		m_draw_fbo->bind();
 		set_viewport();
-		set_scissor(m_graphics_state & rsx::pipeline_state::scissor_setup_clipped);
+		set_scissor(true);
 	}
 }

@@ -7,6 +7,8 @@
 // unmutes the game early.
 
 #include "Emu/system_config.h"
+#include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/pbd_player_audio.h"
 
 #include <algorithm>
 #include <mutex>
@@ -18,6 +20,12 @@ namespace pbd::player_volume
 		std::mutex mutex;
 		int player = -1;
 		bool muted = false;
+		bool player_muted = []
+		{
+			const char* settings = pbd::env::find("PBD_GAME_SETTINGS_JSON");
+			return pbd::player_audio::startup_muted(settings ? settings : "");
+		}();
+		std::uint64_t launcher_revision = 0;
 	};
 
 	inline state_t& state()
@@ -58,8 +66,9 @@ namespace pbd::player_volume
 	{
 		auto& s = state();
 		std::lock_guard lock(s.mutex);
+		detail::player(s);
 		s.muted = false;
-		g_cfg.audio.volume.set(detail::player(s));
+		g_cfg.audio.volume.set(pbd::player_audio::audible_volume(s.player, s.player_muted, false));
 	}
 
 	// The mutes that are decided afresh at every boundary (replay speed and pause, spectator catch-up) pass their current answer.
@@ -76,8 +85,41 @@ namespace pbd::player_volume
 	{
 		auto& s = state();
 		std::lock_guard lock(s.mutex);
+		detail::player(s);
 		s.player = std::clamp(value, 0, 200);
-		if (!s.muted)
-			g_cfg.audio.volume.set(s.player);
+		g_cfg.audio.volume.set(pbd::player_audio::audible_volume(s.player, s.player_muted, s.muted));
+	}
+
+	struct snapshot
+	{
+		int volume;
+		bool muted;
+		std::uint64_t revision;
+	};
+
+	inline snapshot read()
+	{
+		auto& s = state();
+		std::lock_guard lock(s.mutex);
+		return {detail::player(s), s.player_muted, s.launcher_revision};
+	}
+
+	// A single authenticated command changes both choices under the same lock as temporary host mutes.
+	inline void set(int volume, bool muted, std::uint32_t revision)
+	{
+		auto& s = state();
+		std::lock_guard lock(s.mutex);
+		s.player = std::clamp(volume, 0, 100);
+		s.player_muted = muted;
+		s.launcher_revision = revision;
+		g_cfg.audio.volume.set(pbd::player_audio::audible_volume(s.player, s.player_muted, s.muted));
+	}
+
+	inline int output()
+	{
+		auto& s = state();
+		std::lock_guard lock(s.mutex);
+		// Output can run during hidden preparation, before the game receives the player's configured volume.
+		return pbd::player_audio::audible_volume(static_cast<int>(g_cfg.audio.volume.get()), s.player_muted, s.muted);
 	}
 } // namespace pbd::player_volume

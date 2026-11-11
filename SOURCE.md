@@ -9,20 +9,20 @@ to PROJECT BACKDASH, not to RPCS3.
 
 ## Base and size
 
-- Upstream: RPCS3 commit [`028d1e8f4a42df2292cdbcd35e540c9e71fc47aa`](https://github.com/RPCS3/rpcs3/commit/028d1e8f4a42df2292cdbcd35e540c9e71fc47aa) (2026-09-10, "Fix some VFS issues - #19378"), unchanged,
+- Upstream: RPCS3 commit [`47599599a4cea37f350eb0936d7c5e4de6f7bf57`](https://github.com/RPCS3/rpcs3/commit/47599599a4cea37f350eb0936d7c5e4de6f7bf57) (2026-11-08, "atomic: Treat EPERM from the futex_waitv probe as unsupported"), unchanged,
   as a source base; snapshot preparation fetches it shallowly and includes no private repository history.
-- Changes on top of it: 746 files (626 added, 114 changed, 6 deleted, 0 renamed), 158265 lines added and 1058 removed,
+- Changes on top of it: 763 files (638 added, 119 changed, 6 deleted, 0 renamed), 165296 lines added and 6020 removed,
   not counting this file. Line counts describe the recorded native revision; exported build adapters may differ.
-- Emulator source revision: `7be760d0f38b9b0dad6de565534d041393a1f1bc`.
+- Emulator source revision: `e118fb9b00eaed31476ebda39eca0cb4f46ee3ec`.
 - This release snapshot retains public build support and documentation, with PBD C++ formatting.
-- Release build: Project Backdash 0.62.6, `rpcs3.exe` SHA-256 `a833912bd5f2e30f764c79d4703551cc7a6ede85ec930e9b567bd67974d6afbc`.
+- Release build: Project Backdash 0.63.1, `rpcs3.exe` SHA-256 `86b8b7b03577e604624d959686481db58bff737cb2bd7075a6341d509d9a0d6d`.
 
 ## The GPL source in the installer
 
 The installer's `SOURCE` folder carries these changes as one unified diff against the base, made with:
 
 ```
-git diff --binary 028d1e8 <release commit> -- .
+git diff --binary 4759959 <release commit> -- .
 ```
 
 The patch includes the complete committed tree, including this inventory and the native tests.
@@ -62,15 +62,15 @@ The game's frame boundary, input delay, checkpoints of guest state, restore and 
 | `rpcs3/Emu/Cell/pbd_fn_hook.h` | 134 |
 | `rpcs3/Emu/Cell/pbd_hle_pinned_order.inc` | 3877 |
 | `rpcs3/Emu/Cell/pbd_peer_endpoint.h` | 266 |
-| `rpcs3/Emu/Cell/pbd_rollback_session.cpp` | 447 |
+| `rpcs3/Emu/Cell/pbd_rollback_session.cpp` | 452 |
 | `rpcs3/Emu/Cell/pbd_rollback_session.h` | 244 |
-| `rpcs3/Emu/Cell/pbd_rollback_session_boundary.h` | 586 |
-| `rpcs3/Emu/Cell/pbd_rollback_session_capture.cpp` | 371 |
+| `rpcs3/Emu/Cell/pbd_rollback_session_boundary.h` | 588 |
+| `rpcs3/Emu/Cell/pbd_rollback_session_capture.cpp` | 374 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_common.h` | 463 |
-| `rpcs3/Emu/Cell/pbd_rollback_session_configure.cpp` | 480 |
+| `rpcs3/Emu/Cell/pbd_rollback_session_configure.cpp` | 499 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_configure_link.cpp` | 202 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_correction.cpp` | 201 |
-| `rpcs3/Emu/Cell/pbd_rollback_session_lobby.cpp` | 1015 |
+| `rpcs3/Emu/Cell/pbd_rollback_session_lobby.cpp` | 1054 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_peer.cpp` | 477 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_practice.cpp` | 566 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_practice_controls.cpp` | 539 |
@@ -84,7 +84,7 @@ The game's frame boundary, input delay, checkpoints of guest state, restore and 
 | `rpcs3/Emu/Cell/pbd_rollback_session_run.cpp` | 364 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_run_steps.cpp` | 155 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_storage.h` | 202 |
-| `rpcs3/Emu/Cell/pbd_rollback_session_storage_lobby.h` | 109 |
+| `rpcs3/Emu/Cell/pbd_rollback_session_storage_lobby.h` | 113 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_storage_peer.h` | 357 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_storage_practice.h` | 476 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_storage_replay.h` | 186 |
@@ -102,7 +102,7 @@ The game's frame boundary, input delay, checkpoints of guest state, restore and 
 | `rpcs3/Emu/PBD/pbd_guest_call.h` | 168 |
 | `rpcs3/Emu/PBD/pbd_peer_message.h` | 444 |
 | `rpcs3/Emu/PBD/pbd_session_start.h` | 72 |
-| `rpcs3/Emu/PBD/pbd_t5dr_memory.h` | 292 |
+| `rpcs3/Emu/PBD/pbd_t5dr_memory.h` | 312 |
 | `rpcs3/Emu/pbd_session_mode.h` | 73 |
 
 ### Input
@@ -143,7 +143,7 @@ The channel to the launcher for a set of games, the select countdowns, VS cards,
 | `rpcs3/Emu/Cell/pbd_lobby_set_driver.h` | 610 |
 | `rpcs3/Emu/Cell/pbd_select_band.h` | 164 |
 | `rpcs3/Emu/Cell/pbd_select_timer.h` | 360 |
-| `rpcs3/Emu/Cell/pbd_set_channel.h` | 422 |
+| `rpcs3/Emu/Cell/pbd_set_channel.h` | 429 |
 | `rpcs3/Emu/Cell/pbd_setup_digest.h` | 95 |
 | `rpcs3/Emu/Cell/pbd_vs_cards.h` | 134 |
 | `rpcs3/Emu/PBD/pbd_character_rule.h` | 173 |
@@ -167,7 +167,7 @@ Practice mode: the dummy's recordings and movement, wall positions, the Practice
 | `rpcs3/Emu/Cell/pbd_practice_controls.h` | 499 |
 | `rpcs3/Emu/Cell/pbd_practice_mouse.h` | 217 |
 | `rpcs3/Emu/Cell/pbd_practice_native.cpp` | 245 |
-| `rpcs3/Emu/Cell/pbd_practice_native.h` | 160 |
+| `rpcs3/Emu/Cell/pbd_practice_native.h` | 161 |
 | `rpcs3/Emu/Cell/pbd_practice_rolling.h` | 59 |
 | `rpcs3/Emu/Cell/pbd_practice_streak.h` | 293 |
 | `rpcs3/Emu/Cell/pbd_practice_walls.h` | 235 |
@@ -179,7 +179,7 @@ Practice mode: the dummy's recordings and movement, wall positions, the Practice
 | `rpcs3/Emu/PBD/pbd_practice_display_model.h` | 280 |
 | `rpcs3/Emu/PBD/pbd_practice_floor.h` | 99 |
 | `rpcs3/Emu/PBD/pbd_practice_frame_calculator.h` | 520 |
-| `rpcs3/Emu/PBD/pbd_practice_frame_events.cpp` | 526 |
+| `rpcs3/Emu/PBD/pbd_practice_frame_events.cpp` | 563 |
 | `rpcs3/Emu/PBD/pbd_practice_frame_model.h` | 317 |
 | `rpcs3/Emu/PBD/pbd_practice_frame_observation.cpp` | 294 |
 | `rpcs3/Emu/PBD/pbd_practice_frames.h` | 193 |
@@ -212,6 +212,7 @@ Practice mode: the dummy's recordings and movement, wall positions, the Practice
 | `rpcs3/Emu/PBD/pbd_practice_presentation.h` | 337 |
 | `rpcs3/Emu/PBD/pbd_practice_punish.h` | 195 |
 | `rpcs3/Emu/PBD/pbd_practice_random.h` | 115 |
+| `rpcs3/Emu/PBD/pbd_practice_recording_guard.h` | 95 |
 | `rpcs3/Emu/PBD/pbd_practice_reference.h` | 54 |
 | `rpcs3/Emu/PBD/pbd_practice_reset.cpp` | 430 |
 | `rpcs3/Emu/PBD/pbd_practice_reset_internal.h` | 65 |
@@ -238,8 +239,8 @@ Recording games as input and replaying them with pause, frame step, speed and ta
 
 | File | Lines |
 |---|---|
-| `rpcs3/Emu/Cell/pbd_live_replay.cpp` | 593 |
-| `rpcs3/Emu/Cell/pbd_live_replay.h` | 59 |
+| `rpcs3/Emu/Cell/pbd_live_replay.cpp` | 608 |
+| `rpcs3/Emu/Cell/pbd_live_replay.h` | 61 |
 | `rpcs3/Emu/Cell/pbd_match_recording.h` | 329 |
 | `rpcs3/Emu/Cell/pbd_replay_game_file.h` | 393 |
 
@@ -250,7 +251,7 @@ Watching a lobby game from its confirmed inputs, with the watcher's own screen a
 | File | Lines |
 |---|---|
 | `rpcs3/Emu/Cell/pbd_corner_chat.h` | 216 |
-| `rpcs3/Emu/Cell/pbd_spectator_ui.h` | 507 |
+| `rpcs3/Emu/Cell/pbd_spectator_ui.h` | 408 |
 
 ### Game window
 
@@ -260,18 +261,18 @@ The game window hosted inside the launcher's window: the emulator draws into a c
 |---|---|
 | `rpcs3/Emu/PBD/pbd_presentation_journal.h` | 122 |
 | `rpcs3/Emu/PBD/pbd_presentation_rows.h` | 90 |
-| `rpcs3/rpcs3qt/pbd_game_host.cpp` | 344 |
-| `rpcs3/rpcs3qt/pbd_game_host.h` | 35 |
-| `rpcs3/rpcs3qt/pbd_game_host_platform.h` | 148 |
-| `rpcs3/rpcs3qt/pbd_game_host_policy.h` | 384 |
-| `rpcs3/rpcs3qt/pbd_game_host_shell.h` | 29 |
+| `rpcs3/rpcs3qt/pbd_game_host.cpp` | 352 |
+| `rpcs3/rpcs3qt/pbd_game_host.h` | 36 |
+| `rpcs3/rpcs3qt/pbd_game_host_platform.h` | 160 |
+| `rpcs3/rpcs3qt/pbd_game_host_policy.h` | 415 |
+| `rpcs3/rpcs3qt/pbd_game_host_shell.h` | 40 |
 | `rpcs3/rpcs3qt/pbd_game_host_surface.h` | 27 |
 | `rpcs3/rpcs3qt/pbd_game_host_visibility.h` | 168 |
-| `rpcs3/rpcs3qt/pbd_game_host_window.h` | 1062 |
+| `rpcs3/rpcs3qt/pbd_game_host_window.h` | 1077 |
 | `rpcs3/rpcs3qt/pbd_game_window.cpp` | 434 |
 | `rpcs3/rpcs3qt/pbd_game_window.h` | 62 |
-| `rpcs3/rpcs3qt/pbd_game_window_settings.cpp` | 644 |
-| `rpcs3/rpcs3qt/pbd_game_window_settings.h` | 89 |
+| `rpcs3/rpcs3qt/pbd_game_window_settings.cpp` | 664 |
+| `rpcs3/rpcs3qt/pbd_game_window_settings.h` | 90 |
 | `rpcs3/rpcs3qt/pbd_raw_keyboard.h` | 376 |
 
 ### Overlays, settings and sound
@@ -281,8 +282,8 @@ The in-game menus, the netplay stats block, in-game settings, the player's volum
 | File | Lines |
 |---|---|
 | `rpcs3/Emu/Cell/pbd_game_overlay.h` | 122 |
-| `rpcs3/Emu/Cell/pbd_live_stats.h` | 402 |
-| `rpcs3/Emu/Cell/pbd_player_volume.h` | 83 |
+| `rpcs3/Emu/Cell/pbd_live_stats.h` | 407 |
+| `rpcs3/Emu/Cell/pbd_player_volume.h` | 125 |
 | `rpcs3/Emu/Cell/pbd_sound_options.cpp` | 225 |
 | `rpcs3/Emu/Cell/pbd_sound_options.h` | 281 |
 | `rpcs3/Emu/Cell/pbd_stage_names.h` | 61 |
@@ -311,10 +312,10 @@ The in-game menus, the netplay stats block, in-game settings, the player's volum
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_lobby_set_overlay.cpp` | 448 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_menu_overlay.cpp` | 123 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_overlay_canvas.h` | 409 |
-| `rpcs3/Emu/RSX/Overlays/pbd/pbd_overlays.cpp` | 165 |
+| `rpcs3/Emu/RSX/Overlays/pbd/pbd_overlays.cpp` | 166 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_overlays.h` | 240 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_settings_overlay.cpp` | 368 |
-| `rpcs3/Emu/RSX/Overlays/pbd/pbd_spectator_overlay.cpp` | 507 |
+| `rpcs3/Emu/RSX/Overlays/pbd/pbd_spectator_overlay.cpp` | 475 |
 | `rpcs3/Emu/RSX/Overlays/pbd/pbd_status_overlay.cpp` | 471 |
 | `rpcs3/Emu/RSX/Utils/pbd_render_scale.h` | 44 |
 
@@ -343,11 +344,13 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/fixtures/notices/challenger-ranked-placing.pbd` | 17 |
 | `rpcs3/tests/pbd/fixtures/notices/set-complete-placing-flip.pbd` | 18 |
 | `rpcs3/tests/pbd/fixtures/notices/set-complete-same.pbd` | 18 |
-| `rpcs3/tests/pbd/frame_tags_test.cpp` | 380 |
+| `rpcs3/tests/pbd/fixtures/paired-start-5b8d8c7c-2f60-48b2-be00-4bf4c65c6f30.json` | 1 |
+| `rpcs3/tests/pbd/fixtures/paired-start-ed1e0225-12d2-45cf-aa8b-012775b14b29.json` | 1 |
+| `rpcs3/tests/pbd/frame_tags_test.cpp` | 401 |
 | `rpcs3/tests/pbd/function_hook_config_test.cpp` | 599 |
-| `rpcs3/tests/pbd/game_host_test.cpp` | 566 |
+| `rpcs3/tests/pbd/game_host_test.cpp` | 620 |
 | `rpcs3/tests/pbd/game_overlay_test.cpp` | 757 |
-| `rpcs3/tests/pbd/game_profile_test.cpp` | 96 |
+| `rpcs3/tests/pbd/game_profile_test.cpp` | 137 |
 | `rpcs3/tests/pbd/hidden_selection_test.cpp` | 509 |
 | `rpcs3/tests/pbd/host_test.cpp` | 199 |
 | `rpcs3/tests/pbd/input_live_test.cpp` | 110 |
@@ -363,18 +366,18 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/match_bind_test.cpp` | 193 |
 | `rpcs3/tests/pbd/match_recording_test.cpp` | 141 |
 | `rpcs3/tests/pbd/memory_dump_test.cpp` | 191 |
-| `rpcs3/tests/pbd/output_gain_test.cpp` | 463 |
+| `rpcs3/tests/pbd/output_gain_test.cpp` | 539 |
 | `rpcs3/tests/pbd/owner_flags_test.cpp` | 119 |
 | `rpcs3/tests/pbd/package_path_test.cpp` | 14 |
 | `rpcs3/tests/pbd/pbd_test.h` | 81 |
-| `rpcs3/tests/pbd/pbd_tests.cmake` | 126 |
-| `rpcs3/tests/pbd/pbd_tests.props` | 341 |
+| `rpcs3/tests/pbd/pbd_tests.cmake` | 127 |
+| `rpcs3/tests/pbd/pbd_tests.props` | 344 |
 | `rpcs3/tests/pbd/peer_auth_test.cpp` | 1117 |
 | `rpcs3/tests/pbd/peer_endpoint_test.cpp` | 118 |
 | `rpcs3/tests/pbd/peer_log_test.cpp` | 247 |
 | `rpcs3/tests/pbd/peer_message_conformance_test.cpp` | 178 |
 | `rpcs3/tests/pbd/peer_message_test.cpp` | 507 |
-| `rpcs3/tests/pbd/peer_wait_test.cpp` | 608 |
+| `rpcs3/tests/pbd/peer_wait_test.cpp` | 710 |
 | `rpcs3/tests/pbd/pick_transition_test.cpp` | 157 |
 | `rpcs3/tests/pbd/player_seats_test.cpp` | 133 |
 | `rpcs3/tests/pbd/portable_parser_random_test.cpp` | 205 |
@@ -397,6 +400,7 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/practice_punish_test.cpp` | 359 |
 | `rpcs3/tests/pbd/practice_random_test.cpp` | 65 |
 | `rpcs3/tests/pbd/practice_readiness_test.cpp` | 1121 |
+| `rpcs3/tests/pbd/practice_recording_guard_test.cpp` | 221 |
 | `rpcs3/tests/pbd/practice_restart_test.cpp` | 172 |
 | `rpcs3/tests/pbd/practice_sets_test.cpp` | 395 |
 | `rpcs3/tests/pbd/practice_stage_test.cpp` | 100 |
@@ -415,7 +419,7 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/render_scale_test.cpp` | 32 |
 | `rpcs3/tests/pbd/replay_actor_records_test.cpp` | 438 |
 | `rpcs3/tests/pbd/replay_bank_offset_test.cpp` | 158 |
-| `rpcs3/tests/pbd/replay_carry_codec_test.cpp` | 627 |
+| `rpcs3/tests/pbd/replay_carry_codec_test.cpp` | 692 |
 | `rpcs3/tests/pbd/replay_dense_input_fixture.h` | 180 |
 | `rpcs3/tests/pbd/replay_difference_test.cpp` | 86 |
 | `rpcs3/tests/pbd/replay_entry_test.cpp` | 87 |
@@ -434,20 +438,20 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/session_policy_test.cpp` | 47 |
 | `rpcs3/tests/pbd/session_start_test.cpp` | 149 |
 | `rpcs3/tests/pbd/set_channel_parser_audit_test.cpp` | 80 |
-| `rpcs3/tests/pbd/set_channel_test.cpp` | 1586 |
-| `rpcs3/tests/pbd/set_notices_test.cpp` | 484 |
-| `rpcs3/tests/pbd/settings_menu_test.cpp` | 903 |
+| `rpcs3/tests/pbd/set_channel_test.cpp` | 1623 |
+| `rpcs3/tests/pbd/set_notices_test.cpp` | 567 |
+| `rpcs3/tests/pbd/settings_menu_test.cpp` | 956 |
 | `rpcs3/tests/pbd/setup_digest_test.cpp` | 179 |
 | `rpcs3/tests/pbd/shader_build_test.cpp` | 241 |
 | `rpcs3/tests/pbd/skip_guard_test.cpp` | 119 |
 | `rpcs3/tests/pbd/sound_options_test.cpp` | 161 |
-| `rpcs3/tests/pbd/spectator_channel_model.h` | 198 |
-| `rpcs3/tests/pbd/spectator_channel_test.cpp` | 1184 |
+| `rpcs3/tests/pbd/spectator_channel_model.h` | 200 |
+| `rpcs3/tests/pbd/spectator_channel_test.cpp` | 1367 |
 | `rpcs3/tests/pbd/spectator_packet_random_test.cpp` | 177 |
 | `rpcs3/tests/pbd/spectator_parser_audit_test.cpp` | 175 |
 | `rpcs3/tests/pbd/spectator_presentation_checks.h` | 190 |
-| `rpcs3/tests/pbd/spectator_standby_test.cpp` | 188 |
-| `rpcs3/tests/pbd/spectator_ui_test.cpp` | 303 |
+| `rpcs3/tests/pbd/spectator_standby_test.cpp` | 223 |
+| `rpcs3/tests/pbd/spectator_ui_test.cpp` | 224 |
 | `rpcs3/tests/pbd/stage_rule_test.cpp` | 70 |
 | `rpcs3/tests/pbd/stage_sync_test.cpp` | 59 |
 | `rpcs3/tests/pbd/swapchain_rebuild_test.cpp` | 432 |
@@ -469,7 +473,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `ARCHITECTURE.md` | 169 |
 | `CODE-BAR.md` | 35 |
 | `KNOWN-DEBT.md` | 22 |
-| `README.rpcs3.md` | 48 |
+| `README.rpcs3.md` | 42 |
 | `Utilities/pbd_stage_names_gen.mjs` | 79 |
 | `docs/custom-costume-compatibility.md` | 77 |
 | `docs/design/game-hosting.md` | 71 |
@@ -479,6 +483,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `docs/design/netcode-phase-delay.md` | 27 |
 | `docs/design/netcode-restore-clock.md` | 18 |
 | `docs/design/netcode-time-sync.md` | 32 |
+| `docs/design/paired-game-start.md` | 21 |
 | `docs/design/ppu-object-names.md` | 85 |
 | `docs/design/replay-input-638.md` | 34 |
 | `docs/design/replay-round-capsules.md` | 44 |
@@ -488,6 +493,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `tools/audio_session_identity_test.cpp` | 181 |
 | `tools/pbd/build-rpcs3.ps1` | 220 |
 | `tools/pbd/dependencies.lock.json` | 69 |
+| `tools/pbd/qt_window_shell_check.cpp` | 80 |
 | `tools/pbd/setup-dependencies.ps1` | 127 |
 | `tools/pbd/storage-guard.ps1` | 15 |
 | `tools/pbd/storage-policy.json` | 8 |
@@ -497,7 +503,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `tools/pbd_custom_probe.py` | 91 |
 | `tools/pbd_hle_order.py` | 59 |
 | `tools/pbd_practice_glyphs.py` | 481 |
-| `tools/pbd_source_md.py` | 304 |
+| `tools/pbd_source_md.py` | 305 |
 | `tools/test_audio_session_identity.ps1` | 12 |
 | `tools/test_customs_native.ps1` | 46 |
 | `tools/test_pbd_build_arguments.ps1` | 51 |
@@ -513,15 +519,16 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 
 | File | Lines |
 |---|---|
+| `.github/CONTRIBUTING.rpcs3.md` | 65 |
 | `.github/RELEASE-VALIDATION.md` | 10 |
 | `rpcs3/Crypto/package_path.h` | 28 |
 | `rpcs3/Emu/Audio/WindowsAudioSessionIdentity.h` | 145 |
-| `rpcs3/Emu/Cell/pbd_game_profile.h` | 188 |
+| `rpcs3/Emu/Cell/pbd_game_profile.h` | 211 |
 | `rpcs3/Emu/Cell/pbd_notice_art.h` | 291 |
 | `rpcs3/Emu/Cell/pbd_ppu_object_name.cpp` | 102 |
 | `rpcs3/Emu/Cell/pbd_ppu_object_name.h` | 254 |
 | `rpcs3/Emu/Cell/pbd_search_badge.h` | 243 |
-| `rpcs3/Emu/Cell/pbd_spectator_mouse.h` | 112 |
+| `rpcs3/Emu/Cell/pbd_spectator_mouse.h` | 111 |
 | `rpcs3/Emu/Cell/pbd_versus.h` | 596 |
 | `rpcs3/Emu/Cell/pbd_versus_native.cpp` | 347 |
 | `rpcs3/Emu/Cell/pbd_versus_native.h` | 24 |
@@ -530,12 +537,12 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_boot_dispatch.cpp` | 225 |
 | `rpcs3/Emu/PBD/pbd_boot_environment.h` | 25 |
 | `rpcs3/Emu/PBD/pbd_boot_request_state.h` | 205 |
-| `rpcs3/Emu/PBD/pbd_boundary_completion.cpp` | 267 |
+| `rpcs3/Emu/PBD/pbd_boundary_completion.cpp` | 269 |
 | `rpcs3/Emu/PBD/pbd_boundary_dispatch.cpp` | 352 |
 | `rpcs3/Emu/PBD/pbd_checkpoint_capture.h` | 139 |
 | `rpcs3/Emu/PBD/pbd_checkpoint_compatibility.h` | 14 |
 | `rpcs3/Emu/PBD/pbd_checkpoint_memory.h` | 136 |
-| `rpcs3/Emu/PBD/pbd_checkpoint_setup.cpp` | 215 |
+| `rpcs3/Emu/PBD/pbd_checkpoint_setup.cpp` | 247 |
 | `rpcs3/Emu/PBD/pbd_checkpoint_write_plan.h` | 162 |
 | `rpcs3/Emu/PBD/pbd_clip_buffer.h` | 313 |
 | `rpcs3/Emu/PBD/pbd_clip_destination.h` | 182 |
@@ -545,7 +552,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_controller_settings.h` | 187 |
 | `rpcs3/Emu/PBD/pbd_correction_execution.cpp` | 98 |
 | `rpcs3/Emu/PBD/pbd_correction_journal.h` | 456 |
-| `rpcs3/Emu/PBD/pbd_correction_memory.cpp` | 194 |
+| `rpcs3/Emu/PBD/pbd_correction_memory.cpp` | 191 |
 | `rpcs3/Emu/PBD/pbd_costume_panel.h` | 126 |
 | `rpcs3/Emu/PBD/pbd_costume_select.h` | 205 |
 | `rpcs3/Emu/PBD/pbd_custom_catalogue.h` | 109 |
@@ -557,10 +564,10 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_custom_photo.h` | 175 |
 | `rpcs3/Emu/PBD/pbd_custom_save.h` | 126 |
 | `rpcs3/Emu/PBD/pbd_custom_wire.h` | 251 |
-| `rpcs3/Emu/PBD/pbd_direct_replay_configuration.cpp` | 200 |
-| `rpcs3/Emu/PBD/pbd_direct_replay_input.cpp` | 233 |
+| `rpcs3/Emu/PBD/pbd_direct_replay_configuration.cpp` | 202 |
+| `rpcs3/Emu/PBD/pbd_direct_replay_input.cpp` | 245 |
 | `rpcs3/Emu/PBD/pbd_direct_replay_rounds.cpp` | 191 |
-| `rpcs3/Emu/PBD/pbd_direct_replay_state.h` | 531 |
+| `rpcs3/Emu/PBD/pbd_direct_replay_state.h` | 534 |
 | `rpcs3/Emu/PBD/pbd_dummy_contact_observation.cpp` | 238 |
 | `rpcs3/Emu/PBD/pbd_dummy_cycle_steps.h` | 376 |
 | `rpcs3/Emu/PBD/pbd_dummy_move.h` | 238 |
@@ -568,14 +575,14 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_dummy_move_input.h` | 98 |
 | `rpcs3/Emu/PBD/pbd_dummy_move_runtime.h` | 392 |
 | `rpcs3/Emu/PBD/pbd_dummy_move_store.h` | 66 |
-| `rpcs3/Emu/PBD/pbd_dummy_native_route.cpp` | 192 |
+| `rpcs3/Emu/PBD/pbd_dummy_native_route.cpp` | 194 |
 | `rpcs3/Emu/PBD/pbd_emulator_identity.h` | 62 |
 | `rpcs3/Emu/PBD/pbd_exit_gate.cpp` | 87 |
 | `rpcs3/Emu/PBD/pbd_features.h` | 21 |
 | `rpcs3/Emu/PBD/pbd_fight_tape.h` | 47 |
 | `rpcs3/Emu/PBD/pbd_fight_timing.h` | 178 |
 | `rpcs3/Emu/PBD/pbd_fighter_side.cpp` | 111 |
-| `rpcs3/Emu/PBD/pbd_freeze_probe.h` | 109 |
+| `rpcs3/Emu/PBD/pbd_freeze_probe.h` | 119 |
 | `rpcs3/Emu/PBD/pbd_function_hook_configuration.cpp` | 455 |
 | `rpcs3/Emu/PBD/pbd_function_hook_dispatch.cpp` | 259 |
 | `rpcs3/Emu/PBD/pbd_function_hook_event.h` | 55 |
@@ -596,8 +603,8 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_input_selection.cpp` | 280 |
 | `rpcs3/Emu/PBD/pbd_input_taps.h` | 144 |
 | `rpcs3/Emu/PBD/pbd_json_reader.h` | 496 |
-| `rpcs3/Emu/PBD/pbd_live_stats_publisher.h` | 393 |
-| `rpcs3/Emu/PBD/pbd_live_stats_state.h` | 90 |
+| `rpcs3/Emu/PBD/pbd_live_stats_publisher.h` | 434 |
+| `rpcs3/Emu/PBD/pbd_live_stats_state.h` | 92 |
 | `rpcs3/Emu/PBD/pbd_lobby_command_steps.h` | 193 |
 | `rpcs3/Emu/PBD/pbd_lobby_set_model.h` | 254 |
 | `rpcs3/Emu/PBD/pbd_lobby_start.cpp` | 67 |
@@ -622,6 +629,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_output_gain.h` | 157 |
 | `rpcs3/Emu/PBD/pbd_overlay_controls.h` | 291 |
 | `rpcs3/Emu/PBD/pbd_owner_flags.h` | 37 |
+| `rpcs3/Emu/PBD/pbd_paired_game_start.h` | 159 |
 | `rpcs3/Emu/PBD/pbd_peer_auth.h` | 171 |
 | `rpcs3/Emu/PBD/pbd_peer_auth_state.h` | 162 |
 | `rpcs3/Emu/PBD/pbd_peer_boundary_steps.h` | 331 |
@@ -639,6 +647,8 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_pick_transition.cpp` | 86 |
 | `rpcs3/Emu/PBD/pbd_pick_transition.h` | 59 |
 | `rpcs3/Emu/PBD/pbd_picture_facing.h` | 32 |
+| `rpcs3/Emu/PBD/pbd_player_audio.h` | 22 |
+| `rpcs3/Emu/PBD/pbd_player_plates.h` | 93 |
 | `rpcs3/Emu/PBD/pbd_player_seats.h` | 266 |
 | `rpcs3/Emu/PBD/pbd_rank_screens.cpp` | 185 |
 | `rpcs3/Emu/PBD/pbd_rank_screens.h` | 103 |
@@ -649,18 +659,18 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_replay_boot.cpp` | 89 |
 | `rpcs3/Emu/PBD/pbd_replay_boot.h` | 33 |
 | `rpcs3/Emu/PBD/pbd_replay_capsule_start.h` | 188 |
-| `rpcs3/Emu/PBD/pbd_replay_capture.h` | 232 |
-| `rpcs3/Emu/PBD/pbd_replay_carry.cpp` | 600 |
-| `rpcs3/Emu/PBD/pbd_replay_carry.h` | 68 |
-| `rpcs3/Emu/PBD/pbd_replay_carry_codec.h` | 538 |
+| `rpcs3/Emu/PBD/pbd_replay_capture.h` | 234 |
+| `rpcs3/Emu/PBD/pbd_replay_carry.cpp` | 674 |
+| `rpcs3/Emu/PBD/pbd_replay_carry.h` | 74 |
+| `rpcs3/Emu/PBD/pbd_replay_carry_codec.h` | 562 |
 | `rpcs3/Emu/PBD/pbd_replay_carry_guard.h` | 12 |
-| `rpcs3/Emu/PBD/pbd_replay_carry_types.h` | 143 |
+| `rpcs3/Emu/PBD/pbd_replay_carry_types.h` | 158 |
 | `rpcs3/Emu/PBD/pbd_replay_checkpoint.h` | 156 |
 | `rpcs3/Emu/PBD/pbd_replay_control_boundary.cpp` | 257 |
 | `rpcs3/Emu/PBD/pbd_replay_control_buttons.h` | 103 |
 | `rpcs3/Emu/PBD/pbd_replay_difference.h` | 65 |
 | `rpcs3/Emu/PBD/pbd_replay_entry.h` | 32 |
-| `rpcs3/Emu/PBD/pbd_replay_game_carry.cpp` | 62 |
+| `rpcs3/Emu/PBD/pbd_replay_game_carry.cpp` | 66 |
 | `rpcs3/Emu/PBD/pbd_replay_hit_contacts.cpp` | 76 |
 | `rpcs3/Emu/PBD/pbd_replay_journal.h` | 124 |
 | `rpcs3/Emu/PBD/pbd_replay_native.cpp` | 511 |
@@ -671,7 +681,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_replay_resource_cursor.cpp` | 242 |
 | `rpcs3/Emu/PBD/pbd_replay_resource_reference.h` | 65 |
 | `rpcs3/Emu/PBD/pbd_replay_restore.cpp` | 111 |
-| `rpcs3/Emu/PBD/pbd_replay_restore.h` | 67 |
+| `rpcs3/Emu/PBD/pbd_replay_restore.h` | 68 |
 | `rpcs3/Emu/PBD/pbd_replay_result_reference.h` | 62 |
 | `rpcs3/Emu/PBD/pbd_replay_retained_terms.cpp` | 130 |
 | `rpcs3/Emu/PBD/pbd_replay_rewind.h` | 188 |
@@ -684,7 +694,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_replay_viewer_model.h` | 294 |
 | `rpcs3/Emu/PBD/pbd_replay_viewer_presentation.h` | 201 |
 | `rpcs3/Emu/PBD/pbd_screen_check.h` | 101 |
-| `rpcs3/Emu/PBD/pbd_segment_barrier.cpp` | 403 |
+| `rpcs3/Emu/PBD/pbd_segment_barrier.cpp` | 409 |
 | `rpcs3/Emu/PBD/pbd_session_boundary_templates.h` | 230 |
 | `rpcs3/Emu/PBD/pbd_session_health.h` | 156 |
 | `rpcs3/Emu/PBD/pbd_session_options.h` | 337 |
@@ -694,49 +704,51 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_session_samples.h` | 366 |
 | `rpcs3/Emu/PBD/pbd_session_setup.cpp` | 425 |
 | `rpcs3/Emu/PBD/pbd_session_trace.h` | 57 |
-| `rpcs3/Emu/PBD/pbd_set_channel_model.h` | 517 |
-| `rpcs3/Emu/PBD/pbd_set_commands.h` | 407 |
+| `rpcs3/Emu/PBD/pbd_set_channel_model.h` | 520 |
+| `rpcs3/Emu/PBD/pbd_set_commands.h` | 411 |
 | `rpcs3/Emu/PBD/pbd_set_event_payload.h` | 200 |
 | `rpcs3/Emu/PBD/pbd_set_notices.h` | 590 |
 | `rpcs3/Emu/PBD/pbd_set_publication.h` | 158 |
 | `rpcs3/Emu/PBD/pbd_settings_controller.h` | 401 |
 | `rpcs3/Emu/PBD/pbd_settings_input.h` | 250 |
-| `rpcs3/Emu/PBD/pbd_settings_model.h` | 530 |
-| `rpcs3/Emu/PBD/pbd_settings_runtime.h` | 316 |
+| `rpcs3/Emu/PBD/pbd_settings_model.h` | 532 |
+| `rpcs3/Emu/PBD/pbd_settings_runtime.h` | 338 |
 | `rpcs3/Emu/PBD/pbd_settings_view.h` | 255 |
 | `rpcs3/Emu/PBD/pbd_shader_build.h` | 267 |
 | `rpcs3/Emu/PBD/pbd_spectator_boundary_steps.h` | 298 |
-| `rpcs3/Emu/PBD/pbd_spectator_channel_controls.h` | 361 |
-| `rpcs3/Emu/PBD/pbd_spectator_channel_input.h` | 220 |
-| `rpcs3/Emu/PBD/pbd_spectator_channel_model.h` | 410 |
-| `rpcs3/Emu/PBD/pbd_spectator_channel_publication.h` | 222 |
-| `rpcs3/Emu/PBD/pbd_spectator_local_channel.h` | 326 |
-| `rpcs3/Emu/PBD/pbd_spectator_standby.h` | 135 |
+| `rpcs3/Emu/PBD/pbd_spectator_channel_controls.h` | 360 |
+| `rpcs3/Emu/PBD/pbd_spectator_channel_input.h` | 228 |
+| `rpcs3/Emu/PBD/pbd_spectator_channel_model.h` | 443 |
+| `rpcs3/Emu/PBD/pbd_spectator_channel_publication.h` | 211 |
+| `rpcs3/Emu/PBD/pbd_spectator_local_channel.h` | 321 |
+| `rpcs3/Emu/PBD/pbd_spectator_standby.h` | 122 |
 | `rpcs3/Emu/PBD/pbd_stage_sync.h` | 73 |
 | `rpcs3/Emu/PBD/pbd_stall_metrics.h` | 208 |
 | `rpcs3/Emu/PBD/pbd_swapchain_rebuild.h` | 130 |
-| `rpcs3/Emu/PBD/pbd_takeover_restore_steps.h` | 365 |
+| `rpcs3/Emu/PBD/pbd_takeover_restore_steps.h` | 366 |
 | `rpcs3/Emu/PBD/pbd_throw_break.h` | 1199 |
 | `rpcs3/Emu/PBD/pbd_throw_break_record.h` | 77 |
-| `rpcs3/Emu/PBD/pbd_tick_checkpoint.cpp` | 163 |
+| `rpcs3/Emu/PBD/pbd_tick_checkpoint.cpp` | 182 |
 | `rpcs3/Emu/PBD/pbd_tick_entry.cpp` | 463 |
 | `rpcs3/Emu/PBD/pbd_tick_input.cpp` | 453 |
 | `rpcs3/Emu/PBD/pbd_tick_state.cpp` | 217 |
 | `rpcs3/Emu/PBD/pbd_tick_verification.cpp` | 191 |
-| `rpcs3/Emu/PBD/pbd_undo_capture.h` | 247 |
+| `rpcs3/Emu/PBD/pbd_undo_capture.h` | 252 |
 | `rpcs3/Emu/PBD/pbd_undo_restore.h` | 87 |
 | `rpcs3/Emu/PBD/pbd_versus_input.h` | 32 |
 | `rpcs3/Emu/PBD/pbd_voice_health.h` | 36 |
 | `rpcs3/Emu/RSX/VK/vkutils/pbd_present_wait.h` | 183 |
+| `rpcs3/Emu/RSX/pbd_display_rate.h` | 19 |
 | `rpcs3/Emu/RSX/pbd_present_identity.h` | 255 |
 | `rpcs3/Emu/RSX/pbd_present_pacing.h` | 158 |
-| `rpcs3/Input/pbd_controller_backend.cpp` | 396 |
+| `rpcs3/Input/pbd_controller_backend.cpp` | 400 |
 | `rpcs3/Input/pbd_controller_backend.h` | 27 |
-| `rpcs3/Input/pbd_controller_backend_state.h` | 560 |
+| `rpcs3/Input/pbd_controller_backend_state.h` | 561 |
 | `rpcs3/Input/pbd_gamecontrollerdb.LICENSE` | 18 |
 | `rpcs3/Input/pbd_gamecontrollerdb.h` | 500 |
 | `rpcs3/rpcs3qt/pbd_clips_controller.cpp` | 370 |
 | `rpcs3/rpcs3qt/pbd_clips_controller.h` | 23 |
+| `rpcs3/rpcs3qt/pbd_qt_shell.h` | 67 |
 | `rpcs3/rpcs3qt/pbd_settings_devices.cpp` | 100 |
 | `rpcs3/rpcs3qt/pbd_settings_devices.h` | 26 |
 | `rpcs3/rpcs3qt/window_geometry.h` | 48 |
@@ -752,27 +764,37 @@ In source files these are the hooks: the places where upstream code calls into t
 upstream behaviour changes for a session. `README.md` and `.github/CONTRIBUTING.md` are the fork's own pages;
 upstream's README is kept as `README.rpcs3.md`. Every other upstream file is exactly upstream's.
 
-PROJECT BACKDASH changed these files from September 2026 on; `git log 028d1e8f..HEAD -- <file>` lists each
+PROJECT BACKDASH changed these files from September 2026 on; `git log 47599599..HEAD -- <file>` lists each
 change with its date.
 
 | File | Added | Removed |
 |---|---|---|
-| `.github/CONTRIBUTING.md` | 36 | 12 |
+| `.github/CONTRIBUTING.md` | 33 | 55 |
+| `3rdparty/7zip/7zip` | 1 | 1 |
+| `3rdparty/FAudio` | 1 | 1 |
+| `3rdparty/GPUOpen/VulkanMemoryAllocator` | 1 | 1 |
+| `3rdparty/OpenAL/openal-soft` | 1 | 1 |
+| `3rdparty/curl/curl` | 1 | 1 |
+| `3rdparty/libpng/libpng` | 1 | 1 |
+| `3rdparty/libsdl-org/SDL` | 1 | 1 |
+| `3rdparty/rtmidi/rtmidi` | 1 | 1 |
+| `3rdparty/wolfssl/wolfssl` | 1 | 1 |
+| `3rdparty/zlib/zlib` | 1 | 1 |
 | `BUILDING.md` | 44 | 2 |
 | `CMakeLists.txt` | 4 | 0 |
-| `README.md` | 60 | 27 |
+| `README.md` | 64 | 25 |
 | `Utilities/JITLLVM.cpp` | 8 | 0 |
 | `Utilities/Thread.cpp` | 23 | 0 |
 | `buildfiles/msvc/common_default.props` | 18 | 1 |
 | `buildfiles/msvc/rpcs3_default.props` | 5 | 0 |
-| `rpcs3/CMakeLists.txt` | 8 | 1 |
-| `rpcs3/Crypto/unpkg.cpp` | 8 | 12 |
+| `rpcs3/CMakeLists.txt` | 6 | 1 |
+| `rpcs3/Crypto/unpkg.cpp` | 2 | 6 |
 | `rpcs3/Emu/Audio/AudioBackend.cpp` | 41 | 2 |
 | `rpcs3/Emu/Audio/Cubeb/CubebBackend.cpp` | 19 | 6 |
 | `rpcs3/Emu/Audio/Cubeb/CubebBackend.h` | 1 | 1 |
 | `rpcs3/Emu/Audio/XAudio2/XAudio2Backend.cpp` | 6 | 138 |
 | `rpcs3/Emu/Audio/XAudio2/XAudio2Backend.h` | 1 | 19 |
-| `rpcs3/Emu/Audio/audio_utils.cpp` | 2 | 1 |
+| `rpcs3/Emu/Audio/audio_utils.cpp` | 3 | 1 |
 | `rpcs3/Emu/CMakeLists.txt` | 186 | 1 |
 | `rpcs3/Emu/CPU/CPUThread.cpp` | 22 | 0 |
 | `rpcs3/Emu/CPU/CPUThread.h` | 2 | 0 |
@@ -784,9 +806,9 @@ change with its date.
 | `rpcs3/Emu/Cell/PPUFunction.cpp` | 139 | 1 |
 | `rpcs3/Emu/Cell/PPUFunction.h` | 30 | 19 |
 | `rpcs3/Emu/Cell/PPUInterpreter.cpp` | 45 | 8 |
-| `rpcs3/Emu/Cell/PPUModule.cpp` | 26 | 0 |
+| `rpcs3/Emu/Cell/PPUModule.cpp` | 37 | 2 |
 | `rpcs3/Emu/Cell/PPUModule.h` | 12 | 3 |
-| `rpcs3/Emu/Cell/PPUThread.cpp` | 290 | 4 |
+| `rpcs3/Emu/Cell/PPUThread.cpp` | 321 | 26 |
 | `rpcs3/Emu/Cell/PPUTranslator.cpp` | 343 | 1 |
 | `rpcs3/Emu/Cell/PPUTranslator.h` | 29 | 0 |
 | `rpcs3/Emu/Cell/SPUCommonRecompiler.cpp` | 7 | 4 |
@@ -797,23 +819,27 @@ change with its date.
 | `rpcs3/Emu/Cell/lv2/sys_lwmutex.cpp` | 7 | 0 |
 | `rpcs3/Emu/Cell/lv2/sys_memory.cpp` | 3 | 0 |
 | `rpcs3/Emu/Cell/lv2/sys_ppu_thread.cpp` | 7 | 0 |
-| `rpcs3/Emu/Cell/lv2/sys_rsx.cpp` | 93 | 2 |
+| `rpcs3/Emu/Cell/lv2/sys_rsx.cpp` | 147 | 9 |
 | `rpcs3/Emu/Cell/lv2/sys_spu.cpp` | 19 | 0 |
 | `rpcs3/Emu/Cell/lv2/sys_time.cpp` | 72 | 0 |
 | `rpcs3/Emu/Cell/lv2/sys_time.h` | 5 | 0 |
 | `rpcs3/Emu/Cell/lv2/sys_timer.cpp` | 2 | 0 |
-| `rpcs3/Emu/GDB.cpp` | 305 | 135 |
+| `rpcs3/Emu/GDB.cpp` | 293 | 149 |
 | `rpcs3/Emu/GDB.h` | 25 | 16 |
 | `rpcs3/Emu/Memory/vm.cpp` | 44 | 2 |
 | `rpcs3/Emu/Memory/vm.h` | 4 | 0 |
 | `rpcs3/Emu/RSX/Core/RSXDisplay.h` | 30 | 4 |
-| `rpcs3/Emu/RSX/GL/GLGSRender.cpp` | 3 | 0 |
+| `rpcs3/Emu/RSX/Core/RSXDisplayEngine.cpp` | 72 | 5 |
+| `rpcs3/Emu/RSX/Core/RSXDisplayEngine.h` | 6 | 1 |
+| `rpcs3/Emu/RSX/Core/RSXDisplayOutput.cpp` | 2 | 2 |
+| `rpcs3/Emu/RSX/Core/RSXDisplayOutput.h` | 2 | 1 |
+| `rpcs3/Emu/RSX/GL/GLGSRender.cpp` | 5 | 0 |
 | `rpcs3/Emu/RSX/GL/GLGSRender.h` | 15 | 0 |
 | `rpcs3/Emu/RSX/GL/GLOverlays.cpp` | 3 | 2 |
 | `rpcs3/Emu/RSX/GL/GLOverlays.h` | 1 | 1 |
-| `rpcs3/Emu/RSX/GL/GLPresent.cpp` | 78 | 2 |
-| `rpcs3/Emu/RSX/GSFrameBase.h` | 5 | 0 |
-| `rpcs3/Emu/RSX/NV47/HW/nv406e.cpp` | 181 | 127 |
+| `rpcs3/Emu/RSX/GL/GLPresent.cpp` | 108 | 17 |
+| `rpcs3/Emu/RSX/GSFrameBase.h` | 7 | 1 |
+| `rpcs3/Emu/RSX/NV47/HW/nv406e.cpp` | 56 | 1 |
 | `rpcs3/Emu/RSX/Overlays/overlay_fonts.cpp` | 2 | 0 |
 | `rpcs3/Emu/RSX/Overlays/overlay_message.cpp` | 19 | 17 |
 | `rpcs3/Emu/RSX/Overlays/overlay_message.h` | 12 | 5 |
@@ -821,8 +847,8 @@ change with its date.
 | `rpcs3/Emu/RSX/Overlays/overlays.h` | 7 | 0 |
 | `rpcs3/Emu/RSX/RSXFIFO.cpp` | 30 | 0 |
 | `rpcs3/Emu/RSX/RSXFIFO.h` | 5 | 0 |
-| `rpcs3/Emu/RSX/RSXThread.cpp` | 370 | 2 |
-| `rpcs3/Emu/RSX/RSXThread.h` | 42 | 0 |
+| `rpcs3/Emu/RSX/RSXThread.cpp` | 327 | 1 |
+| `rpcs3/Emu/RSX/RSXThread.h` | 49 | 2 |
 | `rpcs3/Emu/RSX/RSXZCULL.cpp` | 6 | 3 |
 | `rpcs3/Emu/RSX/Utils/rsx_utils.h` | 12 | 5 |
 | `rpcs3/Emu/RSX/VK/VKDMA.cpp` | 3 | 0 |
@@ -830,14 +856,14 @@ change with its date.
 | `rpcs3/Emu/RSX/VK/VKGSRender.h` | 69 | 0 |
 | `rpcs3/Emu/RSX/VK/VKOverlays.cpp` | 3 | 2 |
 | `rpcs3/Emu/RSX/VK/VKOverlays.h` | 1 | 1 |
-| `rpcs3/Emu/RSX/VK/VKPresent.cpp` | 691 | 38 |
-| `rpcs3/Emu/RSX/VK/VKShaderInterpreter.cpp` | 408 | 24 |
+| `rpcs3/Emu/RSX/VK/VKPresent.cpp` | 739 | 58 |
+| `rpcs3/Emu/RSX/VK/VKShaderInterpreter.cpp` | 434 | 91 |
 | `rpcs3/Emu/RSX/VK/VKShaderInterpreter.h` | 57 | 1 |
-| `rpcs3/Emu/RSX/VK/vkutils/device.cpp` | 53 | 0 |
-| `rpcs3/Emu/RSX/VK/vkutils/device.h` | 9 | 0 |
+| `rpcs3/Emu/RSX/VK/vkutils/device.cpp` | 54 | 1 |
+| `rpcs3/Emu/RSX/VK/vkutils/device.h` | 14 | 0 |
 | `rpcs3/Emu/RSX/VK/vkutils/instance.cpp` | 18 | 1 |
 | `rpcs3/Emu/RSX/VK/vkutils/instance.h` | 3 | 0 |
-| `rpcs3/Emu/RSX/VK/vkutils/swapchain.cpp` | 96 | 10 |
+| `rpcs3/Emu/RSX/VK/vkutils/swapchain.cpp` | 446 | 360 |
 | `rpcs3/Emu/RSX/VK/vkutils/swapchain_core.h` | 42 | 2 |
 | `rpcs3/Emu/RSX/rsx_cache.h` | 4 | 0 |
 | `rpcs3/Emu/System.cpp` | 178 | 11 |
@@ -853,19 +879,20 @@ change with its date.
 | `rpcs3/Input/sdl_pad_handler.cpp` | 12 | 0 |
 | `rpcs3/Input/sdl_pad_handler.h` | 2 | 0 |
 | `rpcs3/VKGSRender.vcxproj` | 3 | 1 |
-| `rpcs3/emucore.vcxproj` | 450 | 5 |
-| `rpcs3/emucore.vcxproj.filters` | 236 | 0 |
+| `rpcs3/emucore.vcxproj` | 1658 | 1213 |
+| `rpcs3/emucore.vcxproj.filters` | 3569 | 3333 |
 | `rpcs3/module_verifier.cpp` | 32 | 5 |
-| `rpcs3/rpcs3.cpp` | 102 | 7 |
+| `rpcs3/rpcs3.cpp` | 110 | 7 |
 | `rpcs3/rpcs3.ico` | binary | binary |
 | `rpcs3/rpcs3.rc` | 3 | 0 |
 | `rpcs3/rpcs3.vcxproj` | 27 | 5 |
 | `rpcs3/rpcs3.vcxproj.filters` | 40 | 1 |
 | `rpcs3/rpcs3qt/CMakeLists.txt` | 10 | 0 |
 | `rpcs3/rpcs3qt/gl_gs_frame.cpp` | 2 | 0 |
-| `rpcs3/rpcs3qt/gs_frame.cpp` | 68 | 35 |
-| `rpcs3/rpcs3qt/gs_frame.h` | 22 | 0 |
-| `rpcs3/rpcs3qt/gui_application.cpp` | 19 | 7 |
+| `rpcs3/rpcs3qt/gs_frame.cpp` | 72 | 37 |
+| `rpcs3/rpcs3qt/gs_frame.h` | 26 | 1 |
+| `rpcs3/rpcs3qt/gui_application.cpp` | 25 | 7 |
+| `rpcs3/rpcs3qt/gui_application.h` | 6 | 0 |
 | `rpcs3/rpcs3qt/qt_utils.cpp` | 5 | 15 |
 | `rpcs3/tests/rpcs3_test.vcxproj` | 1 | 0 |
 | `rpcs3/util/video_provider.cpp` | 51 | 8 |
@@ -897,8 +924,9 @@ You need:
 
 Everything else is pinned with its hash in `tools/pbd/dependencies.lock.json`: Qt 6.11.2 for MSVC 2022 x64 (qtbase,
 qtdeclarative, qttools, qtmultimedia, qtsvg, qttranslations), RPCS3's prebuilt LLVM 22.1.8, 7-Zip's `7zr.exe` and the
-GoogleTest 1.8.1.8 NuGet package. The lock follows upstream's own `.ci/setup-windows.sh` at the base commit. All of it
-goes inside the clone, under `build\` and `packages\`, which git ignores. Every path the scripts use is relative to
+GoogleTest 1.8.1.8 NuGet package. The lock still records the September 10 source revision; the merged upstream
+Windows CI uses Qt 6.12.0. Dependency compatibility with the merged revision has not yet been build-validated.
+All of it goes inside the clone, under `build\` and `packages\`, which git ignores. Every path the scripts use is relative to
 the repository.
 
 1. In a source snapshot, run `python prepare.py --output C:\pbd-emulator`, then enter that checkout. Preparation

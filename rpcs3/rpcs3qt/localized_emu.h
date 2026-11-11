@@ -168,6 +168,7 @@ private:
 		case localized_string_id::CELL_SAVEDATA_DELETE_CONFIRMATION: return tr("Do you really want to delete this data?\n\n%0", "Savedata entry info").arg(std::forward<Args>(args)...);
 		case localized_string_id::CELL_SAVEDATA_DELETE_SUCCESS: return tr("Successfully removed data!\n\n%0", "Savedata entry info").arg(std::forward<Args>(args)...);
 		case localized_string_id::CELL_SAVEDATA_DELETE: return tr("Delete this data?\n\n%0", "Savedata entry info").arg(std::forward<Args>(args)...);
+		case localized_string_id::CELL_SAVEDATA_SAVE: return tr("Do you want to save this data?\n\n%0", "Savedata entry info").arg(std::forward<Args>(args)...);
 		case localized_string_id::CELL_SAVEDATA_LOAD: return tr("Load this data?\n\n%0", "Savedata entry info").arg(std::forward<Args>(args)...);
 		case localized_string_id::CELL_SAVEDATA_OVERWRITE: return tr("Do you want to overwrite the saved data?\n\n%0", "Savedata entry info").arg(std::forward<Args>(args)...);
 		case localized_string_id::CELL_SAVEDATA_AUTOSAVE: return tr("Saving...");
@@ -250,6 +251,7 @@ private:
 		case localized_string_id::HOME_MENU_SETTINGS_VIDEO_ANISOTROPIC_OVERRIDE: return tr("Anisotropic Filter Override", "Video");
 		case localized_string_id::HOME_MENU_SETTINGS_VIDEO_OUTPUT_SCALING: return tr("Output Scaling", "Video");
 		case localized_string_id::HOME_MENU_SETTINGS_VIDEO_RCAS_SHARPENING: return tr("FidelityFX CAS Sharpening Intensity", "Video");
+		case localized_string_id::HOME_MENU_SETTINGS_VIDEO_RENDERER: return tr("Graphics Renderer", "Video");
 		case localized_string_id::HOME_MENU_SETTINGS_VIDEO_RESOLUTION_SCALE_PERCENT: return tr("Resolution Scale", "Video");
 		case localized_string_id::HOME_MENU_SETTINGS_VIDEO_RESOLUTION_SCALE_THRESHOLD: return tr("Resolution Scale Threshold", "Video");
 		case localized_string_id::HOME_MENU_SETTINGS_VIDEO_STRETCH_TO_DISPLAY: return tr("Stretch To Display Area", "Video");
@@ -270,6 +272,7 @@ private:
 		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_SLEEP_TIMERS_ACCURACY: return tr("Sleep Timers Accuracy", "Advanced");
 		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_RSX_MEMORY_TILING: return tr("Handle RSX Memory Tiling", "Advanced");
 		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_MAX_SPURS_THREADS: return tr("Max SPURS Threads", "Advanced");
+		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_PPU_EVENT_WAKE_UP_DELAY: return tr("PPU Event Wake-Up Delay", "Advanced");
 		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_DRIVER_WAKE_UP_DELAY: return tr("Driver Wake-Up Delay", "Advanced");
 		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_VBLANK_FREQUENCY: return tr("VBlank Frequency", "Advanced");
 		case localized_string_id::HOME_MENU_SETTINGS_ADVANCED_VBLANK_NTSC: return tr("VBlank NTSC Fixup", "Advanced");

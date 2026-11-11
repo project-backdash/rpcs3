@@ -193,7 +193,7 @@ PBD_TEST(PbdFreezeProbe, GeometryLinesShowTheBusyCountListsAndWorkerSemaphore)
 	manager_image manager{};
 	put(manager, 8, 1);
 	put(manager, 0x14, 11423);
-	put(manager, 0x50, semaphore_id);
+	put(manager, semaphore_offset, 0x96007900);
 	list_image pending{}, requests{};
 	put(pending, 0xc, 512);
 	put(pending, 0x24, 0);
@@ -204,11 +204,11 @@ PBD_TEST(PbdFreezeProbe, GeometryLinesShowTheBusyCountListsAndWorkerSemaphore)
 	{
 		return text.find(part) != std::string::npos;
 	};
-	check(has("geometry manager 10742880: busy 1 stopping 0 completed_frame 11423 semaphore 96007500 bytes 000000000000000000000001"),
+	check(has("geometry manager 10742880: busy 1 stopping 0 completed_frame 11423 semaphore 96007900 bytes 000000000000000000000001"),
 		"the manager line lost its busy count, frame or semaphore id");
 	check(has("geometry pending 107468e0: free_links 512 pending 0 bytes "), "the pending list counts are missing");
 	check(has("geometry requests 10748114: free_links 1 free_requests 511 bytes "), "the request list counts are missing");
-	check(has("geometry semaphore 96007500: value -1 waiters 1 first_waiter 01000005\n"), "the worker's semaphore facts are missing");
+	check(has("geometry semaphore 96007900: value -1 waiters 1 first_waiter 01000005\n"), "the worker's semaphore facts are missing");
 	const auto manager_line = text.substr(0, text.find('\n'));
 	check(manager_line.size() - manager_line.rfind(' ') - 1 == manager_bytes * 2, "the manager image is not 0xa0 bytes");
 	put(manager, 8, 0xffffffffu);
@@ -216,7 +216,7 @@ PBD_TEST(PbdFreezeProbe, GeometryLinesShowTheBusyCountListsAndWorkerSemaphore)
 	const auto missing = geometry_text({}, {}, {}, {});
 	check(missing ==
 			  "geometry manager 10742880: unreadable\ngeometry pending 107468e0: unreadable\ngeometry requests 10748114: unreadable\n"
-			  "geometry semaphore 96007500: unreadable\n",
+			  "geometry semaphore: unreadable\n",
 		"an unreadable source was invented or dropped");
 	// The draw manager's drain waits for its 64-bit event at +0xa8 to be zero.
 	draw_image draw{};

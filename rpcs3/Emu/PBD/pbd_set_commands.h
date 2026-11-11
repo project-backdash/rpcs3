@@ -134,7 +134,11 @@ namespace pbd::set_channel
 				out.ranks[index] = held;
 			}
 			if (const auto* ranks = repeated->find("ranks"))
-				out.rank_tables[index] = read_rank_table(ranks).value_or(std::vector<rank_group>{});
+			{
+				out.rank_tables[index] = read_rank_table(ranks);
+				if (!out.rank_tables[index])
+					out.ignored.push_back("next_set." + std::string(key) + ".ranks");
+			}
 			read_records(*repeated, "next_set." + std::string(key), in_game(expected), out.records[index], out.record_tables[index], out.ignored);
 		}
 		return {};

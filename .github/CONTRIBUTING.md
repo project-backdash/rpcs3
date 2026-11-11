@@ -34,7 +34,7 @@ Start with [ARCHITECTURE.md](../ARCHITECTURE.md), the map of what the fork adds 
 
 ## Upstream RPCS3
 
-A fix here that would also help RPCS3 is offered to RPCS3 under its own rules (see [README.rpcs3.md](../README.rpcs3.md)),
+A fix here that would also help RPCS3 is offered to RPCS3 under its own rules (see [CONTRIBUTING.rpcs3.md](CONTRIBUTING.rpcs3.md)),
 by a person who owns and understands the change.
 
 ## Licence

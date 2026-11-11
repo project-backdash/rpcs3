@@ -33,6 +33,8 @@ namespace pbd::replay_carry
 		actor_segment_deltas segment_deltas;
 		actor_retained_scalars scalars;
 		actor_records records;
+		stage_camera camera;
+		effect_controller effects;
 		// The records are read under the same context as the actor fields above, from the executable's data block, which
 		// is mapped from boot, so an unreadable block refuses the capture like them: a file without it replays a later
 		// game only until its fighters diverge.
@@ -52,11 +54,13 @@ namespace pbd::replay_carry
 			!captured(read_actor_hit_contacts(owner, generation, contacts), "actorHitContacts") ||
 			!captured(read_actor_segment_deltas(owner, generation, segment_deltas), "actorSegmentDeltas") ||
 			!captured(read_actor_retained_scalars(owner, generation, scalars), "actorRetainedScalars") ||
-			!captured(read_actor_records(owner, generation, records), "actorRecords"))
+			!captured(read_actor_records(owner, generation, records), "actorRecords") ||
+			!captured(read_stage_camera(owner, generation, camera), "stageCamera") ||
+			!captured(read_effect_controller(owner, generation, effects), "effectController"))
 			return {};
 		return game_values{
 			history, flow, planar, flag, transform, descriptor, deltas, cursor, motion, reaction, conditions, bones, result,
 			contacts, segment_deltas, actor_scalar_bits{scalars.prior_life},
-			actor_scalar_bits{scalars.reaction_scalar}, actor_scalar_bits{scalars.previous_blend_weight}, records};
+			actor_scalar_bits{scalars.reaction_scalar}, actor_scalar_bits{scalars.previous_blend_weight}, records, camera, effects};
 	}
 } // namespace pbd::replay_carry

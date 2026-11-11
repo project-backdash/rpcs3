@@ -671,7 +671,7 @@ namespace pbd::pad_read
 		if (const auto rsx = rsx::get_current_renderer())
 		{
 			observation.has_vblank = true;
-			observation.vblank = rsx->vblank_count.load();
+			observation.vblank = rsx->display_ctrl().get_vblank_count();
 			// int_flip_index is non-atomic RSX-owned state; do not race it here.
 		}
 		const error_code result = get_data(port, data, &observation);

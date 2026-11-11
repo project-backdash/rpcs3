@@ -10,6 +10,7 @@ struct pbd::controllers::backend::impl
 	std::int64_t stamp = -1;
 	std::uint64_t last_reload = 0;
 	std::uint64_t controls_revision = 0, controls_published = 0;
+	pbd::settings_menu::word customize_previous = 0;
 	std::optional<pbd::controllers::settings::values> controls_override;
 	QJsonObject settings;
 	QJsonArray pads;

@@ -13,6 +13,7 @@
 #include "Emu/PBD/pbd_settings_runtime.h"
 #include "sdl_instance.h"
 #include "rpcs3qt/pbd_raw_keyboard.h"
+#include "Utilities/StrUtil.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -70,9 +71,11 @@ namespace pbd::controllers
 #ifdef _WIN32
 		int virtual_key(std::string_view key)
 		{
-			if (key.size() == 1)
+			// Key names are UTF-8, so a letter such as "Ç" is one character in two bytes. It is looked up in the layout of
+			// the foreground window, the one the player types with.
+			if (const std::wstring character = utf8_to_wchar(key); character.size() == 1)
 			{
-				const SHORT code = VkKeyScanExW(static_cast<wchar_t>(key.front()), GetKeyboardLayout(0));
+				const SHORT code = VkKeyScanExW(character.front(), GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), nullptr)));
 				return code == -1 ? 0 : code & 255;
 			}
 			static const std::map<std::string_view, int> codes{
@@ -291,6 +294,7 @@ namespace pbd::controllers
 		{
 			settings::menu_word.store(canonical(value), std::memory_order_release);
 			settings::active.store(true, std::memory_order_release);
+			pbd::settings_menu::customize_start(pbd::session_mode::customize(), canonical(value), m->customize_previous);
 			if (now_us - m->controls_published >= 250000)
 			{
 				m->controls_published = now_us;

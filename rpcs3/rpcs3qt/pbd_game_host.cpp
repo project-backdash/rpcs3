@@ -5,6 +5,7 @@
 #include "Emu/PBD/pbd_presentation_journal.h"
 #include "Emu/PBD/pbd_held_presentation.h"
 #include "Emu/PBD/pbd_output_gain.h"
+#include "Emu/Cell/pbd_player_volume.h"
 #include "Emu/PBD/pbd_screen_check.h"
 #include "util/atomic.hpp"
 #include "util/logs.hpp"
@@ -24,6 +25,7 @@
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <mutex>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -103,10 +105,13 @@ namespace pbd::game_host
 				DisconnectNamedPipe(pipe.value);
 				continue;
 			}
-			const int action = parse_control(std::string_view(bytes, length), static_cast<std::uint32_t>(token));
+			audio_control audio;
+			const int action = parse_control(std::string_view(bytes, length), static_cast<std::uint32_t>(token), &audio);
 			bool valid = action != 0;
 			bool verified_visible = false, player_in_front = false, check_pending = false;
-			if (action == 5)
+			if (action == 9)
+				pbd::player_volume::set(audio.volume, audio.muted, audio.revision);
+			else if (action == 5)
 			{
 				const auto answer = observe_visibility("check");
 				verified_visible = answer.verified;
@@ -220,13 +225,16 @@ namespace pbd::game_host
 		return 0;
 #endif
 	}
-	double window::refresh_rate() const
+	display_rate::sample window::refresh_rate() const
 	{
 #ifdef _WIN32
-		return managed() ? m_state->refresh.load() : 0;
-#else
-		return 0;
+		if (managed())
+		{
+			std::lock_guard lock(m_state->refresh_mutex);
+			return m_state->refresh;
+		}
 #endif
+		return {};
 	}
 	bool window::visible() const
 	{

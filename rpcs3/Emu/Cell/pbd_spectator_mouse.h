@@ -16,8 +16,7 @@ namespace pbd::spectator::mouse
 	enum class kind : std::uint8_t
 	{
 		button, // value: the control's pad bit (pbd::spectator_ui::pad)
-		tab,    // value: the chat tab's index; reached with L1/R1 presses
-		quick   // value: the Quick line's index; Cross with that line highlighted
+		tab     // value: the chat tab's index; reached with L1/R1 presses
 	};
 
 	struct target

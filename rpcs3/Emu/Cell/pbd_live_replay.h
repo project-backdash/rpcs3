@@ -28,6 +28,7 @@ public:
 		std::string id, name;
 	};
 	// The PLAYER DATA numbers the bars show now (left, right); none for a side without a record.
+	using names_source = std::function<std::array<std::string, 2>()>;
 	using records_source = std::function<std::array<std::optional<pbd::game_profile::record>, 2>()>;
 	using looks_source = std::function<pbd::custom_wire::pair()>;
 	// The throw break rule's setting from the owner's tick on, at a game start (false) or a round start (true)
@@ -42,6 +43,7 @@ public:
 	std::shared_ptr<const std::string> pbd_game_start_record(u64 generation) const noexcept;
 	// Where each game's start takes the PLAYER DATA numbers it records, asked on the owner thread at the initializer. Without one,
 	// a start records none.
+	void pbd_names(names_source source) noexcept;
 	void pbd_records(records_source source) noexcept;
 	void pbd_looks(looks_source source) noexcept;
 	// Where each game start and round start takes the rule's setting it records, asked on the owner thread at the initializer.

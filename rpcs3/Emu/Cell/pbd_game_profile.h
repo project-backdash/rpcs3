@@ -117,6 +117,35 @@ namespace pbd::game_profile
 		return hash;
 	}
 
+	// A rank the game draws as given; anything else draws Beginner, as the game itself treats it.
+	inline constexpr u8 rank_byte(u32 rank) noexcept
+	{
+		return rank < rank_count ? static_cast<u8>(rank) : 0;
+	}
+
+	// Extend the existing display word only for per-character tables. Fixed picks retain their original word.
+	inline u32 profiles_word(const std::array<std::optional<record>, 2>& records, const std::array<std::optional<u32>, 2>& ranks) noexcept
+	{
+		u32 hash = records_word(records);
+		if (ranks[0] || ranks[1])
+			for (const auto& rank : ranks)
+			{
+				hash = (hash ^ (rank ? 1u : 0u)) * 0x01000193u;
+				hash = (hash ^ rank_byte(rank.value_or(0))) * 0x01000193u;
+			}
+		return hash;
+	}
+
+	// A disagreement clears table-backed plates to Beginner, preserving the identity ranks of fixed picks.
+	inline std::array<std::optional<u32>, 2> agreed_ranks(std::array<std::optional<u32>, 2> ranks, bool agreed) noexcept
+	{
+		if (!agreed)
+			for (auto& rank : ranks)
+				if (rank)
+					rank = 0;
+		return ranks;
+	}
+
 	// Whether a scene barrier may change the PLAYER DATA numbers. The pre-battle stretch runs 8 -> 9 -> 10 -> 11 -> 12 -> 16/17
 	// (pbd::vs_cards): the VS screen, 10, draws the numbers on the portraits, and the game's match initializer, where a replay
 	// records them, runs after it. From the end of the VS screen to the end of the fight they stay as they are, so the VS screen,
@@ -158,12 +187,6 @@ namespace pbd::game_profile
 	inline constexpr bool plate_drawn(u32 mode, u32 players_word, u32 humans, u32 side) noexcept
 	{
 		return mode != 2 && mode != 3 && mode != 10 && players_word != 0 && side < 2 && ((humans >> side) & 1) != 0;
-	}
-
-	// A rank the game draws as given; anything else draws Beginner, as the game itself treats it.
-	inline constexpr u8 rank_byte(u32 rank) noexcept
-	{
-		return rank < rank_count ? static_cast<u8>(rank) : 0;
 	}
 
 	// The record's name field for `text`: printable ASCII characters as UTF-16 big-endian units, at most shown_units of them,

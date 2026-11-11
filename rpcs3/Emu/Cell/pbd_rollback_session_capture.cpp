@@ -226,7 +226,10 @@ void pbd::rollback_session::fault_arm_all() noexcept
 	// because the renderer, its IO map and the deny list are invariant for the run.
 	if (const auto render = rsx::get_current_renderer())
 	{
-		mark(render->label_addr & ~u32{4095});
+		render->for_each_context([&](rsx::context* ctx)
+			{
+				mark(ctx->fw.label_addr & ~u32{4095});
+			});
 		mark(render->dma_address & ~u32{4095});
 		if (render->ctrl)
 			for (const u32 offset : {render->ctrl->get.load(), render->ctrl->put.load()})

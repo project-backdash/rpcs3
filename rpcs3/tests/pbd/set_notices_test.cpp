@@ -32,6 +32,89 @@ PBD_TEST(PbdSetNotices, MatchConnectionKeepsDelayAndRollbackOnGoodAndPoorConnect
 	pbd::test::check(!pbd::live_stats::decide({"0"}).show());
 }
 
+PBD_TEST(PbdSetNotices, FightPaceNeedsTwoSecondsAndMeasuresCompletedFrames)
+{
+	for (const std::uint32_t rate : {60u, 54u, 53u, 30u})
+	{
+		pbd::live_stats::fight_pace pace;
+		for (std::uint32_t frame = 0; frame <= rate * 3; ++frame)
+		{
+			const bool slow = pace.observe(frame, 1'000'000 + std::uint64_t{frame} * 1'000'000 / rate, true);
+			pbd::test::check(slow == (rate < 54 && frame >= rate * 2),
+				"only a complete window below 90% of 60 Hz warns, including zero-start frames");
+		}
+	}
+}
+
+PBD_TEST(PbdSetNotices, FightPaceClearsAfterAHealthyWindow)
+{
+	pbd::live_stats::fight_pace pace;
+	for (std::uint32_t frame = 0; frame <= 60; ++frame)
+		pace.observe(frame, std::uint64_t{frame} * 1'000'000 / 30, true);
+	for (std::uint32_t frame = 1; frame <= 120; ++frame)
+		pbd::test::check(pace.observe(60 + frame, 2'000'000 + std::uint64_t{frame} * 1'000'000 / 60, true) == (frame < 120));
+}
+
+PBD_TEST(PbdSetNotices, FightPaceDoesNotCarryLoadingOrOldTimelineTime)
+{
+	const auto slow_window = []
+	{
+		pbd::live_stats::fight_pace pace;
+		for (std::uint32_t frame = 0; frame <= 60; ++frame)
+			pace.observe(frame, std::uint64_t{frame} * 1'000'000 / 30, true);
+		return pace;
+	};
+	for (const auto next : {61u, 20u, 62u})
+	{
+		auto pace = slow_window();
+		pbd::test::check(!pace.observe(next, 10'000'000, false), "a menu, KO or loading boundary clears the warning");
+		pbd::test::check(!pace.observe(next + 1, 20'000'000, true), "loading time is outside the new fight's observation");
+	}
+	for (const auto next : {60u, 20u, 62u})
+	{
+		auto pace = slow_window();
+		pbd::test::check(!pace.observe(next, 2'100'000, true), "repeated, rewound and skipped indices start a fresh observation");
+	}
+	for (const auto now : {0ull, 1'000'000ull, 2'000'000ull})
+	{
+		auto pace = slow_window();
+		pbd::test::check(!pace.observe(61, now, true), "a restarted or non-advancing clock cannot keep an old warning");
+	}
+	pbd::live_stats::fight_pace pace;
+	pbd::test::check(!pace.observe(0xffffffffu, 0, true) && !pace.observe(0, 2'000'000, true), "frame wrap starts a new window");
+	pbd::test::check(pace.observe(1, ~std::uint64_t{0}, true), "a long monotonic interval cannot overflow the rate comparison");
+}
+
+PBD_TEST(PbdSetNotices, SlowFightWarnsDespiteGoodPingAndResetsWithThePublisher)
+{
+	namespace stats = pbd::live_stats;
+	stats::block block;
+	stats::publisher publisher(block);
+	publisher.configure({stats::mode_session});
+	for (std::uint32_t frame = 0; frame <= 60; ++frame)
+		publisher.pace(frame, std::uint64_t{frame} * 1'000'000 / 30, true);
+	auto shown = stats::load(block);
+	shown.rtt_samples = 1;
+	shown.rtt_avg_us = 53'000;
+	shown.input_delay = 1;
+	shown.depth_recent = 0;
+	pbd::test::check(shown.game_slow && stats::net_bars(shown) == 1, "good ping cannot hide measured slow simulation");
+	const auto line = stats::net_text(shown);
+	pbd::test::check(line.find("Game slow") != std::string::npos && line.find("53 ms") != std::string::npos &&
+					 line.find("Delay 1f") != std::string::npos && line.find("Rollback 0f") != std::string::npos);
+	publisher.pace(61, 2'100'000, false);
+	pbd::test::check(!stats::load(block).game_slow);
+	shown.game_slow = 0;
+	pbd::test::check(stats::net_bars(shown) == 4 && stats::net_text(shown).find("Game slow") == std::string::npos);
+	for (std::uint32_t frame = 62; frame <= 122; ++frame)
+		publisher.pace(frame, 3'000'000 + std::uint64_t{frame - 62} * 1'000'000 / 30, true);
+	pbd::test::check(stats::load(block).game_slow);
+	publisher.configure({stats::mode_session});
+	pbd::test::check(!stats::load(block).game_slow);
+	publisher.pace(200, 20'000'000, true);
+	pbd::test::check(!stats::load(block).game_slow, "the new session has no old pace window");
+}
+
 PBD_TEST(PbdSetNotices, MatchConnectionUsesFallbackOnlyWhenNoticeFontIsMissing)
 {
 	int notice = 1, fallback = 2;

@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "pbd_native_call.h"
 #include "pbd_practice_wakeup_reading.h"
+#include "pbd_practice_recording_guard.h"
 
 namespace pbd::practice::native
 {
@@ -9,22 +10,32 @@ namespace pbd::practice::native
 		thread_local frame_observer frame_data;
 		constexpr std::array<u32, 2> frame_actors{0x10090040, 0x10090910};
 		thread_local pbd::practice::pbd_getup_guard getup_state;
+		thread_local pbd::practice::pbd_recording_guard recording_guard;
 		// The Movement dummy, set at each boundary: the game would stand-guard it whenever its technique leaves it at neutral.
 		thread_local bool movement_unguarded = false;
 		// Removes a fighter's guard the way the game removes one its Dummy Action turns off (0xF2928): from the live flags
 		// (+0xCC), from the copy the stance update reloads them from (+0xD0, 0x33F94) and from the guard the contact check reads
 		// (+0x152). The game derives +0x152 from +0xCC every frame, so the guard stays off until a move or a move property
 		// brings it back.
+		bool write_guard(u32 actor, unsigned field, u32 value) noexcept
+		{
+			if (field == 2)
+			{
+				be_t<u16> half = static_cast<u16>(value);
+				return vm::try_access(actor + 0x152, &half, sizeof(half), true);
+			}
+			be_t<u32> flags = value;
+			return vm::try_access(actor + (field == 0 ? 0xcc : 0xd0), &flags, sizeof(flags), true);
+		}
 		void remove_guard(u32 actor) noexcept
 		{
 			const u32 flags = word(actor + 0xcc), kept = word(actor + 0xd0), guard = halfword(actor + 0x152);
 			if (flags == ~0u || kept == ~0u || guard == ~0u || !((flags | kept | guard) & pbd::practice::pbd_guard_bits))
 				return;
-			be_t<u32> live = pbd::practice::pbd_without_guard(flags), copy = pbd::practice::pbd_without_guard(kept);
-			be_t<u16> none = static_cast<u16>(pbd::practice::pbd_without_guard(guard));
-			vm::try_access(actor + 0xcc, &live, sizeof(live), true);
-			vm::try_access(actor + 0xd0, &copy, sizeof(copy), true);
-			vm::try_access(actor + 0x152, &none, sizeof(none), true);
+			pbd::practice::pbd_clear_guard({flags, kept, guard}, [actor](unsigned field, u32 value)
+				{
+					return write_guard(actor, field, value);
+				});
 		}
 
 		bool frame_allocation(u32 actor, u32 allocation)
@@ -50,6 +61,20 @@ namespace pbd::practice::native
 					return true;
 			}
 			return false;
+		}
+
+		std::optional<pbd::practice::pbd_recording_guard_view> recording_guard_view() noexcept
+		{
+			if (!supported() || !pbd::practice::requested() ||
+				!pbd::practice::practice_fight(word(pbd::t5dr::game_mode_address), word(pbd::t5dr::scene_address), word(0x10093230)) ||
+				word(frame_actors[0] + 0x5c) != frame_actors[1] || word(frame_actors[1] + 0x5c) != frame_actors[0])
+				return {};
+			const u32 actor = frame_actors[0], move = word(actor + 0xc4), counter = word(0x1008f05c);
+			const pbd::practice::pbd_guard_values flags{word(actor + 0xcc), word(actor + 0xd0), halfword(actor + 0x152)};
+			if (counter == ~0u || std::find(flags.begin(), flags.end(), ~0u) != flags.end() ||
+				(!frame_allocation(actor, move) && !frame_allocation(frame_actors[1], move)))
+				return {};
+			return pbd::practice::pbd_recording_guard_view{static_cast<u64>(Emu.GetEmulationIdentifier()), counter, move, flags};
 		}
 	} // namespace
 
@@ -198,8 +223,13 @@ namespace pbd::practice::native
 			return {};
 		return pbd::practice::throw_escape_view{allocation, wanted, given};
 	}
-	void getup_guard(u32 chosen_action, bool movement) noexcept
+	void getup_guard(u32 chosen_action, bool movement, bool recording) noexcept
 	{
+		if (recording || recording_guard.active)
+			recording_guard.boundary(recording, recording_guard_view(), [](unsigned field, u32 value)
+				{
+					return write_guard(frame_actors[0], field, value);
+				});
 		movement_unguarded = movement;
 		if (movement)
 			remove_guard(frame_actors[1]);
@@ -492,12 +522,19 @@ namespace pbd::practice::native
 			if (actor != frame_actors[0] && actor != frame_actors[1])
 				return;
 			const unsigned side = actor == frame_actors[0] ? 0 : 1;
-			// The commit of a move change, after the game has given the dummy the new move's guard (0xF1D50) and before this
+			// The commit of a move change, after the game has given the fighter the new move's guard (0xF1D50) and before this
 			// frame's contact check (0x1822C): removed here, the guard a get-up move brings blocks on none of its frames
 			// (getup_guard).
-			if (address == 0xf26f4 && side == 1 && practice &&
-				(movement_unguarded || getup_state.entered(static_cast<u64>(Emu.GetEmulationIdentifier()), counter)))
-				remove_guard(actor);
+			if (address == 0xf26f4 && practice)
+			{
+				if (side == 0 && recording_guard.active)
+					recording_guard.entered(recording_guard_view(), [](unsigned field, u32 value)
+						{
+							return write_guard(frame_actors[0], field, value);
+						});
+				else if (side == 1 && (movement_unguarded || getup_state.entered(static_cast<u64>(Emu.GetEmulationIdentifier()), counter)))
+					remove_guard(actor);
+			}
 			frame_step step{ppu, address, counter, actor, side};
 			if (address == 0x16d9c)
 				step.contact();

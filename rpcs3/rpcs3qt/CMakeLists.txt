@@ -3,11 +3,13 @@ add_library(rpcs3_ui STATIC
     anaglyph_settings_dialog.cpp
     auto_pause_settings_dialog.cpp
     auto_scroll_label.cpp
+    avatar_selection_dialog.cpp
     basic_mouse_settings_dialog.cpp
     breakpoint_handler.cpp
     breakpoint_list.cpp
     call_stack_list.cpp
     camera_settings_dialog.cpp
+    wiimote_settings_dialog.cpp
     cg_disasm_window.cpp
     cheat_manager.cpp
     clans_settings_dialog.cpp
@@ -59,6 +61,7 @@ add_library(rpcs3_ui STATIC
     input_dialog.cpp
     instruction_editor_dialog.cpp
     ipc_settings_dialog.cpp
+    sky_ipc_settings_dialog.cpp
     kamen_rider_dialog.cpp
     kernel_explorer.cpp
     localized.cpp
@@ -79,6 +82,7 @@ add_library(rpcs3_ui STATIC
     pad_led_settings_dialog.cpp
     pad_motion_settings_dialog.cpp
     pad_settings_dialog.cpp
+    pad_skateboard_settings_dialog.cpp
     patch_creator_dialog.cpp
     patch_manager_dialog.cpp
     permissions.cpp
@@ -139,11 +143,13 @@ add_library(rpcs3_ui STATIC
 
     about_dialog.ui
     camera_settings_dialog.ui
+    wiimote_settings_dialog.ui
     main_window.ui
     music_player_dialog.ui
     pad_led_settings_dialog.ui
     pad_motion_settings_dialog.ui
     pad_settings_dialog.ui
+    pad_skateboard_settings_dialog.ui
     patch_creator_dialog.ui
     patch_manager_dialog.ui
     ps_move_tracker_dialog.ui
@@ -163,12 +169,14 @@ add_library(rpcs3_ui STATIC
 
     ../Input/basic_keyboard_handler.cpp
     ../Input/basic_mouse_handler.cpp
+    ../Input/blob_detector.cpp
     ../Input/camera_video_sink.cpp
     ../Input/ds3_pad_handler.cpp
     ../Input/ds4_pad_handler.cpp
     ../Input/dualsense_pad_handler.cpp
     ../Input/evdev_joystick_handler.cpp
     ../Input/gui_pad_thread.cpp
+    ../Input/hid_instance.cpp
     ../Input/hid_pad_handler.cpp
     ../Input/keyboard_pad_handler.cpp
     ../Input/mm_joystick_handler.cpp
@@ -191,6 +199,7 @@ add_library(rpcs3_ui STATIC
     ../Input/sdl_instance.cpp
     ../Input/sdl_pad_handler.cpp
     ../Input/skateboard_pad_handler.cpp
+    ../Input/wiimote_handler.cpp
     ../Input/xinput_pad_handler.cpp
 
     "../resources.qrc"
@@ -234,7 +243,6 @@ target_link_libraries(rpcs3_ui
         3rdparty::libusb
         3rdparty::wolfssl
         3rdparty::libcurl
-        3rdparty::opencv
         3rdparty::fusion
 
     PRIVATE

@@ -300,7 +300,6 @@ namespace pbd::spectator
 		if (control_ui.value->new_line && (!m_ui || !m_ui->new_line || m_ui->new_line->id != control_ui.value->new_line->id))
 			m_preview_since = 0;
 		m_ui = std::move(*control_ui.value);
-		m_pad.apply(*m_ui);
 		draw_ui();
 		return true;
 	}

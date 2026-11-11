@@ -239,6 +239,18 @@ namespace pbd::game_window
 		}
 		if (suppress_for_broadcast())
 			return;
+		if (s.started)
+		{
+			const auto audio = pbd::player_volume::read();
+			if (s.audio_revision != audio.revision)
+			{
+				menu::launcher_audio(s.model, audio.volume, audio.muted, audio.revision);
+				s.audio_revision = audio.revision;
+				++s.menu.revision;
+				write_changes();
+				publish();
+			}
+		}
 		const auto held = pbd_menu_pad_word_try();
 		if (!s.menu.open)
 		{
@@ -300,7 +312,11 @@ namespace pbd::game_window
 		auto& m = s.model;
 		const auto displays = pbd::settings_devices::game_displays(m_frame.winId());
 		menu::values now;
-		now.volume = std::clamp(pbd::player_volume::get(), 0, 100);
+		const auto audio = pbd::player_volume::read();
+		now.volume = std::clamp(audio.volume, 0, 100);
+		m.audio_muted = audio.muted;
+		m.audio_revision = audio.revision;
+		s.audio_revision = audio.revision;
 		now.resolution = static_cast<u32>(g_cfg.video.resolution_scale_percent.get());
 		now.fullscreen = m_frame.m_game_host->configured() ? m_frame.m_game_host->fullscreen() : m_frame.visibility() == QWindow::FullScreen;
 		now.vsync = g_cfg.video.vsync.get() != vsync_mode::off;
@@ -344,7 +360,10 @@ namespace pbd::game_window
 			rsx::overlays::queue_message(localized_string(localized_string_id::AUDIO_CHANGED, "%d%%", volume), 3'000'000, {},
 				rsx::overlays::message_pin_location::top_left, {}, true, true);
 		if (menu)
+		{
 			menu->m_state.model.current.volume = menu->m_state.model.applied.volume = volume;
+			menu->write_changes();
+		}
 	}
 
 	void settings_menu::open(bool from_escape)
@@ -429,6 +448,7 @@ namespace pbd::game_window
 		case pbd::settings_menu::effect::volume:
 			pbd::player_volume::set(s.model.current.volume);
 			s.model.applied.volume = s.model.current.volume;
+			write_changes();
 			break;
 		case pbd::settings_menu::effect::apply:
 			// Back from the settings page to the top level: the video rows apply as they would on a close.

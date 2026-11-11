@@ -3,6 +3,7 @@
 #include "nv47_sync.hpp"
 
 #include "Emu/RSX/RSXThread.h"
+#include "Emu/system_config.h"
 #include "Emu/RSX/pbd_replay_pacing.h"
 #include "Emu/PBD/pbd_replay_viewer_menu.h"
 #include "Emu/PBD/pbd_peer_recovery.h"
@@ -20,27 +21,33 @@ namespace rsx
 
 			// Write ref+get (get will be written again with the same value at command end)
 			auto& dma = *vm::_ptr<RsxDmaControl>(RSX(ctx)->dma_address);
-			dma.get.release(RSX(ctx)->fifo_ctrl->get_pos());
+			//dma.get.store(RSX(ctx)->fifo_ctrl->get_pos() + 4);
 			dma.ref.store(arg);
 		}
 
 		void semaphore_acquire(context* ctx, u32 /*reg*/, u32 arg)
 		{
 			RSX(ctx)->sync_point_request.release(true);
-			const u32 addr = get_address(REGS(ctx)->semaphore_offset_406e(), REGS(ctx)->semaphore_context_dma_406e());
+			const u32 addr = get_address(ctx, REGS(ctx)->semaphore_offset_406e(), REGS(ctx)->semaphore_context_dma_406e());
 
 			// Syncronization point, may be associated with memory changes without actually changing addresses
-			RSX(ctx)->m_graphics_state |= rsx::pipeline_state::fragment_program_needs_rehash;
+			ctx->graphics_state |= rsx::pipeline_state::fragment_program_needs_rehash;
+
+			// Ensure atomic seq-cst memory ordering for FIFO GET update
+			atomic_fence_seq_cst();
 
 			const auto& sema = vm::_ref<RsxSemaphore>(addr);
 			const auto& atomic_sema = vm::_ref<atomic_t<RsxSemaphore>>(addr);
 
+			RSX(ctx)->last_sema_cmd = RSX(ctx)->fifo_ctrl->get_pos() - 4;
+			RSX(ctx)->last_sema_addr = addr;
+
 			if (sema == arg)
 			{
 				// Flip semaphore doesnt need wake-up delay
-				if (addr != RSX(ctx)->label_addr + 0x10)
+				if (addr != ctx->fw.label_addr + 0x10)
 				{
-					RSX(ctx)->flush_fifo();
+					//RSX(ctx)->flush_fifo();
 					RSX(ctx)->fifo_wake_delay(2);
 				}
 
@@ -48,7 +55,7 @@ namespace rsx
 			}
 			else
 			{
-				RSX(ctx)->flush_fifo();
+				//RSX(ctx)->flush_fifo();
 			}
 
 			u64 start = get_system_time();
@@ -56,7 +63,7 @@ namespace rsx
 
 			// Record only: the frame handshake (label 253, +0xFD0) waits for the guest's NEXT present; while parked here
 			// the renderer has consumed everything up to the end of the last present (the bounded wait at window start polls this).
-			const bool pbd_handshake = addr == RSX(ctx)->label_addr + 0xFD0;
+			const bool pbd_handshake = addr == ctx->fw.label_addr + 0xFD0;
 			if (pbd_handshake)
 			{
 				::pbd::replay_pacing::handshake_waits.fetch_add(1, std::memory_order_relaxed);
@@ -93,10 +100,16 @@ namespace rsx
 					return;
 				}
 
-				const bool pbd_paused_viewer = pbd_handshake && !RSX(ctx)->in_begin_end &&
+				if (ctx->fw.free_requested)
+				{
+					// lv2 waits for the context to be freed, which only happens once this method returns
+					break;
+				}
+
+				const bool pbd_paused_viewer = pbd_handshake && !ctx->in_begin_end &&
 				                               ::pbd::replay_viewer::presentation.enabled.load(std::memory_order_relaxed) &&
 				                               ::pbd::replay_viewer::presentation.paused.load(std::memory_order_relaxed);
-				const bool pbd_network_hold = ::pbd::peer_recovery::refresh_at_handshake(pbd_handshake, RSX(ctx)->in_begin_end,
+				const bool pbd_network_hold = ::pbd::peer_recovery::refresh_at_handshake(pbd_handshake, ctx->in_begin_end,
 					::pbd::session_wait::recovering().load(std::memory_order_acquire), ::pbd::session_wait::showing().load(std::memory_order_acquire));
 				const bool pbd_controlled_pause = pbd_paused_viewer || pbd_network_hold;
 				// A deliberate host pause cannot be a guest semaphore timeout; resume keeps the normal timeout.
@@ -132,12 +145,13 @@ namespace rsx
 					continue;
 				}
 
-				RSX(ctx)->on_semaphore_acquire_wait();
+				RSX(ctx)->renderer()->on_semaphore_acquire_wait();
+
 				// DR's frame handshake is after the last present. A paused viewer must repaint host UI here,
 				// without satisfying this semaphore, dispatching another guest update or servicing a guest flip.
 				if (pbd_controlled_pause &&
-					(RSX(ctx)->async_flip_requested & rsx::thread::flip_request::native_ui) &&
-					!(RSX(ctx)->async_flip_requested & rsx::thread::flip_request::emu_requested))
+					RSX(ctx)->display_ctrl().has_flip_request(rsx::thread::flip_request::native_ui) &&
+					!RSX(ctx)->display_ctrl().has_flip_request(rsx::thread::flip_request::emu_requested))
 				{
 					RSX(ctx)->refresh_native_ui_at_frame_handshake();
 				}
@@ -171,10 +185,10 @@ namespace rsx
 				RSX(ctx)->sync_point_request.release(true);
 			}
 
-			const u32 addr = get_address(offset, ctxt);
+			const u32 addr = get_address(ctx, offset, ctxt);
 
 			// TODO: Check if possible to write on reservations
-			if (RSX(ctx)->label_addr >> 28 != addr >> 28)
+			if (ctx->fw.label_addr >> 28 != addr >> 28)
 			{
 				rsx_log.error("NV406E semaphore unexpected address. Please report to the developers. (offset=0x%x, addr=0x%x)", offset, addr);
 				RSX(ctx)->recover_fifo();
@@ -189,5 +203,5 @@ namespace rsx
 
 			util::write_gcm_label<false, true>(ctx, reg, addr, arg);
 		}
-	} // namespace nv406e
-} // namespace rsx
+	}
+}

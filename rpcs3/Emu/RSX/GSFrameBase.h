@@ -4,6 +4,8 @@
 #include <vector>
 
 #include "display.h"
+#include "pbd_display_rate.h"
+#include "Emu/system_config_types.h"
 
 class GSFrameBase
 {
@@ -14,6 +16,10 @@ public:
 
 	virtual void close() = 0;
 	virtual void reset() = 0;
+
+	// The renderer the window was created for. Windows are set up for a specific backend (e.g. OpenGL window management is handled by Qt).
+	virtual video_renderer renderer() const = 0;
+
 	virtual bool shown() = 0;
 	virtual void hide() = 0;
 	virtual void show() = 0;
@@ -25,7 +31,7 @@ public:
 	virtual void flip(draw_context_t ctx, bool skip_frame = false) = 0;
 	virtual int client_width() = 0;
 	virtual int client_height() = 0;
-	virtual f64 client_display_rate() = 0;
+	virtual pbd::display_rate::sample client_display_rate() = 0;
 	virtual bool has_alpha() = 0;
 
 	virtual display_handle_t handle() const = 0;

@@ -484,6 +484,69 @@ namespace
 		check(absent.value && !absent.value->records, "Absent records invented");
 		check(!encode_game_values(*absent.value).find("actorRecords"), "Absent records serialized");
 	}
+	// The camera a game leaves travels whole, with its two stage words; it is optional at every game, so a file without it
+	// still carries the previous game, and it never joins carried_fields.
+	void stage_camera_round_trip()
+	{
+		game_values saved;
+		saved.camera.emplace();
+		for (std::size_t at = 0; at < saved.camera->bytes.size(); ++at)
+			saved.camera->bytes[at] = static_cast<std::uint8_t>(at * 13 + 5);
+		saved.camera->ko_variant = 2;
+		saved.camera->fade_word = 1;
+		const auto encoded = encode_game_values(saved);
+		const auto& camera = field(encoded, "stageCamera");
+		check(encoded.fields.size() == 1 && camera.fields.size() == 4 && is(camera.find("schema"), "pbd-stage-camera-1") &&
+				  camera.find("bytesHex")->text.size() == 2 * 0x850,
+			"Camera contents changed");
+		const auto reread = decode_game_values(parse(pbd::set_channel::detail::serialize(encoded)));
+		check(reread.value && reread.value->camera == saved.camera, "Camera bytes or words changed");
+		const auto camera_of = [](json& root) -> json&
+		{
+			return std::ranges::find_if(root.fields, [](const auto& item)
+				{
+					return item.first == "stageCamera";
+				})
+			    ->second;
+		};
+		auto short_bytes = encoded;
+		for (auto& [key, value] : camera_of(short_bytes).fields)
+			if (key == "bytesHex")
+				value = json::string("00");
+		check(!decode_game_values(short_bytes).value, "Short camera bytes accepted");
+		auto extra = encoded;
+		camera_of(extra).fields.push_back({"address", json::number(0x100996a0)});
+		check(!decode_game_values(extra).value, "Address beside the camera accepted");
+		check(std::ranges::find(carried_fields, "stageCamera") == carried_fields.end(), "The camera became required");
+		const auto absent = decode_game_values(parse("{}"));
+		check(absent.value && !absent.value->camera && !encode_game_values(*absent.value).find("stageCamera"),
+			"Absent camera invented or serialized");
+	}
+	void effect_controller_round_trip()
+	{
+		game_values saved;
+		saved.effects.emplace();
+		for (std::size_t at = 0; at < saved.effects->bytes.size(); ++at)
+			saved.effects->bytes[at] = static_cast<std::uint8_t>(at * 7 + 3);
+		const auto encoded = encode_game_values(saved);
+		const auto& effects = field(encoded, "effectController");
+		check(encoded.fields.size() == 1 && effects.fields.size() == 2 && is(effects.find("schema"), "pbd-effect-controller-1") &&
+				  effects.find("bytesHex")->text.size() == 2 * 0x50,
+			"Effect controller contents changed");
+		const auto reread = decode_game_values(parse(pbd::set_channel::detail::serialize(encoded)));
+		check(reread.value && reread.value->effects == saved.effects, "Effect controller bytes changed");
+		auto short_bytes = encoded;
+		for (auto& [key, value] : short_bytes.fields)
+			if (key == "effectController")
+				for (auto& [inner, text] : value.fields)
+					if (inner == "bytesHex")
+						text = json::string("00");
+		check(!decode_game_values(short_bytes).value, "Short effect controller bytes accepted");
+		check(std::ranges::find(carried_fields, "effectController") == carried_fields.end(), "The effect controller became required");
+		const auto absent = decode_game_values(parse("{}"));
+		check(absent.value && !absent.value->effects && !encode_game_values(*absent.value).find("effectController"),
+			"Absent effect controller invented or serialized");
+	}
 	// Every field a recorder writes at a game start: the match history and each carried field.
 	game_values every_field()
 	{
@@ -595,6 +658,8 @@ PBD_TEST(ReplayCarry, Codec)
 	retained_scalars_round_trip();
 	previous_game_flow_round_trip();
 	actor_records_round_trip();
+	stage_camera_round_trip();
+	effect_controller_round_trip();
 	missing_fields_stay_missing();
 	malformed_fields_are_refused();
 	carried_fields_name_every_field_but_the_history();

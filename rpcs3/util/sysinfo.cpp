@@ -391,6 +391,24 @@ bool utils::has_neon()
 	return g_value;
 }
 
+#if !defined(ARM_FEATURE_LSE2)
+bool utils::has_lse2()
+{
+	static const bool g_value = []() -> bool
+	{
+		// All Apple Silicon Macs have LSE2
+#if defined(__linux__)
+		return (getauxval(AT_HWCAP) & HWCAP_USCAT) != 0;
+#elif defined(_WIN32)
+		return IsProcessorFeaturePresent(PF_ARM_LSE2_AVAILABLE) != 0;
+#else
+		return false;
+#endif
+	}();
+	return g_value;
+}
+#endif
+
 bool utils::has_sha3()
 {
 	static const bool g_value = []() -> bool
@@ -404,6 +422,25 @@ bool utils::has_sha3()
 		return val != 0;
 #elif defined(_WIN32)
 		return IsProcessorFeaturePresent(PF_ARM_SHA3_INSTRUCTIONS_AVAILABLE) != 0;
+#endif
+	}();
+	return g_value;
+}
+
+bool utils::has_sha512()
+{
+	static const bool g_value = []() -> bool
+	{
+#if defined(__linux__) && defined(HWCAP_SHA512)
+		return (getauxval(AT_HWCAP) & HWCAP_SHA512) != 0;
+#elif defined(__APPLE__)
+		int val = 0;
+		size_t len = sizeof(val);
+		return sysctlbyname("hw.optional.arm.FEAT_SHA512", &val, &len, nullptr, 0) == 0 && val != 0;
+#elif defined(_WIN32) && defined(PF_ARM_SHA512_INSTRUCTIONS_AVAILABLE)
+		return IsProcessorFeaturePresent(PF_ARM_SHA512_INSTRUCTIONS_AVAILABLE) != 0;
+#else
+		return false;
 #endif
 	}();
 	return g_value;
@@ -478,6 +515,21 @@ bool utils::has_sve2()
 		return val != 0;
 #elif defined(_WIN32)
 		return IsProcessorFeaturePresent(PF_ARM_SVE2_INSTRUCTIONS_AVAILABLE) != 0;
+#endif
+	}();
+	return g_value;
+}
+
+bool utils::has_sve2p2()
+{
+	static const bool g_value = []() -> bool
+	{
+		// Detection for SVE2.2 is currently only supported on Linux
+#if defined(__linux__)
+		constexpr unsigned long sve2p2 = 1UL << 41;
+		return (getauxval(AT_HWCAP) & (HWCAP_SVE | sve2p2)) == (HWCAP_SVE | sve2p2);
+#else
+		return false;
 #endif
 	}();
 	return g_value;
@@ -570,7 +622,7 @@ std::string utils::get_system_info()
 
 	if (has_sve())
 	{
-		fmt::append(result, " | SVE%s-%d", has_sve2() ? "2" : "", sve_length());
+		fmt::append(result, " | SVE%s-%d", has_sve2p2() ? "2.2" : (has_sve2() ? "2" : ""), sve_length());
 	}
 	else
 	{

@@ -2,6 +2,7 @@
 
 #include <util/types.hpp>
 #include "../RSXThread.h"
+#include "Emu/system_config.h"
 
 namespace rsx
 {
@@ -34,7 +35,7 @@ namespace rsx
 
 		reservation_lock(u32 addr, u32 length, bool setting)
 		{
-			if (setting)
+			if (setting && addr < constants::local_mem_base)
 			{
 				lock_range(addr, length);
 			}

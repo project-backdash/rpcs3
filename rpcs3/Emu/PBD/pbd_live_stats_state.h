@@ -58,6 +58,8 @@ namespace pbd::live_stats
 		// fixtures: always), the largest rollback depth of the last ~2-4 s, and the share (per mille, ~5 s windows) of the other
 		// peer's boundaries whose first datagram never arrived.
 		std::atomic<std::uint32_t> in_match{0}, depth_recent{0}, loss_permille{0};
+		// A completed two-second window of live fight frames ran below 90% speed; cleared outside fighting.
+		std::atomic<std::uint32_t> game_slow{0};
 		// 1 when the session's datagrams go through the relay (PBD_PEER_ROUTE=relay): the connection line shows a Relay tag.
 		std::atomic<std::uint32_t> relayed{0};
 		// Leaving a session in game: 1 while this PC's player holds Select (the game never sees it in a session), and how long

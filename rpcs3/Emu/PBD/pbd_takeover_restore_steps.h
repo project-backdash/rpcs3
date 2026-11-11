@@ -123,11 +123,12 @@ struct pbd::rollback_session::takeover_restore_steps : boundary_call
 					return data.written_through.load(std::memory_order_acquire) == data.published.load(std::memory_order_acquire);
 				}))
 			return refuse("writer_busy");
+		// The renderer is idle only when parked in the frame handshake (GET runs ahead of execution; see
+		// wait_correction_renderer).
 		if (!wait_until([&]
 				{
 					const auto render = rsx::get_current_renderer();
-					return !render || !render->ctrl || pbd::replay_pacing::handshake_parked.load(std::memory_order_acquire) ||
-			               (+render->ctrl->get) == ((+render->ctrl->put) & ~3u);
+					return !render || !render->ctrl || pbd::replay_pacing::handshake_parked.load(std::memory_order_acquire);
 				}))
 			return refuse("render_busy");
 		if (!wait_until([&]

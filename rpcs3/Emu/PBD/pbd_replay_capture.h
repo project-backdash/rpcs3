@@ -150,8 +150,8 @@ namespace pbd::replay_capture
 		{0xd001d000, 0xd0021000},
 	}};
 	// The last span is the whole geometry request manager object (manager+0 .. +0x70c8): header, lwmutex, busy count,
-	// request pool, pending list and request free list with their link nodes. Its worker PPU 0x01000005 and semaphore
-	// 0x96007500 never rewind. The worker raises the busy count at +8 on each wake and lowers it when the pending list is
+	// request pool, pending list and request free list with their link nodes. Its worker PPU 0x01000005 and semaphore (id at
+	// +0x50) never rewind. The worker raises the busy count at +8 on each wake and lowers it when the pending list is
 	// empty, and the present spins until it is zero, so a copy taken while the worker runs would leave that spin waiting
 	// forever. Only the draw module's init, present request, worker and job methods read the object. The completed frame
 	// at +0x10 therefore stays at the live, newer frame through a correction, so a replayed present's draw job finds its
@@ -193,12 +193,14 @@ namespace pbd::replay_capture
 		{0x106d4608, 0x106d4610},
 		{0x10742880, 0x10749948},
 	}};
-	inline constexpr std::array<pbd_span, 4> pbd_undo_deny{{
-		{0x006e0000, 0x006f0000},
+	// libgcm's data segment is denied too. Its address follows whatever firmware modules load before it, so the session
+	// reads it from the loaded module when it prepares undo capture (pbd_undo_deny_module).
+	inline constexpr std::array<pbd_span, 3> pbd_undo_deny{{
 		{0x50300000, 0x50301000},
 		{0x50000000, 0x60000000},
 		{0x40000000, 0x40100000},
 	}};
+	inline constexpr std::string_view pbd_undo_deny_module = "cellGcm_Library";
 	inline constexpr std::array<pbd_span, 4> pbd_io_allowed{{
 		{0x40500000, 0x42c3c000},
 		{0x42cc1000, 0x4313c000},

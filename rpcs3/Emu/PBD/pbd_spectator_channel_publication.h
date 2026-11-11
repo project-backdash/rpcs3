@@ -26,7 +26,6 @@ namespace pbd::spectator
 			shown.new_line = m_ui->new_line;
 			shown.new_line_since_ms = m_ui->new_line ? m_preview_since : 0;
 			shown.chat = m_ui->chat;
-			shown.highlight = m_pad.highlight();
 			shown.profiles = m_ui->profiles;
 		}
 		spectator_ui::publish(m_native_generation, std::move(shown));
@@ -73,8 +72,6 @@ namespace pbd::spectator
 			{"bindingDigest", value::string(hex(m_identity.binding))}, {"generation", value::string(std::to_string(m_identity.generation))},
 			{"serial", value::number(m_pad_serial + 1)}, {"button", value::string(std::string(spectator_ui::button_name(press.which)))},
 			{"chatOpen", value::boolean(press.chat_open)}, {"shown", value::boolean(ui_shown())}, {"uiRevision", value::number(m_ui ? m_ui->revision : 0)}});
-		if (press.quick_line)
-			event.fields.emplace_back("quickLine", value::number(*press.quick_line));
 		const auto text = pbd::set_channel::detail::serialize(event) + '\n';
 		if (!write_new(m_directory / ("spectator-pad-" + std::to_string(m_pad_serial + 1) + ".json"),
 				m_directory / (".spectator-pad-" + std::to_string(m_pad_serial + 1) + ".tmp"), text))
@@ -158,12 +155,8 @@ namespace pbd::spectator
 			m_menu = menu;
 			draw_ui();
 		}
-		const u32 before = m_pad.highlight();
 		word |= click_word(menu);
-		const auto presses = m_pad.read(word, m_ui ? &*m_ui : nullptr, ui_shown(), menu);
-		if (m_pad.highlight() != before)
-			draw_ui();
-		for (const auto& press : presses)
+		for (const auto& press : m_pad.read(word, m_ui ? &*m_ui : nullptr, ui_shown(), menu))
 			publish_pad(press);
 	}
 
@@ -172,17 +165,15 @@ namespace pbd::spectator
 		while (const auto click = mouse::take())
 		{
 			if (click->what == mouse::kind::button)
-				m_clicks.push_back({static_cast<std::uint16_t>(click->value), std::nullopt});
-			else if (click->what == mouse::kind::quick)
-				m_clicks.push_back({spectator_ui::pad::cross, click->value});
+				m_clicks.push_back(static_cast<std::uint16_t>(click->value));
 			else if (m_ui && m_ui->chat)
 			{
 				// A tab is reached with as many L1 or R1 presses as it lies away from the current one.
 				const u32 current = m_ui->chat->tab;
 				for (u32 step = current; step < click->value; ++step)
-					m_clicks.push_back({spectator_ui::pad::r1, std::nullopt});
+					m_clicks.push_back(spectator_ui::pad::r1);
 				for (u32 step = click->value; step < current; ++step)
-					m_clicks.push_back({spectator_ui::pad::l1, std::nullopt});
+					m_clicks.push_back(spectator_ui::pad::l1);
 			}
 		}
 		// The in-game menu holds the controller and draws over the screen the clicks were meant for.
@@ -193,12 +184,10 @@ namespace pbd::spectator
 			m_click_held = false;
 			return 0;
 		}
-		const auto next = m_clicks.front();
+		const std::uint16_t next = m_clicks.front();
 		m_clicks.pop_front();
-		if (next.line)
-			m_pad.highlight_line(*next.line);
 		m_click_held = true;
-		return next.word;
+		return next;
 	}
 
 	inline bool local_channel::prepare(u64 native_generation, u32 owner, u32 boundary, u32 counter, std::string_view checkpoint, std::string_view emulator)

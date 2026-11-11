@@ -168,6 +168,8 @@ void pbd::rollback_session::boundary_call::complete_live_row(u32 index, update_s
 	{
 		data.live_pub.boundary(data.next_index);
 		data.live_pub.match(!data.session.enabled || (data.history_contains(index) && data.match_at(index)));
+		data.live_pub.pace(index, std::chrono::duration_cast<std::chrono::microseconds>(session_clock::now().time_since_epoch()).count(),
+			data.peer.enabled && row.completed && data.checkpoint.tick && data.tick_at(index).fight);
 	}
 	// Rolling rows in [begin, end + delay - 1) may still be re-executed by a later correction.
 	// Peer rows inside [begin, end + delay) are published only from boundary confirmation; lockstep rows ran with received input.

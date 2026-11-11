@@ -61,20 +61,20 @@ static void watch_screen_and_game_visibility()
 			  is(circle.find("button"), "circle") && pbd::json::detail::boolean(circle.find("shown"), flag) && !flag &&
 			  number32(circle.find("uiRevision"), 1, 1, number));
 		check(is(square.find("button"), "square") && pbd::json::detail::boolean(square.find("shown"), flag) && flag &&
-			  pbd::json::detail::boolean(square.find("chatOpen"), flag) && !flag && !square.find("quickLine"));
-		// The chat opens: the same preview keeps its time; the highlight starts on selected=, the directions move it, and Cross
-		// reports the highlighted Quick line.
+			  pbd::json::detail::boolean(square.find("chatOpen"), flag) && !flag);
+		// The chat opens: the same preview keeps its time; the directions and Cross report nothing, and R1 reports with the chat
+		// open and the revision it was pressed on.
 		f.control("\"type\":\"watch_ui\",\"revision\":2,\"bar\":true,\"firstTo\":2,\"unread\":0,\"preview\":{\"id\":\"m1\",\"author\":\"Velvet\",\"text\":\"close one\"},"
-				  "\"chat\":{\"quick\":[\"gg\",\"Nice!\"],\"selected\":0}");
-		check(ui::load(9).new_line_since_ms == since && ui::load(9).chat && ui::load(9).highlight == 0);
+				  "\"chat\":{}");
+		check(ui::load(9).new_line_since_ms == since && ui::load(9).chat);
 		f.input.read_pad(0);
-		f.input.read_pad(ui::pad::right);
-		check(ui::load(9).highlight == 1 && f.input.pad_events() == 2);
+		f.input.read_pad(ui::pad::right | ui::pad::cross);
+		check(f.input.pad_events() == 2);
 		f.input.read_pad(0);
-		f.input.read_pad(ui::pad::cross);
-		const auto cross = pad_file(3);
-		check(f.input.pad_events() == 3 && is(cross.find("button"), "cross") && pbd::json::detail::boolean(cross.find("chatOpen"), flag) && flag &&
-			  number32(cross.find("quickLine"), 1, 1, number) && number32(cross.find("uiRevision"), 2, 2, number));
+		f.input.read_pad(ui::pad::r1);
+		const auto tab = pad_file(3);
+		check(f.input.pad_events() == 3 && is(tab.find("button"), "r1") && pbd::json::detail::boolean(tab.find("chatOpen"), flag) && flag &&
+			  number32(tab.find("uiRevision"), 2, 2, number));
 		// A revision that does not grow refuses like any invalid control.
 		f.control("\"type\":\"watch_ui\",\"revision\":2,\"bar\":true,\"firstTo\":2,\"unread\":0", false);
 		check(f.input.reason() == "watch_ui_invalid" && !ui::load(9).shown);

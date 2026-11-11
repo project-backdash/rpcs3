@@ -321,6 +321,9 @@
     <ClCompile Include="Input\mm_joystick_handler.cpp">
       <Filter>Io\MMJoystick</Filter>
     </ClCompile>
+    <ClCompile Include="Input\wiimote_handler.cpp">
+      <Filter>Io</Filter>
+    </ClCompile>
     <ClCompile Include="Input\xinput_pad_handler.cpp">
       <Filter>Io\XInput</Filter>
     </ClCompile>
@@ -786,10 +789,19 @@
     <ClCompile Include="rpcs3qt\screenshot_manager_dialog.cpp">
       <Filter>Gui\screenshot manager</Filter>
     </ClCompile>
+    <ClCompile Include="rpcs3qt\avatar_selection_dialog.cpp">
+      <Filter>Gui\user accounts</Filter>
+    </ClCompile>
     <ClCompile Include="QTGeneratedFiles\Debug\moc_screenshot_manager_dialog.cpp">
       <Filter>Generated Files\Debug</Filter>
     </ClCompile>
+    <ClCompile Include="QTGeneratedFiles\Debug\moc_avatar_selection_dialog.cpp">
+      <Filter>Generated Files\Debug</Filter>
+    </ClCompile>
     <ClCompile Include="QTGeneratedFiles\Release\moc_screenshot_manager_dialog.cpp">
+      <Filter>Generated Files\Release</Filter>
+    </ClCompile>
+    <ClCompile Include="QTGeneratedFiles\Release\moc_avatar_selection_dialog.cpp">
       <Filter>Generated Files\Release</Filter>
     </ClCompile>
     <ClCompile Include="rpcs3qt\sound_effect_manager_dialog.cpp">
@@ -942,6 +954,9 @@
     <ClCompile Include="QTGeneratedFiles\Release\moc_log_viewer.cpp">
       <Filter>Generated Files\Release</Filter>
     </ClCompile>
+    <ClCompile Include="Input\hid_instance.cpp">
+      <Filter>Io</Filter>
+    </ClCompile>
     <ClCompile Include="Input\hid_pad_handler.cpp">
       <Filter>Io</Filter>
     </ClCompile>
@@ -997,6 +1012,15 @@
       <Filter>Generated Files\Debug</Filter>
     </ClCompile>
     <ClCompile Include="QTGeneratedFiles\Release\moc_camera_settings_dialog.cpp">
+      <Filter>Generated Files\Release</Filter>
+    </ClCompile>
+    <ClCompile Include="rpcs3qt\wiimote_settings_dialog.cpp">
+      <Filter>Gui\settings</Filter>
+    </ClCompile>
+    <ClCompile Include="QTGeneratedFiles\Debug\moc_wiimote_settings_dialog.cpp">
+      <Filter>Generated Files\Debug</Filter>
+    </ClCompile>
+    <ClCompile Include="QTGeneratedFiles\Release\moc_wiimote_settings_dialog.cpp">
       <Filter>Generated Files\Release</Filter>
     </ClCompile>
     <ClCompile Include="rpcs3qt\ps_move_tracker_dialog.cpp">
@@ -1056,16 +1080,34 @@
     <ClCompile Include="QTGeneratedFiles\Release\moc_ipc_settings_dialog.cpp">
       <Filter>Generated Files\Release</Filter>
     </ClCompile>
+    <ClCompile Include="rpcs3qt\sky_ipc_settings_dialog.cpp">
+      <Filter>Gui\ipc</Filter>
+    </ClCompile>
+    <ClCompile Include="QTGeneratedFiles\Debug\moc_sky_ipc_settings_dialog.cpp">
+      <Filter>Generated Files\Debug</Filter>
+    </ClCompile>
+    <ClCompile Include="QTGeneratedFiles\Release\moc_sky_ipc_settings_dialog.cpp">
+      <Filter>Generated Files\Release</Filter>
+    </ClCompile>
     <ClCompile Include="rpcs3qt\uuid.cpp">
       <Filter>Gui\utils</Filter>
     </ClCompile>
     <ClCompile Include="rpcs3qt\pad_motion_settings_dialog.cpp">
       <Filter>Gui\settings</Filter>
     </ClCompile>
+    <ClCompile Include="rpcs3qt\pad_skateboard_settings_dialog.cpp">
+      <Filter>Gui\settings</Filter>
+    </ClCompile>
     <ClCompile Include="QTGeneratedFiles\Debug\moc_pad_motion_settings_dialog.cpp">
       <Filter>Generated Files\Debug</Filter>
     </ClCompile>
+    <ClCompile Include="QTGeneratedFiles\Debug\moc_pad_skateboard_settings_dialog.cpp">
+      <Filter>Generated Files\Debug</Filter>
+    </ClCompile>
     <ClCompile Include="QTGeneratedFiles\Release\moc_pad_motion_settings_dialog.cpp">
+      <Filter>Generated Files\Release</Filter>
+    </ClCompile>
+    <ClCompile Include="QTGeneratedFiles\Release\moc_pad_skateboard_settings_dialog.cpp">
       <Filter>Generated Files\Release</Filter>
     </ClCompile>
     <ClCompile Include="Input\sdl_pad_handler.cpp">
@@ -1263,6 +1305,9 @@
     <ClCompile Include="Input\ps_move_tracker.cpp">
       <Filter>Io\Move</Filter>
     </ClCompile>
+    <ClCompile Include="Input\blob_detector.cpp">
+      <Filter>Io\Move</Filter>
+    </ClCompile>
     <ClCompile Include="Input\ps_move_config.cpp">
       <Filter>Io\Move</Filter>
     </ClCompile>
@@ -1351,6 +1396,12 @@
   <ItemGroup>
     <ClInclude Include="Input\ds4_pad_handler.h">
       <Filter>Io\DS4</Filter>
+    </ClInclude>
+    <ClInclude Include="Input\wiimote_handler.h">
+      <Filter>Io</Filter>
+    </ClInclude>
+    <ClInclude Include="Input\wiimote_types.h">
+      <Filter>Io</Filter>
     </ClInclude>
     <ClInclude Include="Input\xinput_pad_handler.h">
       <Filter>Io\XInput</Filter>
@@ -1487,6 +1538,9 @@
     <ClInclude Include="rpcs3qt\progress_dialog.h">
       <Filter>Gui\misc dialogs</Filter>
     </ClInclude>
+    <ClInclude Include="Input\hid_instance.h">
+      <Filter>Io</Filter>
+    </ClInclude>
     <ClInclude Include="Input\hid_pad_handler.h">
       <Filter>Io</Filter>
     </ClInclude>
@@ -1502,6 +1556,9 @@
     <ClInclude Include="QTGeneratedFiles\ui_camera_settings_dialog.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
+    <ClInclude Include="QTGeneratedFiles\ui_wiimote_settings_dialog.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
     <ClInclude Include="QTGeneratedFiles\ui_ps_move_tracker_dialog.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
@@ -1512,6 +1569,9 @@
       <Filter>Gui\utils</Filter>
     </ClInclude>
     <ClInclude Include="QTGeneratedFiles\ui_pad_motion_settings_dialog.h">
+      <Filter>Generated Files</Filter>
+    </ClInclude>
+    <ClInclude Include="QTGeneratedFiles\ui_pad_skateboard_settings_dialog.h">
       <Filter>Generated Files</Filter>
     </ClInclude>
     <ClInclude Include="rpcs3qt\pad_device_info.h">
@@ -1563,6 +1623,9 @@
       <Filter>Io\Move</Filter>
     </ClInclude>
     <ClInclude Include="Input\ps_move_tracker.h">
+      <Filter>Io\Move</Filter>
+    </ClInclude>
+    <ClInclude Include="Input\blob_detector.h">
       <Filter>Io\Move</Filter>
     </ClInclude>
     <ClInclude Include="Input\ps_move_config.h">
@@ -1801,6 +1864,9 @@
     <CustomBuild Include="rpcs3qt\screenshot_manager_dialog.h">
       <Filter>Gui\screenshot manager</Filter>
     </CustomBuild>
+    <CustomBuild Include="rpcs3qt\avatar_selection_dialog.h">
+      <Filter>Gui\user accounts</Filter>
+    </CustomBuild>
     <CustomBuild Include="rpcs3qt\screenshot_preview.h">
       <Filter>Gui\screenshot manager</Filter>
     </CustomBuild>
@@ -1876,7 +1942,13 @@
     <CustomBuild Include="rpcs3qt\camera_settings_dialog.ui">
       <Filter>Form Files</Filter>
     </CustomBuild>
+    <CustomBuild Include="rpcs3qt\wiimote_settings_dialog.ui">
+      <Filter>Form Files</Filter>
+    </CustomBuild>
     <CustomBuild Include="rpcs3qt\camera_settings_dialog.h">
+      <Filter>Gui\settings</Filter>
+    </CustomBuild>
+    <CustomBuild Include="rpcs3qt\wiimote_settings_dialog.h">
       <Filter>Gui\settings</Filter>
     </CustomBuild>
     <CustomBuild Include="rpcs3qt\ps_move_tracker_dialog.ui">
@@ -1900,10 +1972,19 @@
     <CustomBuild Include="rpcs3qt\ipc_settings_dialog.h">
       <Filter>Gui\ipc</Filter>
     </CustomBuild>
+    <CustomBuild Include="rpcs3qt\sky_ipc_settings_dialog.h">
+      <Filter>Gui\ipc</Filter>
+    </CustomBuild>
     <CustomBuild Include="rpcs3qt\pad_motion_settings_dialog.h">
       <Filter>Gui\settings</Filter>
     </CustomBuild>
+    <CustomBuild Include="rpcs3qt\pad_skateboard_settings_dialog.h">
+      <Filter>Gui\settings</Filter>
+    </CustomBuild>
     <CustomBuild Include="rpcs3qt\pad_motion_settings_dialog.ui">
+      <Filter>Form Files</Filter>
+    </CustomBuild>
+    <CustomBuild Include="rpcs3qt\pad_skateboard_settings_dialog.ui">
       <Filter>Form Files</Filter>
     </CustomBuild>
     <CustomBuild Include="rpcs3qt\config_checker.h">
@@ -1993,6 +2074,9 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="rpcs3.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="rpcs3.manifest" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\bin\GuiConfigs\Classic (Bright).qss">
@@ -2132,6 +2216,15 @@
     </None>
     <None Include="..\.github\workflows\qt-ts.yml">
       <Filter>CI</Filter>
+    </None>
+    <None Include="..\bin\GuiConfigs\Old Steam by FlexBy.qss">
+      <Filter>StyleSheets</Filter>
+    </None>
+    <None Include="..\bin\GuiConfigs\Windows 11 (Dark Mode) by GustavoGraziano.qss">
+      <Filter>StyleSheets</Filter>
+    </None>
+    <None Include="..\bin\GuiConfigs\Windows 11 (Light Mode) by GustavoGraziano.qss">
+      <Filter>StyleSheets</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

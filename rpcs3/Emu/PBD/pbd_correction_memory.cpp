@@ -3,17 +3,13 @@
 
 bool pbd::rollback_session::tick_dispatch::apply_correction_undo()
 {
-	// Re-check a renderer-idle sample at the owned memory-write point. A submit that raced the
+	// Re-check the renderer's park at the owned memory-write point. A submit that raced the
 	// earlier sample is represented by the exact-withhold marker published for this restore.
-	if (data.correction.render.waited && data.correction.render.wait_ok && !data.correction.render.rsx_parked)
+	if (data.correction.render.waited && data.correction.render.wait_ok && !data.correction.render.rsx_parked &&
+		!pbd::replay_pacing::handshake_parked.load(std::memory_order_acquire))
 	{
-		if (const auto render = rsx::get_current_renderer(); render && render->ctrl &&
-															 !pbd::replay_pacing::handshake_parked.load(std::memory_order_acquire) &&
-															 (+render->ctrl->get) != ((+render->ctrl->put) & ~3u))
-		{
-			data.correction.render.safe_point_stale = true;
-			data.correction.render.safe_point_stale_total++;
-		}
+		data.correction.render.safe_point_stale = true;
+		data.correction.render.safe_point_stale_total++;
 	}
 	// Validate the whole window before writing; an earlier missing journal must never leave a partial rewind.
 	// Keep only the earliest preimage of each page, in the same final-write order as the full rewind.
@@ -87,10 +83,11 @@ void pbd::rollback_session::tick_dispatch::wait_correction_renderer()
 	pbd::replay_pacing::replay_completed.store(0, std::memory_order_relaxed);
 	if (const auto render = rsx::get_current_renderer(); render && render->ctrl)
 	{
-		const auto render_idle = [&]()
+		// Parked in the frame handshake is the renderer's only idle signal: GET is published when a command block is
+		// fetched, before its commands run, so GET == PUT can hold while the renderer is still drawing.
+		const auto render_idle = []()
 		{
-			return pbd::replay_pacing::handshake_parked.load(std::memory_order_acquire) != 0 ||
-			       (+render->ctrl->get) == ((+render->ctrl->put) & ~3u);
+			return pbd::replay_pacing::handshake_parked.load(std::memory_order_acquire) != 0;
 		};
 		if (data.correction.render.wait_ms && data.correction.withhold_exact && data.correction.replay_skip_draws)
 		{

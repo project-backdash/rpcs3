@@ -1,5 +1,5 @@
 #include "pbd_settings_devices.h"
-#include "Emu/System.h"
+#include "Emu/emu_callbacks.h"
 #include "Emu/system_config.h"
 #include "Emu/Audio/audio_device_enumerator.h"
 #include "util/logs.hpp"
@@ -54,7 +54,7 @@ namespace pbd::settings_devices
 		std::vector<pbd::settings_menu::option> out{{std::string(pbd::settings_menu::default_audio_output), "Windows default"}};
 		try
 		{
-			if (const auto& factory = Emu.GetCallbacks().get_audio_enumerator)
+			if (const auto& factory = g_emu_callbacks.get_audio_enumerator)
 			{
 				if (const auto enumerator = factory(static_cast<u64>(g_cfg.audio.renderer.get())))
 				{

@@ -127,7 +127,7 @@ namespace
 			check(input.prepare(9, 0x01000000, 0, 0x8000004d, identity().checkpoint, identity().emulator));
 		}
 		void packet(u32 serial, u32 game, u32 first, u32 boundary, u32 count = 2, bool corrupt = false, u32 raw_left = 0x40,
-			const std::array<u32, 2>& look_slots = {})
+			const std::array<u32, 2>& look_slots = {}, u32 segment = 1, u32 scene = 17, const std::array<std::uint8_t, 48>* first_facts = nullptr)
 		{
 			std::vector<std::uint8_t> bytes(header_bytes + count * applied_frame_bytes);
 			constexpr std::array<std::uint8_t, 8> magic{'P', 'B', 'D', 'S', 'P', 'C', '1', 0};
@@ -148,9 +148,9 @@ namespace
 				put(bytes, offset + 8, 0x20, 2);
 				put(bytes, offset + 10, look_slots[1], 1);
 				put(bytes, offset + 16, boundary + i, 4);
-				put(bytes, offset + 20, 1, 4);
+				put(bytes, offset + 20, segment, 4);
 				put(bytes, offset + 24, 0x8000004d + boundary + i, 4);
-				put(bytes, offset + 28, 17, 4);
+				put(bytes, offset + 28, scene, 4);
 				put(bytes, offset + 32, 7, 4);
 				put(bytes, offset + 40, 11, 8);
 				put(bytes, offset + 48, 22, 8);
@@ -158,6 +158,8 @@ namespace
 				put(bytes, offset + 64, 0x40, 2);
 				put(bytes, offset + 72, 0x20, 2);
 			}
+			if (first_facts)
+				std::copy(first_facts->begin(), first_facts->end(), bytes.begin() + header_bytes + 16);
 			auto hash = test_hash(bytes.data() + header_bytes, count * applied_frame_bytes);
 			if (corrupt)
 				hash[0] ^= 1;

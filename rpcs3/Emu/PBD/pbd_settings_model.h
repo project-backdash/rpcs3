@@ -148,6 +148,8 @@ namespace pbd::settings_menu
 
 	struct model
 	{
+		bool audio_muted = false;
+		std::uint64_t audio_revision = 0;
 		// What this session started with: the changes file holds only what differs from it.
 		values start;
 		// What is in effect now: a video row the player changed stays pending until the menu closes.
@@ -314,7 +316,7 @@ namespace pbd::settings_menu
 	inline std::string value_text(const model& m, row r)
 	{
 		if (r == row::volume)
-			return std::to_string(m.current.volume);
+			return std::to_string(m.current.volume) + (m.audio_muted ? " (Muted)" : "");
 		if (r == row::close)
 			return {};
 		const auto list = options(m, r);

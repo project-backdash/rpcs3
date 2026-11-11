@@ -15,7 +15,8 @@ namespace pbd::game_host
 		std::jthread window_thread, control_thread;
 		std::atomic<bool> has_focus{false}, visible{false}, closing{false};
 		std::atomic<int> width{160}, height{90};
-		std::atomic<double> refresh{60};
+		std::mutex refresh_mutex;
+		display_rate::sample refresh{60., "Windows monitor query has no successful result (default 60 Hz)"};
 		std::atomic<ULONGLONG> first_frame{0};
 		bool show_requested = false;
 		// The surface refresh (see refresh_surface): when it is due, when it last finished, and whether the window is shrunk
@@ -585,7 +586,13 @@ namespace pbd::game_host
 			if (GetMonitorInfoW(MonitorFromWindow(hosted ? render_window.load() : qt_window, MONITOR_DEFAULTTONEAREST),
 					reinterpret_cast<MONITORINFO*>(&monitor)) &&
 				EnumDisplaySettingsW(monitor.szDevice, ENUM_CURRENT_SETTINGS, &mode) && mode.dmDisplayFrequency > 1)
-				refresh.store(mode.dmDisplayFrequency);
+			{
+				const std::string source = "Windows EnumDisplaySettingsW, render-window monitor " +
+				                           QString::fromWCharArray(monitor.szDevice).toStdString() + " (last successful query)";
+				// Publish the rate and its origin together so a monitor move cannot mix two measurements in the log.
+				std::lock_guard lock(refresh_mutex);
+				refresh = {static_cast<double>(mode.dmDisplayFrequency), source};
+			}
 		}
 		void return_foreground(bool already_granted = false)
 		{
@@ -774,6 +781,14 @@ namespace pbd::game_host
 			if (value == 6)
 			{
 				recover(child);
+				return;
+			}
+			if (value == 8)
+			{
+				// The player's Esc while the launcher had the keyboard (its dropdown over the game): it reaches the game as
+				// the player's own Esc would, a press and a release of the key, so the game's menu opens as it always does.
+				post_key(WM_KEYDOWN, VK_ESCAPE, static_cast<LPARAM>(0x00010001), Qt::NoModifier);
+				post_key(WM_KEYUP, VK_ESCAPE, static_cast<LPARAM>(0xc0010001u), Qt::NoModifier);
 				return;
 			}
 			if (value == 2)

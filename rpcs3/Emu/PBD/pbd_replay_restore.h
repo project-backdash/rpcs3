@@ -59,8 +59,9 @@ namespace pbd::replay_restore
 		explicit generators(ppu_thread& owner);
 		// Read from a replay file's generator context; throws when a field is missing or out of range.
 		explicit generators(const pbd::json::json_value& value);
-		// Writes every part except the style table back to the guest, each write read back.
-		bool apply(ppu_thread& owner) const;
+		// Writes each simulation generator back and reads it back; paired watching retains this boot's ambient MT.
+		// The style table is checked separately after the stock producer runs.
+		bool apply(ppu_thread& owner, bool preserve_ambient = false) const;
 		// Whether the guest's style table already equals the saved one.
 		bool style_readback() const;
 	};

@@ -60,6 +60,11 @@ enum class pad_button : u8
 	mouse_button_6,
 	mouse_button_7,
 	mouse_button_8,
+
+	// Special "buttons" that map behaviour
+	mouse,
+	left_stick,
+	right_stick
 };
 
 u32 pad_button_offset(pad_button button);
@@ -542,6 +547,7 @@ struct Pad
 	std::array<AnalogStick, 4> m_sticks{};
 	std::array<AnalogSensor, 4> m_sensors{};
 	std::array<VibrateMotor, 2> m_vibrate_motors{};
+	std::array<u8, 2> m_angles{};
 
 	std::vector<ButtonExternal> m_buttons_external;
 	std::array<AnalogStickExternal, 4> m_sticks_external{};
@@ -564,6 +570,7 @@ struct Pad
 		, m_device_capability(device_capability)
 		, m_device_type(device_type)
 	{
+		clear_buffer();
 	}
 
 	void Init(u32 port_status, u32 device_capability, u32 device_type, u32 class_type, u32 class_profile, u16 vendor_id, u16 product_id, u8 pressure_intensity_percent)
@@ -598,4 +605,6 @@ struct Pad
 	{
 		return !!(m_port_status & CELL_PAD_STATUS_CONNECTED);
 	}
+
+	void clear_buffer();
 };

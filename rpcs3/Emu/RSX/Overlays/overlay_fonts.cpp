@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "overlay_fonts.h"
-#include "Emu/System.h"
+#include "Emu/emu_callbacks.h"
 #include "Emu/vfs_config.h"
 
 #ifndef _WIN32
@@ -110,7 +110,7 @@ namespace rsx
 			// Bundled overlay fonts must resolve even when the process starts from an isolated game profile.
 			result.lookup_font_dirs.push_back(fs::get_executable_dir() + "/fonts/");
 
-			const std::vector<std::string> font_dirs = Emu.GetCallbacks().get_font_dirs();
+			const std::vector<std::string> font_dirs = g_emu_callbacks.get_font_dirs();
 			result.lookup_font_dirs.insert(result.lookup_font_dirs.end(), font_dirs.begin(), font_dirs.end());
 			// Search dev_flash for the font too
 			result.lookup_font_dirs.push_back(g_cfg_vfs.get_dev_flash() + "data/font/");
@@ -131,6 +131,8 @@ namespace rsx
 #elif defined(_WIN32)
 				// Covers symbol blocks (e.g. Roman numerals) that plain Arial may be missing glyphs for.
 				result.font_names.emplace_back("tahoma.ttf");
+				// Covers symbol blocks (e.g. U+2600-26FF Miscellaneous Symbols) that Arial and Tahoma lack.
+				result.font_names.emplace_back("seguisym.ttf");
 #else
 				result.font_names.emplace_back("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"); // ubuntu
 				result.font_names.emplace_back("/usr/share/fonts/TTF/DejaVuSans.ttf");             // arch

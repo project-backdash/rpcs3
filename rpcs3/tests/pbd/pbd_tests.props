@@ -310,6 +310,9 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)owner_flags_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)practice_recording_guard_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)practice_wakeup_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>

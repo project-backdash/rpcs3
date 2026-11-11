@@ -57,7 +57,18 @@ namespace utils
 #ifdef ARCH_ARM64
 	bool has_neon();
 
+#if defined(ARM_FEATURE_LSE2)
+	inline constexpr bool has_lse2()
+	{
+		return true;
+	}
+#else
+	bool has_lse2();
+#endif
+
 	bool has_sha3();
+
+	bool has_sha512();
 
 	bool has_dotprod();
 
@@ -66,6 +77,8 @@ namespace utils
 	bool has_sve();
 
 	bool has_sve2();
+
+	bool has_sve2p2();
 
 	int sve_length();
 #endif

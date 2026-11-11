@@ -20,12 +20,15 @@ namespace pbd::game_host
 {
 	class window;
 }
-namespace pbd::clips { class controller; }
+namespace pbd::clips
+{
+	class controller;
+}
 namespace pbd::game_window
 {
 	class settings_menu;
 	struct hooks;
-}
+} // namespace pbd::game_window
 
 class gs_frame : public QWindow, public GSFrameBase
 {
@@ -73,7 +76,7 @@ public:
 	explicit gs_frame(QScreen* screen, const QRect& geometry, const QIcon& appIcon, std::shared_ptr<gui_settings> gui_settings, bool force_fullscreen);
 	~gs_frame();
 
-	video_renderer renderer() const { return m_renderer; };
+	video_renderer renderer() const override { return m_renderer; };
 	bool hosted_by_launcher() const;
 
 	void ignore_stop_events() { m_ignore_stop_events = true; }
@@ -107,6 +110,7 @@ public:
 
 protected:
 	video_renderer m_renderer;
+	Visibility m_startup_visibility = Visibility::Hidden;
 
 	void paintEvent(QPaintEvent* event) override;
 	void showEvent(QShowEvent* event) override;
@@ -124,7 +128,7 @@ protected:
 	void flip(draw_context_t context, bool skip_frame = false) override;
 	int client_width() override;
 	int client_height() override;
-	f64 client_display_rate() override;
+	pbd::display_rate::sample client_display_rate() override;
 	bool has_alpha() override;
 
 	bool event(QEvent* ev) override;

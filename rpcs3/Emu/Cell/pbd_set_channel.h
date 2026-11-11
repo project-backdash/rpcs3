@@ -352,6 +352,13 @@ namespace pbd::set_channel
 			return pbd::set_channel::shown_records(session, tally, rows, known_characters());
 		}
 
+		// Only table-backed ranks participate in display agreement; fixed ranks stay in the set identity.
+		std::array<std::optional<std::uint32_t>, 2> shown_ranks(const std::array<std::uint32_t, 2>& rows) const
+		{
+			return {session.left.ranks ? std::optional{shown_rank(session.left, rows[0])} : std::nullopt,
+				session.right.ranks ? std::optional{shown_rank(session.right, rows[1])} : std::nullopt};
+		}
+
 		// Resolve the actual picks at a shared boundary before profiles and replay starts read the scalar ranks.
 		void select_ranks(const std::array<std::uint32_t, 2>& rows)
 		{

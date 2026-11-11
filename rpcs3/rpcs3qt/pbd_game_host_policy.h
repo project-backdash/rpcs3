@@ -354,8 +354,15 @@ namespace pbd::game_host
 		return out;
 	}
 
+	struct audio_control
+	{
+		int volume = 0;
+		bool muted = false;
+		std::uint32_t revision = 0;
+	};
+
 	// Local window control has one bounded request, an exact token and no process-kill command.
-	inline int parse_control(std::string_view request, std::uint32_t token)
+	inline int parse_control(std::string_view request, std::uint32_t token, audio_control* audio = nullptr)
 	{
 		if (!token || request.size() > 127 || !request.starts_with("PBD1 ") || !request.ends_with('\n'))
 			return 0;
@@ -379,6 +386,30 @@ namespace pbd::game_host
 			return 5;
 		if (command == "recover")
 			return 6;
+		// 7 is the window's own full-screen toggle and never comes from the launcher.
+		if (command == "escape")
+			return 8;
+		if (command.starts_with("audio "))
+		{
+			const auto values = command.substr(6);
+			int volume = 0;
+			const auto number = std::from_chars(values.data(), values.data() + values.size(), volume);
+			if (number.ec != std::errc{} || volume < 0 || volume > 100 || number.ptr == values.data() + values.size() ||
+				std::string_view(values.data(), number.ptr) != std::to_string(volume))
+				return 0;
+			const std::string_view tail(number.ptr, values.data() + values.size());
+			if (!tail.starts_with(" 0 ") && !tail.starts_with(" 1 "))
+				return 0;
+			const auto revision_text = tail.substr(3);
+			std::uint32_t revision = 0;
+			const auto version = std::from_chars(revision_text.data(), revision_text.data() + revision_text.size(), revision);
+			if (version.ec != std::errc{} || version.ptr != revision_text.data() + revision_text.size() || !revision ||
+				revision_text != std::to_string(revision))
+				return 0;
+			if (audio)
+				*audio = {volume, tail[1] == '1', revision};
+			return 9;
+		}
 		return 0;
 	}
 } // namespace pbd::game_host

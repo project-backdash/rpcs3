@@ -1,8 +1,24 @@
 #include "pbd_test.h"
 
 #include "Emu/Cell/pbd_game_profile.h"
+#include "Emu/PBD/pbd_player_plates.h"
 
 using pbd::test::check;
+
+PBD_TEST(PbdGameProfile, CharacterRanksJoinTheRecordAgreementWithoutChangingFixedPicks)
+{
+	using namespace pbd::game_profile;
+	const std::array<std::optional<record>, 2> records{record{4, 1}, record{}};
+	const std::array<std::optional<u32>, 2> ranks{19, 0};
+	check(profiles_word(records, {}) == records_word(records));
+	check(profiles_word(records, ranks) != records_word(records));
+	check(profiles_word(records, ranks) != profiles_word(records, {20, 0}));
+	check(profiles_word(records, ranks) != profiles_word(records, {0, 19}));
+	check(profiles_word(records, {0, std::nullopt}) != profiles_word(records, {std::nullopt, 0}));
+	check(agreed_ranks(ranks, true) == ranks);
+	check(agreed_ranks(ranks, false) == std::array<std::optional<u32>, 2>{0, 0});
+	check(agreed_ranks({19, std::nullopt}, false) == std::array<std::optional<u32>, 2>{0, std::nullopt});
+}
 
 PBD_TEST(PbdGameProfile, TheRecordsAreWhereTheGameReadsThem)
 {
@@ -93,4 +109,29 @@ PBD_TEST(PbdGameProfile, ThePlayerDataNumbersHoldFromTheVsScreenToTheFightsEnd)
 		check(!records_may_change(scene));
 	for (const u32 scene : {0u, 1u, 2u, 3u, 8u, 9u, 10u, 13u, 14u, 15u})
 		check(records_may_change(scene));
+}
+
+PBD_TEST(PbdGameProfile, FriendPlatesUseTheSelectedCharacterAndAgreeOnBothNames)
+{
+	using namespace pbd::player_plates;
+	const auto parsed = parse(R"({"schema":"pbd-player-plates-1","left":{"name":"Own","ranks":[{"rows":[12,13],"rank":19}]},"right":{"name":"Peer","ranks":[]}})");
+	check(parsed);
+	const auto shown = selected(*parsed, {13, 32});
+	check(shown.names == std::array<std::string, 2>{"Own", "Peer"});
+	check(shown.ranks == std::array<std::uint32_t, 2>{19, 0});
+	check(selected(*parsed, {32, 12}).ranks[0] == 0);
+	auto other = shown;
+	other.names[1] = "Different";
+	check(word(shown) != word(other));
+	other = shown;
+	other.ranks[0] = 20;
+	check(word(shown) != word(other));
+	check(agreed(shown, false) == plan{});
+	check(agreed(shown, true) == shown);
+	check(replay_names(shown) == shown.names);
+	check(replay_names(plan{}) == std::array<std::string, 2>{"Player 1", "Player 2"});
+	const auto malformed = parse(R"({"schema":"pbd-player-plates-1","left":{"name":"<bad>","ranks":[{"rows":[85],"rank":19}]},"right":{"name":"Peer"}})");
+	check(malformed && malformed->ignored.size() == 2);
+	check(selected(*malformed, {12, 32}).names[0].empty());
+	check(!parse(R"({"schema":"other"})"));
 }

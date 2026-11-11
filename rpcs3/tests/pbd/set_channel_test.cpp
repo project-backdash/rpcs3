@@ -1372,6 +1372,31 @@ PBD_TEST(PbdSetChannel, InGameRecordsFollowTheCharacterPlayed)
 	check(shown[0] == game_record{5, 3} && shown[1] == game_record{2, 0});
 }
 
+// Lobby profile tables use absolute sides and all costume rows. A continued set supplies ranks only, so the held table
+// counts the finished set once; an unknown opponent record stays unknown even after that opponent has played a game.
+PBD_TEST(PbdSetChannel, LobbyProfilesKeepKnownAndUnknownRecordsThroughContinuation)
+{
+	using namespace pbd::set_channel;
+	auto text = changed(in_game_manifest_text, R"("name":"Left",)",
+		R"("name":"Left","records":[{"rows":[7,8],"wins":7,"losses":2},{"rows":[12,13],"wins":41,"losses":30}],)");
+	const auto parsed = parse_manifest(text, supported);
+	check(parsed.value && parsed.value->ignored.empty());
+	const record_directory directory("lobby-profile-records");
+	channel output(directory.path, *parsed.value);
+	check(output.shown_records({13, 32}) == std::array<std::optional<game_record>, 2>{game_record{41, 30}, std::nullopt});
+	const auto continuing = parse_command(envelope_in_game(R"("type":"continue_game","gameNumber":2,"score":{"left":1,"right":0})", 1), output.identity(), 1, 1);
+	check(continuing.value && output.continue_naturally(*continuing.value, decided_game{{13, 32}, side::left}));
+	check(output.shown_records({12, 33})[0] == game_record{42, 30});
+	check(output.shown_records({8, 32})[0] == game_record{7, 2});
+	const auto deciding = parse_command(envelope_in_game(R"("type":"continue_game","gameNumber":3,"score":{"left":1,"right":1})", 2), output.identity(), 2, 2);
+	check(deciding.value && output.continue_naturally(*deciding.value, decided_game{{8, 32}, side::right}));
+	const auto next = parse_command(envelope_in_game(next_set_fields + R"(,"left":{"ranks":[{"rows":[12,13],"rank":19}]})", 3), output.identity(), 3, 3);
+	check(next.value && output.next_set(*next.value, decided_game{{8, 32}, side::right}));
+	check(output.shown_records({13, 32}) == std::array<std::optional<game_record>, 2>{game_record{42, 30}, std::nullopt});
+	check(output.shown_records({7, 33}) == std::array<std::optional<game_record>, 2>{game_record{7, 4}, std::nullopt});
+	check(output.identity().left.ranks && output.identity().left.ranks->front().rank == 19);
+}
+
 namespace
 {
 	// Sets a variable for this process, or removes it when value is null.
@@ -1583,4 +1608,16 @@ PBD_TEST(PbdSetChannel, CharacterRankTablesFollowPicksAndReplaceAtNextSet)
 	std::filesystem::remove_all(directory);
 	const auto legacy = parse_manifest(sample_document, supported);
 	check(legacy.value && !legacy.value->rank_profiles && !legacy.value->left.ranks && shown_rank(legacy.value->left, 12) == 0);
+}
+
+PBD_TEST(PbdSetChannel, InvalidRankTablesAreUnknownAndNamedWithoutRefusingTheSet)
+{
+	using namespace pbd::set_channel;
+	const auto document = changed(sample_document, R"("name":"Left")", R"("name":"Left","ranks":[{"rows":[12,12],"rank":19}])");
+	const auto parsed = parse_manifest(document, supported);
+	check(parsed.value && !parsed.value->left.ranks);
+	check(parsed.value->ignored == std::vector<std::string>{"left.ranks"});
+	const auto next = parse_command(envelope(R"("type":"next_set","nextSetId":"set-2","matchId":"match-2","gameNumber":1,"score":{"left":0,"right":0},"rules":{"firstToGames":2,"roundsPerGame":3},"left":{"ranks":[{"rows":[85],"rank":19}]})"), *parsed.value, 1, 1);
+	check(next.value && !next.value->rank_tables[0]);
+	check(next.value->ignored == std::vector<std::string>{"next_set.left.ranks"});
 }

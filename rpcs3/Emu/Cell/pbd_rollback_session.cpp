@@ -431,6 +431,11 @@ void pbd::rollback_session::configure_live_recording()
 			(s.replay.session_replay && !checkpoint_source) || s.practice.rewind || pbd_direct_match::requested(),
 			s.session.seed, std::move(players), checkpoint_source))
 		pbd_session_log.warning("Replay recording unavailable; gameplay continues.");
+	if (s.lobby.friend_plates)
+		s.match_replay.live.pbd_names([&s]
+			{
+				return pbd::player_plates::replay_names(s.lobby.friend_shown);
+			});
 	// Each game's start records the PLAYER DATA numbers a lobby set's bars show (boundary_call::write_game_profiles).
 	s.match_replay.live.pbd_records([&s]
 		{

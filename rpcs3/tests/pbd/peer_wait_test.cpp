@@ -132,6 +132,96 @@ namespace pbd::test
 		}
 #endif
 
+		// Both timestamps use the receiver's clock. Sender clock epochs never cross the wire into this estimate.
+		double timing_sample(u32 own, u32 remote, u64 now_us, u64 arrival_us, u32 rtt_us, s32 remote_adv_milli)
+		{
+			auto& data = *runtime.m_storage;
+			data.peer.input_delay = 3;
+			data.peer.rtt.ring_count = 8;
+			std::fill_n(data.peer.rtt.ring.begin(), 8, rtt_us);
+			data.peer.sync = {};
+			data.peer.sync.remote_boundary = remote;
+			data.peer.sync.remote_boundary_us = arrival_us;
+			data.peer.sync.remote_adv_valid = true;
+			data.peer.sync.remote_adv_milli = remote_adv_milli;
+			data.replay.vblank = false;
+			const auto now = session_clock::time_point(std::chrono::microseconds(now_us));
+			auto stall_until = now;
+			double one_way = -1, error = 0;
+			rollback_session::boundary_call call{runtime, data, *owner, pc};
+			rollback_session::tick_dispatch tick{call, own, data.sample_at(0)};
+			// Keep the controller inactive while checking the estimator.
+			data.peer.sync.evaluated = own;
+			tick.sync_timing(now, false, one_way, stall_until, error);
+			check(one_way == rtt_us / 2.0 && stall_until == now);
+			return error;
+		}
+
+		void timing_at_player_pings()
+		{
+			constexpr u32 own = 1500;
+			constexpr u64 clock_a = 10'000'000, clock_b = 90'000'000;
+			for (u32 rtt = 20'000; rtt <= 260'000; rtt += 1'000)
+				for (const u32 period : {frame_period_us, 2 * frame_period_us})
+					for (const s32 lead : {-9, 0, 9})
+					{
+						const u32 transit_ticks = (rtt / 2 + period - 1) / period;
+						const u64 age = transit_ticks * period - rtt / 2;
+						const u32 other = static_cast<u32>(static_cast<s32>(own) - lead);
+						// At half rate the 60 Hz extrapolation adds one excess tick per transit tick to BOTH estimates.
+						const double bias = period == frame_period_us ? 0 : -static_cast<double>(transit_ticks);
+						const s32 remote_milli = static_cast<s32>((-lead + bias) * 1000);
+						const double error_a = timing_sample(own, other - transit_ticks, clock_a, clock_a - age, rtt, remote_milli);
+						check(std::fabs(runtime.m_storage->peer.sync.adv_ewma - (lead + bias)) < 0.000001);
+						const double error_b = timing_sample(other, own - transit_ticks, clock_b, clock_b - age, rtt,
+							static_cast<s32>((lead + bias) * 1000));
+						check(std::fabs(error_a - lead) < 0.000001 && std::fabs(error_b + lead) < 0.000001,
+							"Symmetric transit and equal slower rates cancel from the two-sided error");
+					}
+		}
+
+		void timing_report_catchup()
+		{
+			// Two 30 Hz clocks separated by nine ticks, with 110 ms transit and 23.336 ms since arrival.
+			constexpr u64 clock_a = 10'000'000, clock_b = 90'000'000;
+			check(std::fabs(timing_sample(1500, 1505, clock_a, clock_a - 23'336, 220'000, 5'000) + 9) < 0.000001);
+			check(std::fabs(runtime.m_storage->peer.sync.adv_ewma + 13) < 0.000001);
+			check(std::fabs(timing_sample(1509, 1496, clock_b, clock_b - 23'336, 220'000, -13'000) - 9) < 0.000001);
+			check(std::fabs(runtime.m_storage->peer.sync.adv_ewma - 5) < 0.000001);
+
+			auto& data = *runtime.m_storage;
+			// The recorded filtered values at boundary 1680 give -9.0885 ticks of symmetric error.
+			data.peer.sync.adv_ewma = -13.017;
+			data.peer.sync.remote_adv_milli = 5160;
+			const double error = (data.peer.sync.adv_ewma - data.peer.sync.remote_adv_milli / 1000.0) / 2;
+			check(std::fabs(error + 9.0885) < 0.000001);
+			data.replay.vblank = true;
+			// A grant changes no tick index, draw-withholding state or scheduled-vblank phase.
+			struct pacing_counts
+			{
+				u32 credits = replay_pacing::credits.load();
+				u64 granted = replay_pacing::granted.load();
+				~pacing_counts()
+				{
+					replay_pacing::credits.store(credits);
+					replay_pacing::granted.store(granted);
+				}
+			} before;
+			const auto scheduled = replay_pacing::scheduled.load();
+			const auto draws = replay_pacing::skip_draws.load();
+			const auto slew = replay_pacing::slew_us.load();
+			rollback_session::boundary_call call{runtime, data, *owner, pc};
+			for (u32 index = 1441; index < 2081; ++index)
+			{
+				rollback_session::tick_dispatch tick{call, index, data.sample_at(0)};
+				tick.adjust_peer_timeline(true, error, false);
+			}
+			check(data.peer.sync.catchups == 40 && data.peer.sync.slews == 0);
+			check(replay_pacing::credits.load() == before.credits + 40 && replay_pacing::granted.load() == before.granted + 40);
+			check(replay_pacing::scheduled.load() == scheduled && replay_pacing::skip_draws.load() == draws);
+			check(replay_pacing::slew_us.load() == slew && data.next_index == 0);
+		}
+
 		void end_input_wait()
 		{
 			auto timeout = deadline();
@@ -605,4 +695,16 @@ PBD_TEST(PbdPeerWait, ShutdownPreservesNeutralEndDecisions)
 		if (value == control::waiting)
 			pbd::test::check(pbd::set_channel::detail::is(test.read(1).find("action"), "peer_wait"));
 	}
+}
+
+PBD_TEST(PbdPeerTiming, BothClocksAgreeAcrossPlayerPings)
+{
+	lobby_test_state::sample_document test(451);
+	pbd::test::peer_wait_fixture(test.directory).timing_at_player_pings();
+}
+
+PBD_TEST(PbdPeerTiming, HalfRateReportRemainsBehindAndGrantsVblanks)
+{
+	lobby_test_state::sample_document test(452);
+	pbd::test::peer_wait_fixture(test.directory).timing_report_catchup();
 }

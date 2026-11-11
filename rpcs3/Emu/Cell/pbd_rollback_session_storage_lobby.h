@@ -5,6 +5,7 @@
 
 #include "pbd_rollback_session_common.h"
 #include "../PBD/pbd_costume_select.h"
+#include "../PBD/pbd_player_plates.h"
 
 namespace pbd::session_runtime
 {
@@ -15,6 +16,8 @@ namespace pbd::session_runtime
 		std::optional<bool> match_spectator_from_start;
 		bool local_standby_done = false;
 		std::unique_ptr<pbd::set_channel::channel> channel;
+		std::optional<pbd::player_plates::document> friend_plates;
+		pbd::player_plates::plan friend_plan, friend_shown;
 		std::unique_ptr<pbd::lobby_set::driver> set;
 		std::unique_ptr<pbd::hidden_selection::driver> selection;
 		pbd::rematch::native_load rematch;
@@ -49,6 +52,7 @@ namespace pbd::session_runtime
 		// announced the same at the last barrier that could change them. An invalid record in a command is logged once, apart
 		// from the other display fields.
 		std::array<std::optional<pbd::game_profile::record>, 2> records_plan, records_shown;
+		std::array<std::optional<u32>, 2> ranks_plan, ranks_shown;
 		pbd::custom_wire::pair looks_shown;
 		std::array<u32, 2> look_slots{};
 		u32 look_slot_own = 0;

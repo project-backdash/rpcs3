@@ -101,6 +101,7 @@ set(PBD_TESTS
     ${CMAKE_CURRENT_LIST_DIR}/input_live_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/owner_flags_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_wakeup_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/practice_recording_guard_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_throw_escape_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_lesson_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_readiness_test.cpp

@@ -465,6 +465,22 @@ namespace pbd::replay_carry
 						throw decode_error::wrong_shape;
 					return actor_records{codec::hex_bytes<replay_memory::actor_records_bytes>(codec::field(node, "bytesHex"))};
 				});
+			// Optional at every game, unlike carried_fields: a file without it plays as it did before it existed.
+			out.camera = codec::optional<stage_camera>(root, {"stageCamera", "pbd-stage-camera-1"},
+				[](const json& node)
+				{
+					if (node.fields.size() != 4)
+						throw decode_error::wrong_shape;
+					return stage_camera{codec::hex_bytes<replay_memory::camera_block_bytes>(codec::field(node, "bytesHex")),
+						codec::integer(codec::field(node, "koCameraVariant")), codec::integer(codec::field(node, "fadeWord"))};
+				});
+			out.effects = codec::optional<effect_controller>(root, {"effectController", "pbd-effect-controller-1"},
+				[](const json& node)
+				{
+					if (node.fields.size() != 2)
+						throw decode_error::wrong_shape;
+					return effect_controller{codec::hex_bytes<replay_memory::effect_controller_bytes>(codec::field(node, "bytesHex"))};
+				});
 			out.descriptor_derived_flag =
 				codec::optional<std::uint8_t>(root, {"descriptorDerivedFlag", "dr-descriptor-derived-flag-draft-1"},
 					[](const json& node)
@@ -496,6 +512,14 @@ namespace pbd::replay_carry
 		if (saved.records)
 			codec::add(out, {"actorRecords", "pbd-actor-records-1"},
 				json::object({{"bytesHex", json::string(pbd::json::lower_hex(saved.records->bytes))}}));
+		if (saved.camera)
+			codec::add(out, {"stageCamera", "pbd-stage-camera-1"},
+				json::object({{"bytesHex", json::string(pbd::json::lower_hex(saved.camera->bytes))},
+					{"koCameraVariant", json::number(saved.camera->ko_variant)},
+					{"fadeWord", json::number(saved.camera->fade_word)}}));
+		if (saved.effects)
+			codec::add(out, {"effectController", "pbd-effect-controller-1"},
+				json::object({{"bytesHex", json::string(pbd::json::lower_hex(saved.effects->bytes))}}));
 		if (saved.planar)
 			codec::add(out, {"actorPlanarTerms", "dr-actor-planar-terms-draft-1"},
 				json::object({{"s32Bits", codec::encode_matrix(saved.planar->bits)}}));

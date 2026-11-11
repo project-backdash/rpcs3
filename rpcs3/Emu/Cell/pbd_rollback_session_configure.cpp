@@ -20,6 +20,21 @@ void pbd::rollback_session::configure_watch_channels()
 		configure_spectator(*root);
 	if (const auto root = pbd::set_channel::requested_directory())
 		configure_lobby_channel(*root);
+	else if (const auto path = pbd::env::path("PBD_PLAYER_PLATES"); !path.empty())
+	{
+		std::error_code error;
+		const auto size = std::filesystem::file_size(path, error);
+		if (path.is_absolute() && !error && size <= pbd::set_channel::max_file_bytes)
+		{
+			const auto text = pbd::json::detail::read_text(path);
+			if (text.value)
+				m_storage->lobby.friend_plates = pbd::player_plates::parse(*text.value);
+		}
+		if (!m_storage->lobby.friend_plates)
+			pbd_session_log.warning("Friend player plates read as left out (invalid).");
+		else if (!m_storage->lobby.friend_plates->ignored.empty())
+			pbd_session_log.warning("Friend player plates: %s read as left out (invalid).", fmt::merge(m_storage->lobby.friend_plates->ignored, ", "));
+	}
 }
 
 void pbd::rollback_session::configure_lobby_channel(const std::filesystem::path& root, bool late_bound)
@@ -201,7 +216,11 @@ void pbd::rollback_session::write_undo_policy()
 		rsx_get = render->ctrl->get.load();
 		rsx_put = render->ctrl->put.load();
 		rsx_get_ea = render->iomap_table.get_addr(rsx_get);
-		rsx_label = render->label_addr;
+		render->for_each_context([&](rsx::context* ctx)
+			{
+				if (ctx->fifo.ctrl == render->ctrl)
+					rsx_label = ctx->fw.label_addr;
+			});
 		rsx_dma = render->dma_address;
 	}
 	if (const auto gcm = g_fxo->try_get<gcm_config>())

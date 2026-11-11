@@ -7,6 +7,7 @@
 #include "Emu/Cell/pbd_direct_match.h"
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/System.h"
+#include "Emu/system_config.h"
 #include "Emu/pbd_session_mode.h"
 #include "Emu/PBD/pbd_costume_panel.h"
 

@@ -18,6 +18,8 @@
 
 #include "rpcs3qt/gui_application.h"
 #include "rpcs3qt/fatal_error_dialog.h"
+#include "rpcs3qt/pbd_qt_shell.h"
+#include "Emu/PBD/pbd_env.h"
 #include "rpcs3qt/curl_handle.h"
 #include "rpcs3qt/main_window.h"
 #include "rpcs3qt/uuid.h"
@@ -247,6 +249,12 @@ std::set<std::string> get_one_drive_paths()
 
 	static auto show_report = [is_html, include_help_text](std::string_view text)
 	{
+#ifdef _WIN32
+		// Fatal reporting can use a fresh plain QApplication in a separate process, before gui_application exists.
+		std::unique_ptr<pbd::game_host::qt_shell_filter> shell;
+		if (pbd::game_host::qt_shell_required(pbd::env::find("PBD_GAME_HOST"), pbd::env::find("PBD_QUIET_WINDOW")))
+			shell = std::make_unique<pbd::game_host::qt_shell_filter>(*QCoreApplication::instance());
+#endif
 		fatal_error_dialog dlg(text, is_html, include_help_text);
 		dlg.exec();
 	};
@@ -394,6 +402,7 @@ constexpr auto arg_decrypt        = "decrypt";
 // Arguments that can be used with a gui application
 constexpr auto arg_no_gui         = "no-gui";
 constexpr auto arg_fullscreen     = "fullscreen"; // only useful with no-gui
+constexpr auto arg_big_picture    = "big-picture";
 constexpr auto arg_gs_screen      = "game-screen";
 constexpr auto arg_high_dpi       = "hidpi";
 constexpr auto arg_rounding       = "dpi-rounding";
@@ -906,6 +915,7 @@ int run_rpcs3(int argc, char** argv)
 	parser.addOption(QCommandLineOption(arg_headless, "Run RPCS3 in headless mode."));
 	parser.addOption(QCommandLineOption(arg_no_gui, "Run RPCS3 without its GUI."));
 	parser.addOption(QCommandLineOption(arg_fullscreen, "Run games in fullscreen mode. Only used when no-gui is set."));
+	parser.addOption(QCommandLineOption(arg_big_picture, "Run RPCS3 in Big Picture Mode on startup."));
 	const QCommandLineOption screen_option(arg_gs_screen, "Forces the emulator to use the specified screen for the game window.", "index", "");
 	parser.addOption(screen_option);
 	parser.addOption(QCommandLineOption(arg_high_dpi, "Enables Qt High Dpi Scaling.", "enabled", "1"));
@@ -1343,7 +1353,8 @@ int run_rpcs3(int argc, char** argv)
 	}
 	else if (const QStringList args = parser.positionalArguments(); (!args.isEmpty() || !emu_argv.empty()) && !is_updating && !parser.isSet(arg_installfw) && !parser.isSet(arg_installpkg))
 	{
-		std::string spath = (args.isEmpty() ? emu_argv[0] : ::at32(args, 0).toStdString());
+		u32 emu_argv_pos = 0;
+		std::string spath = (args.isEmpty() ? emu_argv[emu_argv_pos++] : ::at32(args, 0).toStdString());
 
 		if (spath.starts_with(Emulator::vfs_boot_prefix))
 		{
@@ -1380,7 +1391,7 @@ int run_rpcs3(int argc, char** argv)
 		}
 
 		// Additional arguments passed after "--"
-		if (emu_argv.size() > (args.isEmpty() ? 1 : 0))
+		if (emu_argv_pos < emu_argv.size())
 		{
 			// Reserve empty string for executable path
 			if (rpcs3_argv.empty())
@@ -1390,12 +1401,12 @@ int run_rpcs3(int argc, char** argv)
 
 			rpcs3_argv.emplace_back();
 
-			for (usz i = args.isEmpty() ? 1 : 0; i != emu_argv.size(); i++)
+			for (; emu_argv_pos < emu_argv.size(); emu_argv_pos++)
 			{
-				const std::string arg = args[i].toStdString();
+				const std::string arg = emu_argv[emu_argv_pos];
 				rpcs3_argv.emplace_back(arg);
 
-				sys_log.success("Optional command line argument %d: %s", i, arg);
+				sys_log.success("Optional command line argument %d: %s", emu_argv_pos, arg);
 			}
 		}
 
@@ -1466,7 +1477,7 @@ int run_rpcs3(int argc, char** argv)
 		Emu.Quit(true);
 		return 0;
 	}
-	else if (!g_headless && g_cfg.misc.start_big_picture_mode)
+	else if (g_cfg.misc.start_big_picture_mode || parser.isSet(arg_big_picture))
 	{
 		Emu.CallFromMainThread([]()
 		{
