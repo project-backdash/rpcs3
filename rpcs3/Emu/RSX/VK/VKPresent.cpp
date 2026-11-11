@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "VKGSRender.h"
 #include "Emu/RSX/pbd_frame_presentation.h"
+#include "Emu/RSX/pbd_present_pacing.h"
 #include "Emu/CPU/pbd_ordinary_metrics.h"
 #include "vkutils/buffer_object.h"
 #include "vkutils/memory.h"
@@ -1574,6 +1575,27 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 	if (target_layout != present_layout)
 	{
 		vk::change_image_layout(*m_current_command_buffer, target_image, target_layout, present_layout, subresource_range);
+	}
+
+	// A frame early flush handed over waits for its slot on the game's rhythm (pbd_present_pacing.h); every 600 such frames
+	// the renderer reports where their time went (microseconds) and how evenly they left.
+	if (info.emu_flip && !info.skip_frame)
+	{
+		static ::pbd::present_pacing::cadence s_pbd_rhythm;
+		static ::pbd::present_pacing::stats s_pbd_pacing;
+		const u64 paced = s_pbd_pacing.paced;
+		::pbd::present_pacing::hold(s_pbd_rhythm, s_pbd_pacing);
+		if (s_pbd_pacing.paced != paced && s_pbd_pacing.paced % 600 == 0)
+		{
+			const auto& p = s_pbd_pacing;
+			const s32 period = static_cast<s32>(::pbd::present_pacing::period_us.load());
+			rsx_log.notice("PBD present pacing: %u frames, %u late, mean hold %u; flip written after vblank p10/50/90 %d/%d/%d; "
+				"to renderer p50/90 %d/%d; shown every p10/50/90 %d/%d/%d, %u of %u within 1 ms of %d",
+				p.paced, p.late, p.held_us / p.paced, p.after_vblank.percentile(10), p.after_vblank.percentile(50),
+				p.after_vblank.percentile(90), p.to_renderer.percentile(50), p.to_renderer.percentile(90),
+				p.intervals.percentile(10), p.intervals.percentile(50), p.intervals.percentile(90),
+				p.intervals.within(period - 1'000, period + 1'000), p.intervals.count(), period);
+		}
 	}
 
 	queue_swap_request();

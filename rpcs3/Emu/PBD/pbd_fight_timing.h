@@ -6,12 +6,20 @@
 #include <mutex>
 #include <optional>
 #include <string_view>
+#include <utility>
 
 namespace pbd::fight_timing
 {
 	struct result
 	{
 		std::uint32_t fight_frames = 0, on_time_frames = 0;
+	};
+
+	// Why a game's frames could not be timed: a delivery without proof of its frame, a frame not on the screen, or a
+	// delivery older than the one before it.
+	struct gaps
+	{
+		std::uint32_t unproved = 0, hidden = 0, out_of_order = 0;
 	};
 
 	inline bool requested() noexcept
@@ -50,6 +58,7 @@ namespace pbd::fight_timing
 		std::map<std::uint32_t, frame> m_frames;
 		std::map<std::uint64_t, clock> m_clocks;
 		std::uint64_t m_epoch = 0, m_span = 0, m_ordinal = 0;
+		gaps m_gaps, m_last_gaps;
 		std::uint32_t m_current_boundary = ~std::uint32_t{0};
 		bool m_fighting = false, m_overflow = false;
 
@@ -109,6 +118,7 @@ namespace pbd::fight_timing
 			if (!proved || !visible || !now_ns)
 			{
 				value.unavailable = true;
+				(!proved ? m_gaps.unproved : m_gaps.hidden)++;
 				return;
 			}
 			if (value.seen)
@@ -126,6 +136,7 @@ namespace pbd::fight_timing
 			if (now_ns < previous.at || value.ordinal <= previous.ordinal)
 			{
 				value.unavailable = true;
+				m_gaps.out_of_order++;
 				return;
 			}
 			const auto due = previous.deadline + (value.ordinal - previous.ordinal) * period_ns;
@@ -152,7 +163,15 @@ namespace pbd::fight_timing
 			}
 			m_fighting = false;
 			m_overflow = false;
+			m_last_gaps = std::exchange(m_gaps, {});
 			return available && delivered && counts.fight_frames ? std::optional{counts} : std::nullopt;
+		}
+
+		/** The gaps counted up to the last take(): what kept a game without timing. */
+		gaps last_gaps()
+		{
+			std::lock_guard lock(m_mutex);
+			return m_last_gaps;
 		}
 	};
 	inline counter samples;

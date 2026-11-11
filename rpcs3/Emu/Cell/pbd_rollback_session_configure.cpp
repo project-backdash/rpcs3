@@ -56,7 +56,14 @@ void pbd::rollback_session::configure_lobby_channel(const std::filesystem::path&
 		},
 		pbd::emulator_identity::executable_sha256(), [epoch = s.generation](u32 first, u32 end)
 		{
-			return pbd::fight_timing::samples.take(epoch, first, end);
+			auto timing = pbd::fight_timing::samples.take(epoch, first, end);
+			const auto gaps = pbd::fight_timing::samples.last_gaps();
+			if (timing)
+				pbd_session_log.notice("Fight timing: %u of %u frames on time.", timing->on_time_frames, timing->fight_frames);
+			else
+				pbd_session_log.warning("Fight timing unavailable: %u deliveries without proof, %u not on screen, %u out of order.",
+					gaps.unproved, gaps.hidden, gaps.out_of_order);
+			return timing;
 		});
 	const bool own_left = s.lobby.channel->identity().local_side == pbd::set_channel::side::left;
 	if (!s.session.enabled || !s.peer.enabled || !s.peer.sync.enabled || !s.session.seed_set || !s.session.seed || !s.game_overlay.enabled ||

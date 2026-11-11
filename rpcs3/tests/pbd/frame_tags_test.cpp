@@ -2,6 +2,9 @@
 
 #include "Emu/RSX/pbd_frame_tags.h"
 #include "Emu/PBD/pbd_fight_timing.h"
+#include "Emu/RSX/pbd_present_pacing.h"
+
+#include <array>
 
 using pbd::test::check;
 
@@ -326,4 +329,52 @@ PBD_TEST(PbdFrameTags, Checks)
 	q.push(8, 100);
 	check(q.snapshot().faults == 1 && q.snapshot().pending == 0);
 	command_address_binding();
+}
+
+PBD_TEST(PbdFightTiming, AnUntimedGameSaysWhy)
+{
+	pbd::fight_timing::counter value;
+	constexpr auto period = pbd::fight_timing::counter::period_ns;
+	constexpr std::uint64_t start = 1'000'000'000;
+	for (unsigned frame = 0; frame < 5; ++frame)
+	{
+		value.forward(7, frame, true);
+		value.produced(7, frame);
+	}
+	value.delivered(7, 0, start, true, true, true);
+	value.delivered(7, 1, start + period, true, false, true);
+	value.delivered(7, 2, start + 2 * period, true, true, false);
+	value.delivered(7, 3, start - 1, true, true, true);
+	check(!value.take(7, 0, 5));
+	const auto gaps = value.last_gaps();
+	check(gaps.unproved == 1 && gaps.hidden == 1 && gaps.out_of_order == 1);
+}
+
+PBD_TEST(PbdPresentPacing, FramesLeaveOnASteadyGridThatFollowsThem)
+{
+	using pbd::present_pacing::cadence;
+	cadence rhythm;
+	constexpr std::uint32_t period = 16'683;
+	constexpr std::uint64_t far = ~std::uint64_t{0} / 2;
+	const std::array<std::uint64_t, 4> jitter{0, 3'000, 1'000, 2'000};
+	std::uint64_t base = 10'000'000, shown = 0, previous = 0;
+	for (unsigned frame = 0; frame < 120; ++frame, base += period)
+	{
+		const std::uint64_t ready = base + jitter[frame % jitter.size()];
+		shown = rhythm.target(ready, far, period);
+		check(shown >= ready, "a frame never leaves before it is ready");
+		if (frame >= 8)
+			check(shown - previous == period, "frames that vary by 3 ms still leave exactly one period apart");
+		previous = shown;
+	}
+	check(shown - (base - period) <= 3'000 + cadence::margin_us + 1'000, "the grid sits just after the slowest recent frames");
+
+	const std::uint64_t late = base + 9'000;
+	check(rhythm.target(late, far, period) == late, "a frame that missed its slot leaves at once");
+	base += period;
+	check(rhythm.target(base, base + 500, period) == base + 500, "and none is held past the latest time it may leave");
+
+	base += 50 * period;
+	const std::uint64_t after_pause = rhythm.target(base, far, period);
+	check(after_pause == base + cadence::margin_us, "after a pause the rhythm starts again at the next frame");
 }

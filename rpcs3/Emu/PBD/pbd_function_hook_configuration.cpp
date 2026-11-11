@@ -204,7 +204,10 @@ namespace pbd::fn_hook::detail
 		}
 		// A lobby set times its fights (pbd_fight_timing.h: a live session with a set channel). Its hidden preparation is
 		// neither live nor bound to a channel, and emits the same probes so it compiles the set's own objects.
-		if (pbd::frame_presentation::queue_tags_enabled() || (prepare_for == "lobby" && env_text("PBD_SESSION") == "1"))
+		// Every start hands each frame to the renderer at its flip tail (hook_event::early_flush), so every start and its
+		// hidden preparation emit these probes; PBD_EARLY_FLUSH_LIVE=0 turns it off.
+		if (pbd::frame_presentation::queue_tags_enabled() || (prepare_for == "lobby" && env_text("PBD_SESSION") == "1") ||
+			parse_number("PBD_EARLY_FLUSH_LIVE", 1) == 1)
 		{
 			observed_sites.push_back(0x3c53a0);
 			observed_sites.push_back(0x34b9d8);
@@ -375,9 +378,8 @@ namespace pbd::fn_hook::detail
 		{
 #ifdef PBD_DIAGNOSTIC_BUILD
 			test_early_flush = parse_number("PBD_TEST_EARLY_FLUSH", 0) == 1;
-			early_flush_live = parse_number("PBD_EARLY_FLUSH_LIVE", 0) == 1;
-
 #endif
+			early_flush_live = parse_number("PBD_EARLY_FLUSH_LIVE", 1) == 1;
 			if (const u64 seed = parse_number("PBD_MATCH_SEED", 0))
 			{
 				random_runtime().match_seed_set = true;

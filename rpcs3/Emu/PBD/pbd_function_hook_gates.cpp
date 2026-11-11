@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "pbd_function_hook_event.h"
+#include "Emu/RSX/pbd_present_pacing.h"
 
 namespace pbd::fn_hook::detail
 {
@@ -303,23 +304,30 @@ namespace pbd::fn_hook::detail
 	void hook_event::early_flush()
 	{
 #ifdef PBD_DIAGNOSTIC_BUILD
-		if (address == 0x34b9d8 && ((c.test_early_flush && replay) || (c.early_flush_live && !replay)))
+		const bool test = c.test_early_flush && replay;
+#else
+		const bool test = false;
+#endif
+		if (address == 0x34b9d8 && (test || (c.early_flush_live && !replay)))
 		{
 			// Publish PUT after the flip tail, before the guest polls and resets its status. Re-execution requires counted
-			// flip completions in sys_rsx.cpp because the renderer can finish before that poll.
+			// flip completions in sys_rsx.cpp because the renderer can finish before that poll. Live, the renderer draws and
+			// presents the frame while the guest waits for the next vblank instead of after it.
 			const u32 holder = vm::check_addr(0x46ff28, vm::page_readable, 4) ? +vm::read32(0x46ff28) : 0u;
 			const u32 ctx = holder && vm::check_addr(holder, vm::page_readable, 4) ? +vm::read32(holder) : 0u;
 			const u32 cur = ctx && vm::check_addr(ctx, vm::page_readable, 12) ? +vm::read32(ctx + 8) : 0u;
 			if (const auto render = rsx::get_current_renderer(); render && render->ctrl && cur >= 0x40100000u && cur < 0x40500000u && !(cur & 3) &&
 																 render->iomap_table.get_addr(cur - 0x40100000u) == cur)
 			{
+				::pbd::present_pacing::frame_written_us.store(get_system_time(), std::memory_order_release);
+				::pbd::present_pacing::frame_vblank_us.store(::pbd::present_pacing::vblank_us.load(std::memory_order_acquire),
+					std::memory_order_release);
 				render->ctrl->put = cur - 0x40100000u;
 				c.test_early_flushes++;
 			}
 			else
 				c.test_early_flush_refused++;
 		}
-#endif
 	}
 
 } // namespace pbd::fn_hook::detail

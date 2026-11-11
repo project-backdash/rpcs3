@@ -11,11 +11,11 @@ to PROJECT BACKDASH, not to RPCS3.
 
 - Upstream: RPCS3 commit [`028d1e8f4a42df2292cdbcd35e540c9e71fc47aa`](https://github.com/RPCS3/rpcs3/commit/028d1e8f4a42df2292cdbcd35e540c9e71fc47aa) (2026-09-10, "Fix some VFS issues - #19378"), unchanged,
   as a source base; snapshot preparation fetches it shallowly and includes no private repository history.
-- Changes on top of it: 745 files (625 added, 114 changed, 6 deleted, 0 renamed), 158001 lines added and 1058 removed,
+- Changes on top of it: 746 files (626 added, 114 changed, 6 deleted, 0 renamed), 158265 lines added and 1058 removed,
   not counting this file. Line counts describe the recorded native revision; exported build adapters may differ.
-- Emulator source revision: `628001710254fd7d92f8b5d1465d02741047773e`.
+- Emulator source revision: `7be760d0f38b9b0dad6de565534d041393a1f1bc`.
 - This release snapshot retains public build support and documentation, with PBD C++ formatting.
-- Release build: Project Backdash 0.62.5, `rpcs3.exe` SHA-256 `d30d8facf6d1770176841f40d7fee92f82863d3a2e5642e1f50a014bcbd27795`.
+- Release build: Project Backdash 0.62.6, `rpcs3.exe` SHA-256 `a833912bd5f2e30f764c79d4703551cc7a6ede85ec930e9b567bd67974d6afbc`.
 
 ## The GPL source in the installer
 
@@ -67,7 +67,7 @@ The game's frame boundary, input delay, checkpoints of guest state, restore and 
 | `rpcs3/Emu/Cell/pbd_rollback_session_boundary.h` | 586 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_capture.cpp` | 371 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_common.h` | 463 |
-| `rpcs3/Emu/Cell/pbd_rollback_session_configure.cpp` | 473 |
+| `rpcs3/Emu/Cell/pbd_rollback_session_configure.cpp` | 480 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_configure_link.cpp` | 202 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_correction.cpp` | 201 |
 | `rpcs3/Emu/Cell/pbd_rollback_session_lobby.cpp` | 1015 |
@@ -343,7 +343,7 @@ GoogleTest tests of the pieces that need no running emulator, built into upstrea
 | `rpcs3/tests/pbd/fixtures/notices/challenger-ranked-placing.pbd` | 17 |
 | `rpcs3/tests/pbd/fixtures/notices/set-complete-placing-flip.pbd` | 18 |
 | `rpcs3/tests/pbd/fixtures/notices/set-complete-same.pbd` | 18 |
-| `rpcs3/tests/pbd/frame_tags_test.cpp` | 329 |
+| `rpcs3/tests/pbd/frame_tags_test.cpp` | 380 |
 | `rpcs3/tests/pbd/function_hook_config_test.cpp` | 599 |
 | `rpcs3/tests/pbd/game_host_test.cpp` | 566 |
 | `rpcs3/tests/pbd/game_overlay_test.cpp` | 757 |
@@ -573,13 +573,13 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_exit_gate.cpp` | 87 |
 | `rpcs3/Emu/PBD/pbd_features.h` | 21 |
 | `rpcs3/Emu/PBD/pbd_fight_tape.h` | 47 |
-| `rpcs3/Emu/PBD/pbd_fight_timing.h` | 159 |
+| `rpcs3/Emu/PBD/pbd_fight_timing.h` | 178 |
 | `rpcs3/Emu/PBD/pbd_fighter_side.cpp` | 111 |
 | `rpcs3/Emu/PBD/pbd_freeze_probe.h` | 109 |
-| `rpcs3/Emu/PBD/pbd_function_hook_configuration.cpp` | 453 |
+| `rpcs3/Emu/PBD/pbd_function_hook_configuration.cpp` | 455 |
 | `rpcs3/Emu/PBD/pbd_function_hook_dispatch.cpp` | 259 |
 | `rpcs3/Emu/PBD/pbd_function_hook_event.h` | 55 |
-| `rpcs3/Emu/PBD/pbd_function_hook_gates.cpp` | 325 |
+| `rpcs3/Emu/PBD/pbd_function_hook_gates.cpp` | 333 |
 | `rpcs3/Emu/PBD/pbd_function_hook_random.cpp` | 432 |
 | `rpcs3/Emu/PBD/pbd_function_hook_report.cpp` | 250 |
 | `rpcs3/Emu/PBD/pbd_function_hook_state.h` | 285 |
@@ -729,6 +729,7 @@ The fork's own pages, design notes, the build scripts and dependency lock, the s
 | `rpcs3/Emu/PBD/pbd_voice_health.h` | 36 |
 | `rpcs3/Emu/RSX/VK/vkutils/pbd_present_wait.h` | 183 |
 | `rpcs3/Emu/RSX/pbd_present_identity.h` | 255 |
+| `rpcs3/Emu/RSX/pbd_present_pacing.h` | 158 |
 | `rpcs3/Input/pbd_controller_backend.cpp` | 396 |
 | `rpcs3/Input/pbd_controller_backend.h` | 27 |
 | `rpcs3/Input/pbd_controller_backend_state.h` | 560 |
@@ -820,7 +821,7 @@ change with its date.
 | `rpcs3/Emu/RSX/Overlays/overlays.h` | 7 | 0 |
 | `rpcs3/Emu/RSX/RSXFIFO.cpp` | 30 | 0 |
 | `rpcs3/Emu/RSX/RSXFIFO.h` | 5 | 0 |
-| `rpcs3/Emu/RSX/RSXThread.cpp` | 367 | 2 |
+| `rpcs3/Emu/RSX/RSXThread.cpp` | 370 | 2 |
 | `rpcs3/Emu/RSX/RSXThread.h` | 42 | 0 |
 | `rpcs3/Emu/RSX/RSXZCULL.cpp` | 6 | 3 |
 | `rpcs3/Emu/RSX/Utils/rsx_utils.h` | 12 | 5 |
@@ -829,7 +830,7 @@ change with its date.
 | `rpcs3/Emu/RSX/VK/VKGSRender.h` | 69 | 0 |
 | `rpcs3/Emu/RSX/VK/VKOverlays.cpp` | 3 | 2 |
 | `rpcs3/Emu/RSX/VK/VKOverlays.h` | 1 | 1 |
-| `rpcs3/Emu/RSX/VK/VKPresent.cpp` | 669 | 38 |
+| `rpcs3/Emu/RSX/VK/VKPresent.cpp` | 691 | 38 |
 | `rpcs3/Emu/RSX/VK/VKShaderInterpreter.cpp` | 408 | 24 |
 | `rpcs3/Emu/RSX/VK/VKShaderInterpreter.h` | 57 | 1 |
 | `rpcs3/Emu/RSX/VK/vkutils/device.cpp` | 53 | 0 |

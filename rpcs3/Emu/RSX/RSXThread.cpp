@@ -26,6 +26,7 @@ std::string pbd_flip_debug_state(); // sys_rsx.cpp (PBD flip completion counting
 #include "Emu/Cell/lv2/sys_time.h"
 #include "Emu/Cell/Modules/cellGcmSys.h"
 #include "Emu/RSX/pbd_replay_pacing.h"
+#include "Emu/RSX/pbd_present_pacing.h"
 #include "util/serialization_ext.hpp"
 #include "Overlays/overlay_perf_metrics.h"
 #include "Overlays/overlay_debug_overlay.h"
@@ -1224,6 +1225,8 @@ namespace rsx
 						}
 
 						post_vblank_event(post_event_time);
+						::pbd::present_pacing::period_us.store(static_cast<u32>(vblank_period / vblank_rate), std::memory_order_relaxed);
+						::pbd::present_pacing::vblank_us.store(post_event_time, std::memory_order_release);
 						::pbd::replay_pacing::scheduled.fetch_add(1, std::memory_order_relaxed);
 
 						// PBD time sync: move the scheduled grid by one bounded step per vblank (see pbd_replay_pacing.h).
