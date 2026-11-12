@@ -1,4 +1,4 @@
-#include "Emu/PBD/pbd_replay_actor_records.h"
+#include "Emu/PBD/core/replay/pbd_replay_actor_records.h"
 
 #include "pbd_test.h"
 

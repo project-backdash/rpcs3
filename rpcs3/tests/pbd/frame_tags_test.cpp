@@ -1,9 +1,9 @@
 #include "pbd_test.h"
 
-#include "Emu/RSX/pbd_frame_tags.h"
-#include "Emu/PBD/pbd_fight_timing.h"
-#include "Emu/RSX/pbd_present_pacing.h"
-#include "Emu/RSX/pbd_display_rate.h"
+#include "Emu/PBD/core/rollback/pbd_frame_tags.h"
+#include "Emu/PBD/core/session/pbd_fight_timing.h"
+#include "Emu/PBD/emulator/display/pbd_present_pacing.h"
+#include "Emu/PBD/core/display/pbd_display_rate.h"
 
 #include <array>
 

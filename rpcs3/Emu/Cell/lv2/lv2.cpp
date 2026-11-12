@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "Emu/CPU/pbd_ordinary_metrics.h"
+#include "Emu/PBD/emulator/session/pbd_ordinary_metrics.h"
 #include "Emu/System.h"
 #include "Emu/system_config.h"
 #include "Emu/Memory/vm_ptr.h"
@@ -10,7 +10,7 @@
 #include "Emu/Cell/PPUThread.h"
 #include "Emu/Cell/SPUThread.h"
 #include "Emu/Cell/ErrorCodes.h"
-#include "Emu/Cell/pbd_rollback_session.h"
+#include "Emu/PBD/emulator/rollback/pbd_rollback_session.h"
 #include <chrono>
 #include "sys_sync.h"
 #include "sys_lwmutex.h"

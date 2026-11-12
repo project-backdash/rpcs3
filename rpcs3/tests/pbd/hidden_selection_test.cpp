@@ -1,8 +1,8 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_hidden_selection.h"
-#include "Emu/Cell/pbd_game_overlay.h"
-#include "Emu/Cell/pbd_update_script.h"
+#include "Emu/PBD/emulator/match/pbd_hidden_selection.h"
+#include "Emu/PBD/core/display/pbd_game_overlay.h"
+#include "Emu/PBD/core/rollback/pbd_update_script.h"
 #include "select_tables_fixture.h"
 
 using pbd::test::check;

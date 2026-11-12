@@ -1,9 +1,9 @@
-#include "../../Emu/PBD/pbd_match_bind.h"
-#include "../../Emu/PBD/pbd_held_presentation.h"
+#include "Emu/PBD/core/input/pbd_match_bind.h"
+#include "Emu/PBD/core/display/pbd_held_presentation.h"
 #include "pbd_test.h"
-#include "../../Emu/PBD/pbd_checkpoint_compatibility.h"
-#include "../../Emu/PBD/pbd_match_return.h"
-#include "../../Emu/PBD/pbd_match_pad.h"
+#include "Emu/PBD/core/rollback/pbd_checkpoint_compatibility.h"
+#include "Emu/PBD/core/session/pbd_match_return.h"
+#include "Emu/PBD/core/input/pbd_match_pad.h"
 using pbd::test::check;
 
 PBD_TEST(PbdMatchBind, ThrowBreakRule)

@@ -1,4 +1,4 @@
-#include "Emu/PBD/pbd_stage_sync.h"
+#include "Emu/PBD/core/session/pbd_stage_sync.h"
 
 #include "pbd_test.h"
 

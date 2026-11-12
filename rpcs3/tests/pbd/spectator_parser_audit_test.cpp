@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_update_script.h"
-#include "Emu/PBD/pbd_spectator_channel_input.h"
+#include "Emu/PBD/core/rollback/pbd_update_script.h"
+#include "Emu/PBD/core/match/pbd_spectator_channel_input.h"
 
 #include <fstream>
 #include <vector>

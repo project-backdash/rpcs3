@@ -20,8 +20,8 @@
 #include "Emu/Cell/SPUDisAsm.h"
 #include "Emu/Cell/SPUAnalyser.h"
 #include "Emu/Cell/SPUThread.h"
-#include "pbd_spu_checkpoint.h"
-#include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/emulator/rollback/pbd_spu_checkpoint.h"
+#include "Emu/PBD/core/util/pbd_env.h"
 #ifdef _WIN32
 #include <Windows.h>
 #endif

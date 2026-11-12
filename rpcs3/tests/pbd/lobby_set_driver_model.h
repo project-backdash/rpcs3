@@ -4,7 +4,7 @@
 // helpers that record, publish and play out whole games.
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_lobby_set_driver.h"
+#include "Emu/PBD/core/match/pbd_lobby_set_driver.h"
 
 namespace lobby_test_state
 {

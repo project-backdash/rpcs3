@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_practice_throw_escape.h"
-#include "Emu/Cell/pbd_practice_controls.h"
+#include "Emu/PBD/core/practice/pbd_practice_throw_escape.h"
+#include "Emu/PBD/core/practice/pbd_practice_controls.h"
 
 #include <vector>
 

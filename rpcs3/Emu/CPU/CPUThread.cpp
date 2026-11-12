@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "pbd_ordinary_metrics.h"
+#include "Emu/PBD/emulator/session/pbd_ordinary_metrics.h"
 #include "CPUThread.h"
 #include "CPUDisAsm.h"
 
@@ -12,7 +12,7 @@
 #include "Emu/Cell/lv2/sys_spu.h"
 #include "Emu/Cell/PPUThread.h"
 #include "Emu/Cell/SPUThread.h"
-#include "Emu/Cell/pbd_spu_checkpoint.h"
+#include "Emu/PBD/emulator/rollback/pbd_spu_checkpoint.h"
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/perf_meter.hpp"
 

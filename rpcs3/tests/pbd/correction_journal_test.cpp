@@ -1,5 +1,5 @@
 #include "pbd_test.h"
-#include "Emu/PBD/pbd_correction_journal.h"
+#include "Emu/PBD/core/rollback/pbd_correction_journal.h"
 
 #include <algorithm>
 #include <array>

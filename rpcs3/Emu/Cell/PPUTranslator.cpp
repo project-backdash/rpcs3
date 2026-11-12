@@ -4,9 +4,9 @@
 #include "Emu/Cell/Common.h"
 #include "Emu/Cell/lv2/sys_sync.h"
 #include "PPUTranslator.h"
-#include "pbd_rollback_session.h"
-#include "pbd_fn_hook.h"
-#include "pbd_ppu_object_name.h"
+#include "Emu/PBD/emulator/rollback/pbd_rollback_session.h"
+#include "Emu/PBD/emulator/game/pbd_fn_hook.h"
+#include "Emu/PBD/emulator/game/pbd_ppu_object_name.h"
 #include "PPUThread.h"
 #include "SPUThread.h"
 

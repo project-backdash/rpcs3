@@ -1,10 +1,10 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_replay_game_file.h"
-#include "Emu/PBD/pbd_replay_carry_codec.h"
-#include "Emu/PBD/pbd_replay_difference.h"
-#include "Emu/PBD/pbd_replay_capsule_start.h"
-#include "Emu/PBD/pbd_replay_standby.h"
+#include "Emu/PBD/core/replay/pbd_replay_game_file.h"
+#include "Emu/PBD/core/replay/pbd_replay_carry_codec.h"
+#include "Emu/PBD/core/replay/pbd_replay_difference.h"
+#include "Emu/PBD/emulator/replay/pbd_replay_capsule_start.h"
+#include "Emu/PBD/emulator/replay/pbd_replay_standby.h"
 #include "replay_dense_input_fixture.h"
 
 namespace

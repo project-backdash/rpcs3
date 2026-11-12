@@ -1,7 +1,7 @@
 #include "stdafx.h"
-#include "Emu/CPU/pbd_ordinary_metrics.h"
+#include "Emu/PBD/emulator/session/pbd_ordinary_metrics.h"
 #include "RSXThread.h"
-#include "pbd_frame_presentation.h"
+#include "Emu/PBD/emulator/display/pbd_frame_presentation.h"
 std::string pbd_flip_debug_state(); // sys_rsx.cpp (PBD flip completion counting)
 
 #include "Capture/rsx_capture.h"
@@ -26,8 +26,8 @@ std::string pbd_flip_debug_state(); // sys_rsx.cpp (PBD flip completion counting
 #include "Emu/Cell/lv2/sys_event.h"
 #include "Emu/Cell/lv2/sys_time.h"
 #include "Emu/Cell/Modules/cellGcmSys.h"
-#include "Emu/RSX/pbd_replay_pacing.h"
-#include "Emu/RSX/pbd_present_pacing.h"
+#include "Emu/PBD/core/replay/pbd_replay_pacing.h"
+#include "Emu/PBD/emulator/display/pbd_present_pacing.h"
 #include "util/serialization_ext.hpp"
 #include "Overlays/overlay_perf_metrics.h"
 #include "Overlays/overlay_debug_overlay.h"

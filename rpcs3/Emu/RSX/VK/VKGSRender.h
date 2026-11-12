@@ -16,8 +16,8 @@
 #include "VKOverlays.h"
 #include "VKProgramBuffer.h"
 #include "util/pbd_frame_copy.h"
-#include "Emu/PBD/pbd_screen_check.h"
-#include "Emu/PBD/pbd_swapchain_rebuild.h"
+#include "Emu/PBD/core/display/pbd_screen_check.h"
+#include "Emu/PBD/core/display/pbd_swapchain_rebuild.h"
 #include "VKFramebuffer.h"
 #include "VKShaderInterpreter.h"
 #include "VKQueryPool.h"
@@ -268,7 +268,7 @@ private:
 	std::vector<pbd_photo_slot> m_pbd_photo_slots;
 	void pbd_photo_record(vk::image* image, u32 width, u32 height, u64 ticket, u64 generation, u64 flip);
 	void pbd_photo_resolve(vk::frame_context_t* ctx);
-	// On-screen check (Emu/PBD/pbd_screen_check.h): when the game host asks, the check's 16 points of the image about to
+	// On-screen check (Emu/PBD/core/display/pbd_screen_check.h): when the game host asks, the check's 16 points of the image about to
 	// be presented, overlays included, are copied into a small host-visible buffer and answered once the frame has
 	// completed.
 	struct pbd_screen_check_slot
@@ -282,7 +282,7 @@ private:
 	void pbd_screen_check_resolve(vk::frame_context_t* ctx);
 	// A surface the driver reported lost is created again for the same window before the next swapchain.
 	bool m_pbd_surface_lost = false;
-	// Rebuilds that only a suboptimal report asks for, for an unchanged window, are bounded (Emu/PBD/pbd_swapchain_rebuild.h).
+	// Rebuilds that only a suboptimal report asks for, for an unchanged window, are bounded (Emu/PBD/core/display/pbd_swapchain_rebuild.h).
 	pbd::swapchain_rebuild::rule m_pbd_rebuilds;
 	u32 m_pbd_swapchain_number = 1; // the swapchains made so far, the first one included, to tell them apart in the log
 	u64 m_pbd_status_count = 0;     // present and acquire results other than success in this session

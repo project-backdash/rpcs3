@@ -1,6 +1,6 @@
 # Compiled game object names
 
-Code: `rpcs3/Emu/Cell/pbd_ppu_object_name.h`, the object name in `ppu_initialize` and the checks in `ppu_initialize2`
+Code: `rpcs3/Emu/PBD/emulator/game/pbd_ppu_object_name.h`, the object name in `ppu_initialize` and the checks in `ppu_initialize2`
 (`rpcs3/Emu/Cell/PPUThread.cpp`), the hook tests in `rpcs3/Emu/Cell/PPUTranslator.cpp`, and `--pbd-ppu-codegen` in
 `rpcs3/rpcs3.cpp`.
 

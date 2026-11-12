@@ -8,7 +8,7 @@ from pbd_hle_order import convert
 class HleOrderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.include = (Path(__file__).resolve().parents[1] / "rpcs3/Emu/Cell/pbd_hle_pinned_order.inc").read_text()
+        cls.include = (Path(__file__).resolve().parents[1] / "rpcs3/Emu/PBD/core/game/pbd_hle_pinned_order.inc").read_text()
         cls.keys = [json.loads(line[:-1]) for line in cls.include.splitlines() if line.startswith('"')]
         cls.dump = "".join(f"{i}\t{key}\n" for i, key in enumerate(cls.keys)).encode("ascii")
 

@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_ppu_object_name.h"
+#include "Emu/PBD/emulator/game/pbd_ppu_object_name.h"
 
 #include <algorithm>
 #include <cstdint>

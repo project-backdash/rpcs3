@@ -20,60 +20,54 @@ BASE = "47599599a4cea37f350eb0936d7c5e4de6f7bf57"
 # Corresponding source includes the complete committed tree, including this inventory and the native tests.
 PATCH_EXCLUDES = []
 
-# Module groups for the files the fork adds. The first group whose pattern matches a path takes it.
+# Groups for the files the fork adds. The first group whose pattern matches a path takes it. Most groups are one area
+# of rpcs3/Emu/PBD in both of its halves (core, which stands without the emulator, and emulator, which needs RPCS3;
+# see ARCHITECTURE.md), together with the files that serve the area from beside the upstream code they extend.
+AREA = "rpcs3/Emu/PBD/*/"
 MODULES = [
-    ("Frame tags and presentation",
-     "Tags that tie each presented frame to the tick that built it, holding back frames that a correction is about to "
-     "replace, and the pacing of catch-up frames.",
-     ["rpcs3/Emu/RSX/pbd_frame_tags.h", "rpcs3/Emu/RSX/pbd_frame_presentation.h", "rpcs3/Emu/RSX/pbd_replay_pacing.h"]),
-    ("Diagnostics",
-     "Probe, write-watch and timeline helpers; each subsystem owns its diagnostic controls.",
-     ["rpcs3/Emu/Cell/Modules/pbd_input_trace.h", "rpcs3/Emu/Cell/pbd_function_hook_config.h", "rpcs3/Emu/Cell/pbd_write_watch.cpp",
-      "rpcs3/Emu/Cell/pbd_owner_timeline.h", "rpcs3/Emu/CPU/pbd_ordinary_metrics.*"]),
-    ("Session, rollback and peer link",
-     "The game's frame boundary, input delay, checkpoints of guest state, restore and re-execution of frames (the "
-     "rollback itself), the peer protocol over UDP, and the CPU, memory and lv2 support a restore needs.",
-     ["*/pbd_rollback_session.*", "*/pbd_rollback_session_*", "rpcs3/Emu/Cell/pbd_update_script.h",
-      "rpcs3/Emu/Cell/pbd_peer_endpoint.h", "rpcs3/Emu/Cell/pbd_session_wait.h", "rpcs3/Emu/pbd_session_mode.h",
-      "rpcs3/Emu/Cell/pbd_skip_guard.h", "rpcs3/Emu/Cell/pbd_fn_hook.*", "rpcs3/Emu/Cell/pbd_spu_checkpoint.h",
-      "rpcs3/Emu/Cell/pbd_hle_pinned_order.inc", "rpcs3/*/pbd_session_history.h",
-      "rpcs3/*/pbd_session_start.h",
-      "rpcs3/*/pbd_t5dr_memory.h", "rpcs3/*/pbd_guest_call.h", "rpcs3/*/pbd_env*.h", "rpcs3/*/pbd_peer_message.h"]),
-    ("Input",
-     "Scripted and live controller input, controller takeover, and the hidden character select that a lobby set uses.",
-     ["rpcs3/Emu/Cell/Modules/pbd_input_live.h", "rpcs3/Emu/Cell/Modules/pbd_input_script.h",
-      "rpcs3/Emu/Cell/Modules/pbd_input_script_runtime.h", "rpcs3/Emu/Cell/pbd_controller_takeover.h",
-      "rpcs3/Emu/Cell/pbd_hidden_selection.*", "rpcs3/Input/pbd_pad_*",
-      "rpcs3/Input/pbd_controller_ports.*", "rpcs3/Emu/Cell/Modules/pbd_pad_*"]),
-    ("Lobby sets",
-     "The channel to the launcher for a set of games, the select countdowns, VS cards, the agreement between the two "
-     "PCs at each game start and the direct start of a match.",
-     ["rpcs3/Emu/Cell/pbd_set_channel.h", "rpcs3/Emu/Cell/pbd_lobby_set_driver.h", "rpcs3/Emu/Cell/pbd_select_band.h",
-      "rpcs3/Emu/Cell/pbd_select_timer.h", "rpcs3/Emu/Cell/pbd_vs_cards.h", "rpcs3/Emu/Cell/pbd_setup_digest.h",
-      "rpcs3/Emu/Cell/pbd_game_lifecycle.h", "rpcs3/Emu/Cell/pbd_direct_match.*", "rpcs3/Emu/Cell/pbd_boot_request.*",
-      "rpcs3/*/pbd_rematch*", "rpcs3/*/pbd_character_rule*", "rpcs3/*/pbd_stage_rule*",
-      "rpcs3/*/pbd_json.h"]),
-    ("Practice",
-     "Practice mode: the dummy's recordings and movement, wall positions, the Practice menus and their controls.",
-     ["rpcs3/Emu/Cell/pbd_practice*", "rpcs3/*/pbd_practice_*"]),
+    ("Rollback",
+     "The game's frame boundary, input delay, checkpoints of guest state, restore and re-execution of ticks (the "
+     "rollback itself), the tags that tie each presented frame to the tick that built it, and the session object that "
+     "drives a tick.",
+     [AREA + "rollback/*"]),
+    ("Peer link",
+     "The peer protocol over UDP: message layout, authentication, endpoints, timing and the recovery of a lost path.",
+     [AREA + "peer/*"]),
     ("Replays",
      "Recording games as input and replaying them with pause, frame step, speed and takeover.",
-     ["rpcs3/Emu/Cell/pbd_replay_game_file.h", "rpcs3/Emu/Cell/pbd_replay_viewer.h", "rpcs3/Emu/Cell/pbd_live_replay.*",
-      "rpcs3/Emu/Cell/pbd_match_recording.h"]),
-    ("Spectating",
-     "Watching a lobby game from its confirmed inputs, with the watcher's own screen and chat.",
-     ["rpcs3/Emu/Cell/pbd_spectator_channel.h", "rpcs3/Emu/Cell/pbd_spectator_ui.h", "rpcs3/Emu/Cell/pbd_corner_chat.h"]),
-    ("Game window",
-     "The game window hosted inside the launcher's window: the emulator draws into a child window, reads the keyboard "
-     "as raw input, takes the launcher's window requests over a local pipe and records how frames and keys travelled "
-     "for the run summary (see `docs/design/game-hosting.md`).",
-     ["rpcs3/rpcs3qt/pbd_game_host*", "rpcs3/rpcs3qt/pbd_game_window*", "rpcs3/rpcs3qt/pbd_raw_keyboard.h", "rpcs3/Emu/PBD/pbd_presentation_*"]),
-    ("Overlays, settings and sound",
-     "The in-game menus, the netplay stats block, in-game settings, the player's volume, sound options, and the fonts and "
-     "glyphs they draw with.",
-     ["rpcs3/Emu/Cell/pbd_game_overlay.h", "rpcs3/Emu/Cell/pbd_settings_menu.h", "rpcs3/Emu/Cell/pbd_live_stats.h",
-      "rpcs3/Emu/Cell/pbd_player_volume.h", "rpcs3/Emu/Cell/pbd_sound_options.*", "rpcs3/Emu/Cell/pbd_stage_names.h",
-      "rpcs3/Emu/RSX/Overlays/*", "*/pbd_render_scale.h"]),
+     [AREA + "replay/*"]),
+    ("Practice",
+     "Practice mode: the dummy's recordings and movement, wall positions, the Practice menus and their controls.",
+     [AREA + "practice/*"]),
+    ("Matches",
+     "What surrounds a match between two players: the channel to the launcher for a set of games, the select "
+     "countdowns, VS cards, rematches and rules, the direct start of a match, offline Versus, and watching a lobby game "
+     "from its confirmed inputs with the watcher's own screen and chat.",
+     [AREA + "match/*"]),
+    ("Custom looks",
+     "Custom costume records, their catalogue and wire shape, the costume select, and the editor with its photo.",
+     [AREA + "customs/*"]),
+    ("Input",
+     "Scripted and live controller input, controller settings and takeover, the pad handlers of a session, and the "
+     "hooks where the game reads its pads.",
+     [AREA + "input/*", "rpcs3/Input/pbd_*", "rpcs3/Emu/Cell/Modules/pbd_*"]),
+    ("Display, overlays and the game window",
+     "Frame presentation and its pacing, in-game settings, the in-game menus and overlays with their fonts and glyphs, "
+     "clips, and the game window hosted inside the launcher's window: the emulator draws into a child window, reads the "
+     "keyboard as raw input, takes the launcher's window requests over a local pipe and records how frames and keys "
+     "travelled for the run summary (see `docs/design/game-hosting.md`).",
+     [AREA + "display/*", "rpcs3/Emu/RSX/*", "rpcs3/rpcs3qt/*", "rpcs3/util/pbd_clip*", "rpcs3/util/pbd_frame_copy.h"]),
+    ("The game",
+     "Facts about this one game and the hooks into its code: guest addresses, the function hooks and what they gate, "
+     "calls into guest functions and the pinned HLE order.",
+     [AREA + "game/*"]),
+    ("Session",
+     "One run of the game from boot to exit: the boot request, mode and options, the agreement between the two PCs at "
+     "each game start, records, health, timing samples and sound.",
+     [AREA + "session/*", "rpcs3/Emu/Audio/*"]),
+    ("Helpers",
+     "JSON, the `PBD_*` environment switches, and what the program learns about the system it runs on.",
+     [AREA + "util/*", "rpcs3/util/pbd_*", "rpcs3/Crypto/*"]),
     ("Unit tests",
      "GoogleTest tests of the pieces that need no running emulator, built into upstream's `rpcs3_test` program with the "
      "rest of the solution (`pbd_tests.props` and `pbd_tests.cmake` list them). `rpcs3_test --gtest_filter=Pbd*` runs "
@@ -82,8 +76,8 @@ MODULES = [
     ("Documentation, build scripts and generators",
      "The fork's own pages, design notes, the build scripts and dependency lock, the source checks, "
      "this file's generator and the generators of checked-in tables.",
-     ["docs/*", "tools/*", "Utilities/*.mjs", "README*", "ARCHITECTURE.md", "KNOWN-DEBT.md", "CODE-BAR.md",
-      ".clang-format-ignore", ".github/workflows/pbd-*"]),
+     ["docs/*", "tools/*", "Utilities/*.mjs", "README*", "ARCHITECTURE.md", "KNOWN-DEBT.md", "CHECKS.md",
+      ".clang-format-ignore", ".gitattributes", ".github/*"]),
 ]
 
 STATIC_TAIL = """\
@@ -96,13 +90,12 @@ You need:
 
 - Visual Studio 2026 with the C++ x64 tools (the build uses its MSBuild, CMake and Ninja components; release builds
   use MSVC 14.51);
-- Git and Python 3 on `PATH`;
-- Vulkan SDK 1.4.341.1 (LunarG).
+- Git and Python 3 on `PATH`.
 
-Everything else is pinned with its hash in `tools/pbd/dependencies.lock.json`: Qt 6.11.2 for MSVC 2022 x64 (qtbase,
-qtdeclarative, qttools, qtmultimedia, qtsvg, qttranslations), RPCS3's prebuilt LLVM 22.1.8, 7-Zip's `7zr.exe` and the
-GoogleTest 1.8.1.8 NuGet package. The lock still records the September 10 source revision; the merged upstream
-Windows CI uses Qt 6.12.0. Dependency compatibility with the merged revision has not yet been build-validated.
+For upstream base 47599599a, `tools/pbd/dependencies.lock.json` pins each dependency's measured size and SHA-256.
+The dependencies include Qt 6.12.0 for MSVC 2022 x64 (qtbase,
+qtdeclarative, qttools, qtmultimedia, qtsvg, qttranslations), RPCS3's prebuilt LLVM 22.1.8, 7-Zip's `7zr.exe`,
+the GoogleTest 1.8.1.8 NuGet package, ccache 4.12.3 and Vulkan SDK 1.4.341.1.
 All of it goes inside the clone, under `build\\` and `packages\\`, which git ignores. Every path the scripts use is relative to
 the repository.
 
@@ -116,9 +109,9 @@ the repository.
    powershell -ExecutionPolicy Bypass -File tools\\pbd\\setup-dependencies.ps1
    ```
 
-3. Install the Vulkan SDK to `build\\deps\\VulkanSDK\\1.4.341.1`, or pass its folder to the build script with
-   `-VulkanSdk`.
-4. Check the setup, then build Release x64:
+   Setup restores Vulkan SDK files with the unattended copy-only installer and arranges ccache's compiler wrapper
+   under `build\\deps\\ccache`. The build uses MSVC directly. You can pass an external SDK folder with `-VulkanSdk`.
+3. Check the setup, then build Release x64:
 
    ```
    powershell -ExecutionPolicy Bypass -File tools\\pbd\\build-rpcs3.ps1 -CheckOnly
@@ -136,7 +129,7 @@ retains the inherited generic RPCS3 build reference below the fork recipe.
 ## Naming
 
 Source files, namespaces, functions, log channels and environment variables use `pbd` / `PBD`
-(`rpcs3/Emu/PBD/pbd_env.h` reads the `PBD_*` switches). A few strings keep the older spelling (`dr2026`, `DR2026`)
+(`rpcs3/Emu/PBD/core/util/pbd_env.h` reads the `PBD_*` switches). A few strings keep the older spelling (`dr2026`, `DR2026`)
 because players' installs and caches hold them: the PPU object-name prefix, the JIT link names, the tape and command
 format lines, the first-run record schemas and the GDB capability.
 

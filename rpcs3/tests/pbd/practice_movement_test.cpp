@@ -1,11 +1,11 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_json_reader.h"
-#include "Emu/PBD/pbd_practice_presentation.h"
-#include "Emu/Cell/pbd_practice_controls.h"
-#include "Emu/Cell/pbd_practice_mouse.h"
-#include "Emu/PBD/pbd_movement_observation.h"
-#include "Emu/Cell/pbd_game_overlay.h"
+#include "Emu/PBD/core/util/pbd_json_reader.h"
+#include "Emu/PBD/core/practice/pbd_practice_presentation.h"
+#include "Emu/PBD/core/practice/pbd_practice_controls.h"
+#include "Emu/PBD/core/practice/pbd_practice_mouse.h"
+#include "Emu/PBD/core/practice/pbd_movement_observation.h"
+#include "Emu/PBD/core/display/pbd_game_overlay.h"
 
 #include <limits>
 #include <vector>

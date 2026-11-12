@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_lobby_set_driver.h"
-#include "Emu/PBD/pbd_replay_difference.h"
+#include "Emu/PBD/core/match/pbd_lobby_set_driver.h"
+#include "Emu/PBD/core/replay/pbd_replay_difference.h"
 
 #include <cstdint>
 #include <string_view>

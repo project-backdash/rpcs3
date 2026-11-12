@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Emu/Cell/pbd_hidden_selection.h"
+#include "Emu/PBD/emulator/match/pbd_hidden_selection.h"
 
 // The select's tables as the pinned executable holds them (pbd::hidden_selection::read_native_tables), for tests that steer it.
 namespace pbd::test

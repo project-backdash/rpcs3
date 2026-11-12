@@ -1,7 +1,7 @@
 #include "Emu/RSX/VK/vkutils/descriptors.h"
 #include "stdafx.h"
-#include "Emu/PBD/pbd_stall_metrics.h"
-#include "Emu/PBD/pbd_shader_build.h"
+#include "Emu/PBD/core/session/pbd_stall_metrics.h"
+#include "Emu/PBD/core/display/pbd_shader_build.h"
 #include "../Overlays/overlay_compile_notification.h"
 #include "../Overlays/Shaders/shader_loading_dialog_native.h"
 

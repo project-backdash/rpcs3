@@ -1,5 +1,5 @@
 #include "pbd_test.h"
-#include "Emu/PBD/pbd_pick_transition.h"
+#include "Emu/PBD/emulator/match/pbd_pick_transition.h"
 
 using pbd::test::check;
 using namespace pbd::pick_transition;

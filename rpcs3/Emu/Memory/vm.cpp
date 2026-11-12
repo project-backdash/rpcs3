@@ -1,6 +1,6 @@
 #include "stdafx.h"
-#include "Emu/CPU/pbd_ordinary_metrics.h"
-#include "Emu/Cell/pbd_rollback_session.h"
+#include "Emu/PBD/emulator/session/pbd_ordinary_metrics.h"
+#include "Emu/PBD/emulator/rollback/pbd_rollback_session.h"
 #include "vm_locking.h"
 #include "vm_ptr.h"
 #include "vm_reservation.h"

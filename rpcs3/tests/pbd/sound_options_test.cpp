@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_sound_options.h"
+#include "Emu/PBD/emulator/session/pbd_sound_options.h"
 
 #include <map>
 #include <string>

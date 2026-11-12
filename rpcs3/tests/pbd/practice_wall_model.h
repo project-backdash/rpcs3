@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Emu/Cell/pbd_practice_walls.h"
+#include "Emu/PBD/core/practice/pbd_practice_walls.h"
 
 namespace wall_model
 {

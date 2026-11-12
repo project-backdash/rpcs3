@@ -3,11 +3,11 @@
 #include "Emu/Io/pad_config.h"
 #include "Emu/Io/KeyboardHandler.h"
 #include "Emu/Io/interception.h"
-#include "Emu/PBD/pbd_practice_presentation.h"
-#include "Emu/Cell/pbd_practice_mouse.h"
-#include "Emu/PBD/pbd_settings_runtime.h"
+#include "Emu/PBD/core/practice/pbd_practice_presentation.h"
+#include "Emu/PBD/core/practice/pbd_practice_mouse.h"
+#include "Emu/PBD/core/display/pbd_settings_runtime.h"
 #include "Input/product_info.h"
-#include "Emu/PBD/pbd_replay_viewer_menu.h"
+#include "Emu/PBD/core/replay/pbd_replay_viewer_menu.h"
 #include "rpcs3qt/gs_frame.h"
 
 #include <algorithm>

@@ -3,19 +3,19 @@
 #include "cellPad.h"
 #include "pbd_input_trace.h"
 #include "pbd_input_script_runtime.h"
-#include "Emu/PBD/pbd_fight_tape.h"
+#include "Emu/PBD/core/session/pbd_fight_tape.h"
 #include "pbd_input_live.h"
 #include "Emu/Cell/PPUThread.h"
-#include "Emu/PBD/pbd_practice_presentation.h"
-#include "Emu/PBD/pbd_settings_runtime.h"
-#include "Emu/Cell/pbd_versus_native.h"
-#include "Emu/Cell/pbd_rollback_session.h"
+#include "Emu/PBD/core/practice/pbd_practice_presentation.h"
+#include "Emu/PBD/core/display/pbd_settings_runtime.h"
+#include "Emu/PBD/emulator/match/pbd_versus_native.h"
+#include "Emu/PBD/emulator/rollback/pbd_rollback_session.h"
 #include "Emu/Io/pad_types.h"
 #include "Emu/Memory/vm.h"
-#include "Emu/PBD/pbd_env.h"
-#include "Emu/PBD/pbd_custom_editor.h"
+#include "Emu/PBD/core/util/pbd_env.h"
+#include "Emu/PBD/emulator/customs/pbd_custom_editor.h"
 #include "Emu/RSX/RSXThread.h"
-#include "Emu/pbd_session_mode.h"
+#include "Emu/PBD/core/session/pbd_session_mode.h"
 #include "Input/pad_thread.h"
 #include "Utilities/File.h"
 
@@ -535,7 +535,7 @@ namespace pbd::pad_read
 			}
 		}
 
-		// Offline play's Versus (Emu/Cell/pbd_versus.h): at its character select Triangle opens Controller Setup instead of reaching
+		// Offline play's Versus (Emu/PBD/emulator/match/pbd_versus.h): at its character select Triangle opens Controller Setup instead of reaching
 		// the game, and while a menu, a panel or a steered select holds a port the game gets the word it gives, sticks centred.
 		// It steps on every read, since a read with nothing new carries no record (len 0) and the game keeps the last one: a held
 		// port therefore gets a whole record each read, and once it is let go the pad resends its own state.

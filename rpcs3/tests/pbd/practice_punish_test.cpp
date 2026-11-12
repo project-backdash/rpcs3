@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_practice_punish.h"
+#include "Emu/PBD/core/practice/pbd_practice_punish.h"
 
 #include <cstdint>
 #include <optional>

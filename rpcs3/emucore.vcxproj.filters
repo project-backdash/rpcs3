@@ -202,6 +202,36 @@
     <Filter Include="Emu\GPU\RSX\Overlays\PBD">
       <UniqueIdentifier>{7c539ccb-7bd5-40d1-a698-eb364f00e74a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Emu\PBD">
+      <UniqueIdentifier>{ec7ec8e4-2fe9-42f9-84b7-cc9fd50639cd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Emu\PBD\core">
+      <UniqueIdentifier>{13bce547-e26a-4bf9-8ad2-743527f5ef27}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Emu\PBD\core\game">
+      <UniqueIdentifier>{26609604-00a6-4cd3-8670-6380566dfa8d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Emu\PBD\core\replay">
+      <UniqueIdentifier>{d2df1c10-64f2-4c26-8e07-58153a9af1bb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Emu\PBD\core\session">
+      <UniqueIdentifier>{f8054a5f-83fb-4d6e-83c1-22322a4076f7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Emu\PBD\core\util">
+      <UniqueIdentifier>{969b2c49-137d-4e11-854d-4f5babec0b13}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Emu\PBD\emulator">
+      <UniqueIdentifier>{7e0e6ecd-9f87-4f3e-8eaa-822013ee7e10}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Emu\PBD\emulator\game">
+      <UniqueIdentifier>{4a46263a-13a8-4900-861e-84f5804d1b0c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Emu\PBD\emulator\replay">
+      <UniqueIdentifier>{f002e8b2-9a0f-42e2-800e-6e64458a3048}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Emu\PBD\emulator\rollback">
+      <UniqueIdentifier>{15a3b730-c89d-4f38-8941-4ab1f6949e54}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Crypto\aes.cpp">
@@ -240,8 +270,8 @@
     <ClCompile Include="Emu\Cell\PPUThread.cpp">
       <Filter>Emu\Cell</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_ppu_object_name.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\game\pbd_ppu_object_name.cpp">
+      <Filter>Emu\PBD\emulator\game</Filter>
     </ClCompile>
     <ClCompile Include="Emu\Cell\RawSPUThread.cpp">
       <Filter>Emu\Cell</Filter>
@@ -249,65 +279,65 @@
     <ClCompile Include="Emu\Cell\SPUThread.cpp">
       <Filter>Emu\Cell</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_capture.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_capture.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_configure.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_configure.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_configure_link.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_configure_link.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_correction.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_correction.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_lobby.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_lobby.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_peer.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_peer.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_practice.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_controls.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_practice_controls.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_dummy.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_practice_dummy.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_menu.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_practice_menu.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_pad.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_practice_pad.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_practice_publish.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_practice_publish.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_replay.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_replay.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_rows.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_rows.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_run.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_run.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_run_steps.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_run_steps.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_takeover.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_takeover.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_rewind.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_rewind.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_tick.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_tick.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\Cell\pbd_rollback_session_tick_record.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\rollback\pbd_rollback_session_tick_record.cpp">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClCompile>
     <ClCompile Include="Emu\CPU\CPUThread.cpp">
       <Filter>Emu\CPU</Filter>
@@ -1758,29 +1788,29 @@
     <ClInclude Include="Emu\Cell\SPUThread.h">
       <Filter>Emu\Cell</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\Cell\pbd_rollback_session_boundary.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\rollback\pbd_rollback_session_boundary.h">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\Cell\pbd_rollback_session_common.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\rollback\pbd_rollback_session_common.h">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\rollback\pbd_rollback_session_storage.h">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_rollback.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\rollback\pbd_rollback_session_storage_rollback.h">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_peer.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\rollback\pbd_rollback_session_storage_peer.h">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_lobby.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\rollback\pbd_rollback_session_storage_lobby.h">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_replay.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\rollback\pbd_rollback_session_storage_replay.h">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\Cell\pbd_rollback_session_storage_practice.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\rollback\pbd_rollback_session_storage_practice.h">
+      <Filter>Emu\PBD\emulator\rollback</Filter>
     </ClInclude>
     <ClInclude Include="Emu\CPU\CPUDisAsm.h">
       <Filter>Emu\CPU</Filter>
@@ -3467,104 +3497,104 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Emu\PBD\pbd_anchor_dump.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\game\pbd_anchor_dump.cpp">
+      <Filter>Emu\PBD\emulator\game</Filter>
     </ClCompile>
-    <ClInclude Include="Emu\PBD\pbd_anchor_dump.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\game\pbd_anchor_dump.h">
+      <Filter>Emu\PBD\emulator\game</Filter>
     </ClInclude>
-    <ClCompile Include="Emu\PBD\pbd_host.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\core\util\pbd_host.cpp">
+      <Filter>Emu\PBD\core\util</Filter>
     </ClCompile>
-    <ClInclude Include="Emu\PBD\pbd_host.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\util\pbd_host.h">
+      <Filter>Emu\PBD\core\util</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\PBD\pbd_host_timing.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\util\pbd_host_timing.h">
+      <Filter>Emu\PBD\core\util</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\PBD\pbd_memory_dump.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\game\pbd_memory_dump.h">
+      <Filter>Emu\PBD\core\game</Filter>
     </ClInclude>
-    <ClCompile Include="Emu\PBD\pbd_memory_dump_native.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\game\pbd_memory_dump_native.cpp">
+      <Filter>Emu\PBD\emulator\game</Filter>
     </ClCompile>
-    <ClInclude Include="Emu\PBD\pbd_memory_dump_native.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\game\pbd_memory_dump_native.h">
+      <Filter>Emu\PBD\emulator\game</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\PBD\pbd_replay_actor_records.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\replay\pbd_replay_actor_records.h">
+      <Filter>Emu\PBD\core\replay</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\PBD\pbd_emulator_identity.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\session\pbd_emulator_identity.h">
+      <Filter>Emu\PBD\core\session</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\PBD\pbd_replay_bank_offset.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\replay\pbd_replay_bank_offset.h">
+      <Filter>Emu\PBD\core\replay</Filter>
     </ClInclude>
-    <ClCompile Include="Emu\PBD\pbd_replay_bone_segments.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\replay\pbd_replay_bone_segments.cpp">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\PBD\pbd_replay_boot.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\replay\pbd_replay_boot.cpp">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClCompile>
-    <ClInclude Include="Emu\PBD\pbd_replay_boot.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\replay\pbd_replay_boot.h">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClInclude>
-    <ClCompile Include="Emu\PBD\pbd_replay_carry.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\replay\pbd_replay_carry.cpp">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClCompile>
-    <ClInclude Include="Emu\PBD\pbd_replay_carry.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\replay\pbd_replay_carry.h">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\PBD\pbd_replay_carry_codec.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\replay\pbd_replay_carry_codec.h">
+      <Filter>Emu\PBD\core\replay</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\PBD\pbd_replay_carry_guard.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\replay\pbd_replay_carry_guard.h">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\PBD\pbd_replay_carry_types.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\replay\pbd_replay_carry_types.h">
+      <Filter>Emu\PBD\core\replay</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\PBD\pbd_replay_difference.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\replay\pbd_replay_difference.h">
+      <Filter>Emu\PBD\core\replay</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\PBD\pbd_replay_rewind.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\replay\pbd_replay_rewind.h">
+      <Filter>Emu\PBD\core\replay</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\PBD\pbd_replay_switches.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\replay\pbd_replay_switches.h">
+      <Filter>Emu\PBD\core\replay</Filter>
     </ClInclude>
-    <ClCompile Include="Emu\PBD\pbd_replay_game_carry.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\replay\pbd_replay_game_carry.cpp">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\PBD\pbd_replay_hit_contacts.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\replay\pbd_replay_hit_contacts.cpp">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\PBD\pbd_replay_reaction.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\replay\pbd_replay_reaction.cpp">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\PBD\pbd_replay_reaction_result.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\replay\pbd_replay_reaction_result.cpp">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClCompile>
-    <ClCompile Include="Emu\PBD\pbd_replay_resource_cursor.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\replay\pbd_replay_resource_cursor.cpp">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClCompile>
-    <ClInclude Include="Emu\PBD\pbd_replay_resource_reference.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\replay\pbd_replay_resource_reference.h">
+      <Filter>Emu\PBD\core\replay</Filter>
     </ClInclude>
-    <ClCompile Include="Emu\PBD\pbd_replay_restore.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\replay\pbd_replay_restore.cpp">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClCompile>
-    <ClInclude Include="Emu\PBD\pbd_replay_restore.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\emulator\replay\pbd_replay_restore.h">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClInclude>
-    <ClInclude Include="Emu\PBD\pbd_replay_result_reference.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\replay\pbd_replay_result_reference.h">
+      <Filter>Emu\PBD\core\replay</Filter>
     </ClInclude>
-    <ClCompile Include="Emu\PBD\pbd_replay_retained_terms.cpp">
-      <Filter>Emu\Cell</Filter>
+    <ClCompile Include="Emu\PBD\emulator\replay\pbd_replay_retained_terms.cpp">
+      <Filter>Emu\PBD\emulator\replay</Filter>
     </ClCompile>
-    <ClInclude Include="Emu\PBD\pbd_stage_sync.h">
-      <Filter>Emu\Cell</Filter>
+    <ClInclude Include="Emu\PBD\core\session\pbd_stage_sync.h">
+      <Filter>Emu\PBD\core\session</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

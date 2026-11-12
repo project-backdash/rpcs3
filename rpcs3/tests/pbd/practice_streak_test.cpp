@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_practice_streak.h"
+#include "Emu/PBD/core/practice/pbd_practice_streak.h"
 
 #include <cstdint>
 #include <initializer_list>

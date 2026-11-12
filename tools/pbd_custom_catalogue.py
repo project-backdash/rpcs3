@@ -12,7 +12,7 @@ PAC entry headers are XOR-ed with ff f0 00 ff; their contents are plain little-e
 renames a few items per fighter (table 0x100764d8, item id -> name).
 
 Writes a JSON file with every row's items (ids, names, the costumes each serves) and colours, and the C++ header that
-validates looks (rpcs3/Emu/PBD/pbd_custom_catalogue.h): numbers only, no game text.
+validates looks (rpcs3/Emu/PBD/core/customs/pbd_custom_catalogue.h): numbers only, no game text.
 
 Usage: python tools/pbd_custom_catalogue.py <exec.elf> <T55DATA1.BIN> --json <out.json> [--header <out.h>]
 """
@@ -25,7 +25,7 @@ import struct
 import zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HEADER = os.path.join(ROOT, "rpcs3", "Emu", "PBD", "pbd_custom_catalogue.h")
+HEADER = os.path.join(ROOT, "rpcs3", "Emu", "PBD", "core", "customs", "pbd_custom_catalogue.h")
 
 ELF_SHA256 = "b56e25e9210ed3c4fc19f3dfae686b7246aef386cdd4f88c80e0b89141ff887d"
 CATALOGUE_RECORD = 0x4C5670

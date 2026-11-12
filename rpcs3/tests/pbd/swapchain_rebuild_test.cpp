@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_swapchain_rebuild.h"
+#include "Emu/PBD/core/display/pbd_swapchain_rebuild.h"
 
 #include <algorithm>
 #include <cstdint>

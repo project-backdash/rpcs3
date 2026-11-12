@@ -16,10 +16,12 @@ $running = @(Get-Process -Name rpcs3 -ErrorAction SilentlyContinue | Where-Objec
 if (-not $CheckOnly -and $running.Count -ne 0) { throw "Close the running emulator first: $executable" }
 . (Join-Path $PSScriptRoot 'storage-guard.ps1')
 if (-not $CheckOnly) { Assert-PbdStorage $repository 'build' }
-$deps = Join-Path $repository 'build\deps'
-if (-not $VulkanSdk) { $VulkanSdk = Join-Path $deps 'VulkanSDK\1.4.341.1' }
 $lock = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'dependencies.lock.json') | ConvertFrom-Json
-$qt = Join-Path $deps 'Qt\6.11.2\msvc2022_64'
+if (-not $VulkanSdk) {
+    $vulkanArtifact = $lock.artifacts | Where-Object name -eq 'vulkansdk'
+    $VulkanSdk = Join-Path $repository $vulkanArtifact.destination
+}
+$qt = Join-Path $repository ($lock.artifacts | Where-Object name -eq 'qtbase').destination
 $setupHint = 'run tools\pbd\setup-dependencies.ps1'
 $googleTest = 'Microsoft.googletest.v140.windesktop.msvcstl.static.rt-static'
 
@@ -72,7 +74,7 @@ foreach ($relative in $qtFiles) {
 Assert-File (Join-Path $source 'build\lib_ext\Release-x64\llvm_build\lib\LLVMCore.lib') "prebuilt LLVM; $setupHint"
 $googleTestTargets = Join-Path $source "packages\$googleTest.1.8.1.8\build\native\$googleTest.targets"
 Assert-File $googleTestTargets "GoogleTest NuGet dependency; $setupHint"
-Assert-File (Join-Path $VulkanSdk 'Include\vulkan\vulkan.h') 'Vulkan 1.4.341.1 headers; install the SDK or pass -VulkanSdk'
+Assert-File (Join-Path $VulkanSdk 'Include\vulkan\vulkan.h') "Vulkan headers; $setupHint or pass -VulkanSdk"
 Assert-File (Join-Path $VulkanSdk 'Lib\vulkan-1.lib') 'Vulkan x64 import library'
 $submodules = @(& git -C $source submodule status)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect the submodule state' }

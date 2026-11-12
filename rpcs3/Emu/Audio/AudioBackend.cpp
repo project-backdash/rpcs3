@@ -2,7 +2,7 @@
 #include "AudioBackend.h"
 #include "Emu/IdManager.h"
 #include "Emu//Cell/Modules/cellAudioOut.h"
-#include "Emu/PBD/pbd_held_presentation.h"
+#include "Emu/PBD/core/display/pbd_held_presentation.h"
 #include <cstring>
 #include <cmath>
 #include "WindowsAudioSessionIdentity.h"

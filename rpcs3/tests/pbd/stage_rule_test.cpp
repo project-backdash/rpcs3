@@ -1,8 +1,8 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_stage_rule.h"
-#include "Emu/Cell/pbd_setup_digest.h"
-#include "Emu/Cell/pbd_stage_names.h"
+#include "Emu/PBD/core/match/pbd_stage_rule.h"
+#include "Emu/PBD/core/session/pbd_setup_digest.h"
+#include "Emu/PBD/core/match/pbd_stage_names.h"
 
 using pbd::test::check;
 

@@ -4,9 +4,9 @@
 // which the sender, the receive thread and peer_poll all use, must read them back field by field and write exactly
 // them.
 #include "pbd_test.h"
-#include "Emu/PBD/pbd_peer_input_trace.h"
+#include "Emu/PBD/core/peer/pbd_peer_input_trace.h"
 
-#include "Emu/PBD/pbd_peer_message.h"
+#include "Emu/PBD/core/peer/pbd_peer_message.h"
 
 #include <array>
 #include <cstdint>

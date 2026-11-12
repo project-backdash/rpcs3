@@ -1,4 +1,4 @@
-#include "Emu/PBD/pbd_player_seats.h"
+#include "Emu/PBD/core/match/pbd_player_seats.h"
 #include "pbd_test.h"
 
 #include <vector>

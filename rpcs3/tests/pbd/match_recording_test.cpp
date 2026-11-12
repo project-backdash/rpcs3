@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_match_recording.h"
+#include "Emu/PBD/core/replay/pbd_match_recording.h"
 
 using pbd::test::check;
 

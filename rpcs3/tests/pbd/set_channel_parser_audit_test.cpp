@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_set_channel.h"
+#include "Emu/PBD/core/match/pbd_set_channel.h"
 
 #include <string>
 

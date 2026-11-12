@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_practice_recording_guard.h"
+#include "Emu/PBD/core/practice/pbd_practice_recording_guard.h"
 
 namespace
 {

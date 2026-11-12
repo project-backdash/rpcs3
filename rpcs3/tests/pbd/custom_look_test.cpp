@@ -1,13 +1,13 @@
 #include "pbd_test.h"
-#include "Emu/PBD/pbd_custom_save.h"
+#include "Emu/PBD/core/customs/pbd_custom_save.h"
 
-#include "Emu/PBD/pbd_custom_look.h"
-#include "Emu/PBD/pbd_custom_editor.h"
-#include "Emu/PBD/pbd_custom_photo.h"
-#include "Emu/PBD/pbd_custom_wire.h"
-#include "Emu/PBD/pbd_practice_start.h"
-#include "Emu/PBD/pbd_set_channel_model.h"
-#include "Emu/pbd_session_mode.h"
+#include "Emu/PBD/core/customs/pbd_custom_look.h"
+#include "Emu/PBD/emulator/customs/pbd_custom_editor.h"
+#include "Emu/PBD/emulator/customs/pbd_custom_photo.h"
+#include "Emu/PBD/core/customs/pbd_custom_wire.h"
+#include "Emu/PBD/emulator/practice/pbd_practice_start.h"
+#include "Emu/PBD/core/match/pbd_set_channel_model.h"
+#include "Emu/PBD/core/session/pbd_session_mode.h"
 #include <stb_image.h>
 
 using pbd::test::check;

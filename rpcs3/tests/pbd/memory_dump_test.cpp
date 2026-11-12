@@ -1,4 +1,4 @@
-#include "Emu/PBD/pbd_memory_dump.h"
+#include "Emu/PBD/core/game/pbd_memory_dump.h"
 
 #include "pbd_test.h"
 

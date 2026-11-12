@@ -1,13 +1,13 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_session_history.h"
-#include "Emu/Cell/pbd_update_script.h"
-#include "Emu/PBD/pbd_replay_standby.h"
-#include "Emu/PBD/pbd_stall_metrics.h"
-#include "Emu/PBD/pbd_session_trace.h"
-#include "Emu/PBD/pbd_session_health.h"
-#include "Emu/PBD/pbd_freeze_probe.h"
-#include "Emu/PBD/pbd_json_reader.h"
+#include "Emu/PBD/core/session/pbd_session_history.h"
+#include "Emu/PBD/core/rollback/pbd_update_script.h"
+#include "Emu/PBD/emulator/replay/pbd_replay_standby.h"
+#include "Emu/PBD/core/session/pbd_stall_metrics.h"
+#include "Emu/PBD/core/session/pbd_session_trace.h"
+#include "Emu/PBD/core/session/pbd_session_health.h"
+#include "Emu/PBD/core/session/pbd_freeze_probe.h"
+#include "Emu/PBD/core/util/pbd_json_reader.h"
 #include <sstream>
 #include <future>
 #include <thread>

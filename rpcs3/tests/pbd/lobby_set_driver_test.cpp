@@ -1,9 +1,9 @@
-#include "Emu/PBD/pbd_game_overlay_parser.h"
+#include "Emu/PBD/core/display/pbd_game_overlay_parser.h"
 #include "lobby_set_driver_model.h"
-#include "Emu/PBD/pbd_peer_auth_state.h"
-#include "Emu/PBD/pbd_peer_message.h"
-#include "Emu/PBD/pbd_rank_screens.h"
-#include "Emu/PBD/pbd_replay_switches.h"
+#include "Emu/PBD/core/peer/pbd_peer_auth_state.h"
+#include "Emu/PBD/core/peer/pbd_peer_message.h"
+#include "Emu/PBD/emulator/match/pbd_rank_screens.h"
+#include "Emu/PBD/core/replay/pbd_replay_switches.h"
 
 #include <algorithm>
 #include <map>

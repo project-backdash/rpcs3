@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <cstdint>
-#include "Emu/RSX/pbd_display_rate.h"
+#include "Emu/PBD/core/display/pbd_display_rate.h"
 
 class QWindow;
 class QEvent;

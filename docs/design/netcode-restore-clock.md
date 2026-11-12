@@ -1,6 +1,6 @@
 # Battle clock after a restore
 
-Code: `resume_correction_clock()` in `rpcs3/Emu/PBD/pbd_correction_execution.cpp`.
+Code: `resume_correction_clock()` in `rpcs3/Emu/PBD/emulator/rollback/pbd_correction_execution.cpp`.
 
 ## Why
 

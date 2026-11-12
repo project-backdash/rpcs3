@@ -1,9 +1,9 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_practice_presentation.h"
-#include "Emu/PBD/pbd_move_readiness.h"
-#include "Emu/PBD/pbd_practice_frames.h"
-#include "Emu/PBD/pbd_native_call.h"
+#include "Emu/PBD/core/practice/pbd_practice_presentation.h"
+#include "Emu/PBD/core/practice/pbd_move_readiness.h"
+#include "Emu/PBD/core/practice/pbd_practice_frames.h"
+#include "Emu/PBD/emulator/game/pbd_native_call.h"
 
 #include <map>
 #include <optional>

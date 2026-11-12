@@ -1,8 +1,8 @@
 #include "stdafx.h"
 #include "swapchain.h"
 #include "Emu/system_config.h"
-#include "Emu/PBD/pbd_presentation_journal.h"
-#include "Emu/PBD/pbd_swapchain_rebuild.h"
+#include "Emu/PBD/emulator/display/pbd_presentation_journal.h"
+#include "Emu/PBD/core/display/pbd_swapchain_rebuild.h"
 #include "pbd_present_wait.h"
 
 namespace vk
@@ -378,7 +378,7 @@ namespace vk
 
 		// Vulkan's own presentation, not a DXGI flip-model swap chain, in the mode chosen above (the run summary).
 		// PBD: a driver that refuses the full-screen exclusive request still gets the swapchain it makes without one, and the
-		// old swapchain is destroyed whatever the outcome (Emu/PBD/pbd_swapchain_rebuild.h). The new handle is written to a
+		// old swapchain is destroyed whatever the outcome (Emu/PBD/core/display/pbd_swapchain_rebuild.h). The new handle is written to a
 		// local first, since a failed call leaves its output undefined; a failure leaves no swapchain and returns false.
 		const void* const exclusive_request = swap_info.pNext;
 		VkSwapchainKHR made = VK_NULL_HANDLE;

@@ -1,8 +1,8 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_throw_break.h"
-#include "Emu/PBD/pbd_throw_break_record.h"
-#include "Emu/PBD/pbd_match_bind.h"
+#include "Emu/PBD/core/practice/pbd_throw_break.h"
+#include "Emu/PBD/core/practice/pbd_throw_break_record.h"
+#include "Emu/PBD/core/input/pbd_match_bind.h"
 
 #include <algorithm>
 #include <array>

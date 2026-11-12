@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_session_policy.h"
+#include "Emu/PBD/core/session/pbd_session_policy.h"
 
 #include <cstdint>
 #include <map>

@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_versus.h"
-#include "Emu/PBD/pbd_versus_input.h"
+#include "Emu/PBD/emulator/match/pbd_versus.h"
+#include "Emu/PBD/core/match/pbd_versus_input.h"
 
 using pbd::test::check;
 

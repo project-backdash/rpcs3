@@ -2,7 +2,7 @@
 #include "pbd_overlays.h"
 #include "overlay_pbd_draw.h"
 #include "overlay_pbd_notices.h"
-#include "Emu/PBD/pbd_replay_viewer_menu.h"
+#include "Emu/PBD/core/replay/pbd_replay_viewer_menu.h"
 #include "Emu/System.h"
 
 #include <algorithm>
@@ -233,9 +233,7 @@ namespace rsx
 							const auto cell = ::pbd::practice::panel_line_rect(rect, i, lines.size(), lines.size());
 							const f32 centre = cell.y + cell.h / 2.f;
 							hud.text(type.caption, text_2, cell.x + 11.f, baseline(type.caption, centre), pbd_panel_label(type.caption, lines[i], lines[i].label, cell.w - 22.f));
-							const auto value = utf8_to_u32string(lines[i].value);
-							hud.text(type.caption, lines[i].value == ::pbd::practice::unknown_value ? text_3 : text_1,
-								cell.x + cell.w - 11.f - text_width(type.caption, value), baseline(type.caption, centre), value);
+							pbd_panel_value(hud, type.caption, lines[i], cell.x + cell.w - 11.f, baseline(type.caption, centre));
 						}
 					}
 			}

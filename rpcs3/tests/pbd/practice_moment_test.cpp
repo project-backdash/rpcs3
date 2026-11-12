@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_rollback_session_boundary.h"
-#include "Emu/PBD/pbd_practice_menu_builder.h"
+#include "Emu/PBD/emulator/rollback/pbd_rollback_session_boundary.h"
+#include "Emu/PBD/emulator/practice/pbd_practice_menu_builder.h"
 
 namespace pbd::test
 {

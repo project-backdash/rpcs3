@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 #include "select_tables_fixture.h"
-#include "Emu/PBD/pbd_costume_select.h"
-#include "Emu/PBD/pbd_costume_panel.h"
+#include "Emu/PBD/emulator/customs/pbd_costume_select.h"
+#include "Emu/PBD/emulator/customs/pbd_costume_panel.h"
 
 PBD_TEST(PbdCostumePanel, OfflineMenusCreateTheirControlLayerWithoutAnOnlineSet)
 {

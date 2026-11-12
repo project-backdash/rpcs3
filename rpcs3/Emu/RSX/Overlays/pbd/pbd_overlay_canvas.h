@@ -7,7 +7,8 @@
 
 #include "Emu/RSX/Overlays/overlay_controls.h"
 #include "pbd_glyph_atlas.h"
-#include "Emu/PBD/pbd_controller_display.h"
+#include "Emu/PBD/core/input/pbd_controller_display.h"
+#include "Emu/PBD/core/practice/pbd_advantage_tone.h"
 
 #include <algorithm>
 #include <array>
@@ -46,6 +47,27 @@ namespace rsx::overlays::pbd
 	inline const color4f top_edge = rgb(0xE9EEED, .14f);
 	inline const color4f row_bar = rgb(0xE9EEED, .04f);
 	inline const color4f separator = rgb(0xE9EEED, .18f);
+	inline const color4f advantage_green = rgb(0x72D68C);
+	inline const color4f advantage_yellow = rgb(0xF2DD6E);
+	inline const color4f advantage_orange = rgb(0xF59A52);
+
+	inline color4f advantage_colour(::pbd::practice::advantage_tone tone)
+	{
+		using ::pbd::practice::advantage_tone;
+		switch (tone)
+		{
+		case advantage_tone::green:
+			return advantage_green;
+		case advantage_tone::yellow:
+			return advantage_yellow;
+		case advantage_tone::orange:
+			return advantage_orange;
+		case advantage_tone::red:
+			return crimson;
+		default:
+			return text_1;
+		}
+	}
 
 	// Font sizes are points; the overlay rasterises ceil(pt x 4/3) px over the font's ascent+descent (1.2 em for both
 	// families), so these give the target em sizes: Barlow 16 / 14 / 15 and PBD Display 20 / 24.

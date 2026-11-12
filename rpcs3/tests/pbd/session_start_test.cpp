@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_session_start.h"
-#include "Emu/PBD/pbd_json_reader.h"
+#include "Emu/PBD/core/session/pbd_session_start.h"
+#include "Emu/PBD/core/util/pbd_json_reader.h"
 
 #include <array>
 

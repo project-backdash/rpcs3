@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_practice_sets.h"
+#include "Emu/PBD/emulator/practice/pbd_practice_sets.h"
 
 using pbd::test::check;
 using namespace pbd::practice_store;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks the C++ formatting rule of CODE-BAR.md with clang-format and the repository's .clang-format.
+"""Checks the C++ formatting rule of CHECKS.md with clang-format and the repository's .clang-format.
 
     python tools/pbd_check_format.py [--clang-format PATH] [--changed REV]
 

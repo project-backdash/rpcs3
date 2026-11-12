@@ -1,8 +1,8 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_practice_stage.h"
-#include "Emu/PBD/pbd_practice_menu.h"
-#include "Emu/PBD/pbd_stage_rule.h"
+#include "Emu/PBD/core/practice/pbd_practice_stage.h"
+#include "Emu/PBD/core/practice/pbd_practice_menu.h"
+#include "Emu/PBD/core/match/pbd_stage_rule.h"
 
 namespace
 {

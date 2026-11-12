@@ -1,8 +1,8 @@
 #include "pbd_test.h"
-#include "Emu/PBD/pbd_peer_local_route.h"
-#include "Emu/PBD/pbd_peer_auth_state.h"
-#include "Emu/PBD/pbd_peer_message.h"
-#include "Emu/PBD/pbd_peer_recovery.h"
+#include "Emu/PBD/core/peer/pbd_peer_local_route.h"
+#include "Emu/PBD/core/peer/pbd_peer_auth_state.h"
+#include "Emu/PBD/core/peer/pbd_peer_message.h"
+#include "Emu/PBD/core/peer/pbd_peer_recovery.h"
 
 using pbd::test::check;
 

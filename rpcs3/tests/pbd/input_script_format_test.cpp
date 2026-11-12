@@ -1,7 +1,7 @@
-#include "Emu/PBD/pbd_input_script_format.h"
-#include "Emu/Cell/Modules/pbd_input_script.h"
+#include "Emu/PBD/core/input/pbd_input_script_format.h"
+#include "Emu/PBD/core/input/pbd_input_script.h"
 #include "pbd_test.h"
-#include "Emu/PBD/pbd_fight_tape.h"
+#include "Emu/PBD/core/session/pbd_fight_tape.h"
 
 PBD_TEST(InputScriptFormat, StoredHeaders)
 {

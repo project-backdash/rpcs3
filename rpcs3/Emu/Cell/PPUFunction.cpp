@@ -5,7 +5,7 @@
 
 #include "PPUModule.h"
 #include "PPUInterpreter.h"
-#include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/core/util/pbd_env.h"
 
 // Get function name by FNID
 extern std::string ppu_get_function_name(const std::string& _module, u32 fnid)
@@ -2000,7 +2000,7 @@ namespace
 
 	constexpr const char* pbd_hle_pinned[] =
 		{
-#include "pbd_hle_pinned_order.inc"
+#include "Emu/PBD/core/game/pbd_hle_pinned_order.inc"
 	};
 } // namespace
 

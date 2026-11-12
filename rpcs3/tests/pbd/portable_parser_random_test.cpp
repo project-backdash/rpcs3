@@ -1,11 +1,11 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_update_script.h"
-#include "Emu/Cell/pbd_replay_game_file.h"
-#include "Emu/PBD/pbd_spectator_channel_input.h"
-#include "Emu/PBD/pbd_env_parse.h"
-#include "Emu/PBD/pbd_peer_message.h"
-#include "Emu/PBD/pbd_practice_store.h"
+#include "Emu/PBD/core/rollback/pbd_update_script.h"
+#include "Emu/PBD/core/replay/pbd_replay_game_file.h"
+#include "Emu/PBD/core/match/pbd_spectator_channel_input.h"
+#include "Emu/PBD/core/util/pbd_env_parse.h"
+#include "Emu/PBD/core/peer/pbd_peer_message.h"
+#include "Emu/PBD/core/practice/pbd_practice_store.h"
 
 #include <array>
 #include <cstdint>

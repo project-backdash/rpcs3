@@ -1,16 +1,16 @@
 #include "stdafx.h"
 #include "VKCommandStream.h"
 #include "VKGSRender.h"
-#include "Emu/RSX/pbd_frame_presentation.h"
-#include "Emu/RSX/pbd_present_pacing.h"
-#include "Emu/CPU/pbd_ordinary_metrics.h"
+#include "Emu/PBD/emulator/display/pbd_frame_presentation.h"
+#include "Emu/PBD/emulator/display/pbd_present_pacing.h"
+#include "Emu/PBD/emulator/session/pbd_ordinary_metrics.h"
 #include "vkutils/buffer_object.h"
 #include "vkutils/memory.h"
 #include "Emu/RSX/Overlays/overlay_manager.h"
 #include "Emu/RSX/Overlays/overlay_debug_overlay.h"
 #include "Emu/Cell/Modules/cellVideoOut.h"
-#include "Emu/PBD/pbd_held_presentation.h"
-#include "Emu/PBD/pbd_custom_photo.h"
+#include "Emu/PBD/core/display/pbd_held_presentation.h"
+#include "Emu/PBD/emulator/customs/pbd_custom_photo.h"
 
 #include "upscalers/bilinear_pass.hpp"
 #include "upscalers/fsr_pass.h"
@@ -250,7 +250,7 @@ bool VKGSRender::reinitialize_swapchain()
 	m_swapchain_dims.height = m_frame->client_height();
 
 	// PBD: a rebuild that only a suboptimal report asked for, for the size and monitor the replaced swapchain was made for,
-	// counts toward keeping the swapchain (Emu/PBD/pbd_swapchain_rebuild.h). The reasons are named in the log line of the
+	// counts toward keeping the swapchain (Emu/PBD/core/display/pbd_swapchain_rebuild.h). The reasons are named in the log line of the
 	// new swapchain.
 	const bool same_size = previous.width == m_swapchain_dims.width && previous.height == m_swapchain_dims.height;
 	const uptr monitor = pbd_window_monitor();

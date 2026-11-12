@@ -1,6 +1,6 @@
 #include "pbd_test.h"
-#include "Emu/PBD/pbd_replay_carry_codec.h"
-#include "Emu/PBD/pbd_replay_boot.h"
+#include "Emu/PBD/core/replay/pbd_replay_carry_codec.h"
+#include "Emu/PBD/emulator/replay/pbd_replay_boot.h"
 #include <algorithm>
 #include <stdexcept>
 

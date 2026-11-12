@@ -1,8 +1,8 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_undo_restore.h"
-#include "Emu/PBD/pbd_checkpoint_write_plan.h"
-#include "Emu/PBD/pbd_replay_capture.h"
+#include "Emu/PBD/core/rollback/pbd_undo_restore.h"
+#include "Emu/PBD/core/rollback/pbd_checkpoint_write_plan.h"
+#include "Emu/PBD/core/replay/pbd_replay_capture.h"
 
 #include <algorithm>
 #include <array>

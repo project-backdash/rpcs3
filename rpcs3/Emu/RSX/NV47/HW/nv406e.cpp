@@ -4,10 +4,10 @@
 
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/system_config.h"
-#include "Emu/RSX/pbd_replay_pacing.h"
-#include "Emu/PBD/pbd_replay_viewer_menu.h"
-#include "Emu/PBD/pbd_peer_recovery.h"
-#include "Emu/Cell/pbd_session_wait.h"
+#include "Emu/PBD/core/replay/pbd_replay_pacing.h"
+#include "Emu/PBD/core/replay/pbd_replay_viewer_menu.h"
+#include "Emu/PBD/core/peer/pbd_peer_recovery.h"
+#include "Emu/PBD/core/session/pbd_session_wait.h"
 
 #include "context_accessors.define.h"
 

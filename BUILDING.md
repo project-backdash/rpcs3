@@ -5,7 +5,7 @@
 Only the Visual Studio build for Windows x64 is supported. The CMake source lists include the PBD modules and tests,
 but the fork is not built or tested with CMake or on Linux.
 
-Use Visual Studio 2026 with the C++ x64 tools, Git and Python 3 on PATH, and Vulkan SDK 1.4.341.1.
+Use Visual Studio 2026 with the C++ x64 tools, Git and Python 3 on PATH. Setup restores Vulkan SDK 1.4.341.1.
 
 For an exported source snapshot, start in the distribution directory and prepare a short build root:
 
@@ -29,8 +29,9 @@ powershell -ExecutionPolicy Bypass -File tools\pbd\build-rpcs3.ps1 -Jobs 4
 ```
 
 The setup script restores the archives in [dependencies.lock.json](tools/pbd/dependencies.lock.json), checks their
-hashes, and initializes the required submodules. Install the Vulkan SDK under `build\deps\VulkanSDK\1.4.341.1`,
-or pass its directory to the build script with `-VulkanSdk`. `-CheckOnly` checks the prerequisites without building.
+sizes and hashes, and initializes the required submodules. Vulkan's copy-only installer restores its SDK under
+`build\deps\VulkanSDK\1.4.341.1`. You can pass an SDK directory to the build script with `-VulkanSdk`.
+`-CheckOnly` checks the prerequisites without building.
 Both scripts check the available disk space before starting work.
 
 The build produces `bin\rpcs3.exe` and writes logs under `build\pbd-logs`. A rebuild is not byte-identical to a

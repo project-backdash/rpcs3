@@ -2,7 +2,7 @@
 
 #include <util/types.hpp>
 #include "Emu/system_config_types.h"
-#include "Emu/RSX/pbd_display_rate.h"
+#include "Emu/PBD/core/display/pbd_display_rate.h"
 
 class GSFrameBase;
 

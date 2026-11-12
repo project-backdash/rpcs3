@@ -3,14 +3,14 @@
 // Commands drive first-run checkpoint input one pad poll at a time and publish observations atomically.
 // Checkpoint requests validate the native select state and neutral pads before saving.
 
-#include "Emu/PBD/pbd_input_command_parser.h"
+#include "Emu/PBD/core/input/pbd_input_command_parser.h"
 #include "Emu/Memory/vm.h"
 #include "Emu/System.h"
 #include "Utilities/File.h"
 #include "Utilities/StrFmt.h"
-#include "Emu/PBD/pbd_env.h"
-#include "Emu/PBD/pbd_checkpoint_compatibility.h"
-#include "Emu/PBD/pbd_t5dr_memory.h"
+#include "Emu/PBD/core/util/pbd_env.h"
+#include "Emu/PBD/core/rollback/pbd_checkpoint_compatibility.h"
+#include "Emu/PBD/core/game/pbd_t5dr_memory.h"
 #include "util/endian.hpp"
 #include <algorithm>
 #include <array>

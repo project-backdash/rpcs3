@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_set_channel.h"
-#include "Emu/PBD/pbd_rematch_json.h"
+#include "Emu/PBD/core/match/pbd_set_channel.h"
+#include "Emu/PBD/core/match/pbd_rematch_json.h"
 
 using pbd::test::check;
 

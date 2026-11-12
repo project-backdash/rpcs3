@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_game_profile.h"
-#include "Emu/PBD/pbd_player_plates.h"
+#include "Emu/PBD/core/game/pbd_game_profile.h"
+#include "Emu/PBD/core/match/pbd_player_plates.h"
 
 using pbd::test::check;
 

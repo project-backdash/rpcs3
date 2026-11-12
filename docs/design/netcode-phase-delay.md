@@ -2,7 +2,7 @@
 
 Switch: `PBD_PEER_PHASE_DELAY`, on by default. It needs the entry sample (`PBD_PEER_ENTRY_SAMPLE`) and an input
 delay of 1 or more. Code: the `peer.phase_delay` fields of the session state in
-`rpcs3/Emu/Cell/pbd_rollback_session_storage_peer.h`, and `rpcs3/Emu/PBD/pbd_phase_input_steps.h`, called by
+`rpcs3/Emu/PBD/emulator/rollback/pbd_rollback_session_storage_peer.h`, and `rpcs3/Emu/PBD/emulator/rollback/pbd_phase_input_steps.h`, called by
 `assign_phase_delay()` in `pbd_rollback_session_correction.cpp` (the push model that fixes each sample's tick).
 
 ## Why

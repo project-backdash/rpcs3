@@ -1,6 +1,6 @@
 #include "stdafx.h"
-#include "Emu/CPU/pbd_ordinary_metrics.h"
-#include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/emulator/session/pbd_ordinary_metrics.h"
+#include "Emu/PBD/core/util/pbd_env.h"
 #include "sys_rsx.h"
 
 #include "Emu/System.h"

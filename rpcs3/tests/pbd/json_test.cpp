@@ -2,7 +2,7 @@
 // replay files' byte fields: the launcher reads all three, so an escaping or spelling change would change what it parses.
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_json.h"
+#include "Emu/PBD/core/util/pbd_json.h"
 
 #include <array>
 #include <cstdint>

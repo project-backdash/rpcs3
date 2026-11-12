@@ -1,8 +1,8 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_host.h"
-#include "Emu/PBD/pbd_host_timing.h"
-#include "Emu/PBD/pbd_stall_metrics.h"
+#include "Emu/PBD/core/util/pbd_host.h"
+#include "Emu/PBD/core/util/pbd_host_timing.h"
+#include "Emu/PBD/core/session/pbd_stall_metrics.h"
 
 #include <cstdint>
 #include <cstdlib>

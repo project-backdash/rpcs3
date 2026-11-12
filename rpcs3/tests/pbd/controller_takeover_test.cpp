@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_controller_takeover.h"
+#include "Emu/PBD/core/input/pbd_controller_takeover.h"
 
 #include <string>
 #include <vector>

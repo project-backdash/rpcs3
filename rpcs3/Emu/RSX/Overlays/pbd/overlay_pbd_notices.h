@@ -8,9 +8,9 @@
 
 #include "overlay_pbd_draw.h"
 #include "overlay_pbd_lettering.h"
-#include "Emu/PBD/pbd_set_notices.h"
-#include "Emu/Cell/pbd_notice_art.h"
-#include "Emu/Cell/pbd_live_stats.h"
+#include "Emu/PBD/core/match/pbd_set_notices.h"
+#include "Emu/PBD/core/match/pbd_notice_art.h"
+#include "Emu/PBD/core/display/pbd_live_stats.h"
 
 #include <array>
 #include <cmath>

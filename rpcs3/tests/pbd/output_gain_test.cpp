@@ -1,9 +1,9 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_output_gain.h"
-#include "Emu/PBD/pbd_player_audio.h"
-#include "Emu/Cell/pbd_player_volume.h"
-#include "Emu/PBD/pbd_replay_standby.h"
+#include "Emu/PBD/core/session/pbd_output_gain.h"
+#include "Emu/PBD/core/session/pbd_player_audio.h"
+#include "Emu/PBD/emulator/session/pbd_player_volume.h"
+#include "Emu/PBD/emulator/replay/pbd_replay_standby.h"
 
 #include <cmath>
 #include <cstring>

@@ -1,6 +1,6 @@
 #include "pbd_test.h"
-#include "Emu/PBD/pbd_peer_log.h"
-#include "Emu/PBD/pbd_session_health.h"
+#include "Emu/PBD/core/peer/pbd_peer_log.h"
+#include "Emu/PBD/core/session/pbd_session_health.h"
 
 #include <chrono>
 #include <future>

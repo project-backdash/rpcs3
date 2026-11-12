@@ -1,6 +1,6 @@
-#include "Emu/PBD/pbd_controller_mapper.h"
-#include "Emu/PBD/pbd_controller_display.h"
-#include "Emu/Cell/pbd_practice_controls.h"
+#include "Emu/PBD/core/input/pbd_controller_mapper.h"
+#include "Emu/PBD/core/input/pbd_controller_display.h"
+#include "Emu/PBD/core/practice/pbd_practice_controls.h"
 #include "pbd_test.h"
 #include "rpcs3qt/pbd_raw_keyboard.h"
 

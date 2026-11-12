@@ -1,7 +1,7 @@
 #pragma once
 
 #include "PPUThread.h"
-#include "Emu/CPU/pbd_ordinary_metrics.h"
+#include "Emu/PBD/emulator/session/pbd_ordinary_metrics.h"
 #include "PPUInterpreter.h"
 
 #include "util/v128.hpp"

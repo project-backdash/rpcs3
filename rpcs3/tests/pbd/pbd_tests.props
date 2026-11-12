@@ -328,6 +328,9 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)practice_lesson_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)advantage_tone_test.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)practice_readiness_test.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>

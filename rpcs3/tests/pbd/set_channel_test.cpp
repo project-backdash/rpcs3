@@ -1,9 +1,9 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_set_channel.h"
-#include "Emu/PBD/pbd_features.h"
-#include "Emu/PBD/pbd_costume_panel.h"
-#include "Emu/PBD/pbd_replay_journal.h"
+#include "Emu/PBD/core/match/pbd_set_channel.h"
+#include "Emu/PBD/core/game/pbd_features.h"
+#include "Emu/PBD/emulator/customs/pbd_costume_panel.h"
+#include "Emu/PBD/core/replay/pbd_replay_journal.h"
 
 #include <regex>
 #ifdef _WIN32
@@ -1458,8 +1458,8 @@ PBD_TEST(PbdSetChannel, AHeldGameAsksForTheSetScreens)
 	check(pbd::costume_panel::requested(set_screens_requested(), false, false), "cold online starts create the same picker");
 }
 
-#include "Emu/PBD/pbd_match_bind.h"
-#include "Emu/PBD/pbd_match_pad.h"
+#include "Emu/PBD/core/input/pbd_match_bind.h"
+#include "Emu/PBD/core/input/pbd_match_pad.h"
 
 PBD_TEST(PbdMatchBind, AssignedSideKeepsTheConfiguredPhysicalDeviceAndRejectsAmbiguousPorts)
 {

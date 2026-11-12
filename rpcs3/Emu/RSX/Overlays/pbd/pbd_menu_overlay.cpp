@@ -4,7 +4,7 @@
 #include "pbd_practice_menu_drawing.h"
 #include "pbd_challenger_drawing.h"
 #include "pbd_lobby_panel_drawing.h"
-#include "Emu/Cell/pbd_practice_mouse.h"
+#include "Emu/PBD/core/practice/pbd_practice_mouse.h"
 #include "Emu/System.h"
 
 #include <algorithm>

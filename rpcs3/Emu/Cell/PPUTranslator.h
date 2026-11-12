@@ -5,7 +5,7 @@
 #include "Emu/CPU/CPUTranslator.h"
 #include "PPUOpcodes.h"
 #include "PPUAnalyser.h"
-#include "pbd_ppu_object_name.h"
+#include "Emu/PBD/emulator/game/pbd_ppu_object_name.h"
 
 #include "util/types.hpp"
 

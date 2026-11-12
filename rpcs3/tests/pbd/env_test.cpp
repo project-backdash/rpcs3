@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_env.h"
-#include "Emu/PBD/pbd_boot_environment.h"
+#include "Emu/PBD/core/util/pbd_env.h"
+#include "Emu/PBD/core/session/pbd_boot_environment.h"
 
 #include <cstdlib>
 #include <string>

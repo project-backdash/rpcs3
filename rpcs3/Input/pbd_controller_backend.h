@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Emu/PBD/pbd_controller_mapper.h"
+#include "Emu/PBD/core/input/pbd_controller_mapper.h"
 #include <memory>
 
 namespace pbd::controllers

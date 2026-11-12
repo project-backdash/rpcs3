@@ -86,7 +86,6 @@ namespace rsx
 				{
 					const auto cell = ::pbd::practice::panel_line_rect(rect, i, observed, lines.size());
 					const f32 centre = cell.y + cell.h / 2.f;
-					const bool unknown = lines[i].value == ::pbd::practice::unknown_value;
 					auto label = lines[i].label;
 					if (columns && label == "Attack Startup Frames")
 						label = "Startup";
@@ -98,21 +97,7 @@ namespace rsx
 						label = "Ref Hit";
 					const f32 inset = columns ? 6.f : 11.f;
 					out.text(type.caption, text_2, cell.x + inset, baseline(type.caption, centre), pbd_panel_label(type.caption, lines[i], label, cell.w - 2.f * inset));
-					const auto value = utf8_to_u32string(lines[i].value);
-					const f32 value_x = cell.x + cell.w - inset - text_width(type.caption, value), value_y = baseline(type.caption, centre);
-					const usz marked_at = std::min<usz>(lines[i].marked_at, value.size());
-					const usz marked_size = std::min<usz>(lines[i].marked_size, value.size() - marked_at);
-					if (!marked_size)
-						out.text(type.caption, unknown ? text_3 : text_1, value_x, value_y, value);
-					else
-					{
-						// The branch the fighter with the choice took (a stun break, a tech, or neither) in gold.
-						const std::u32string_view whole = value, head = whole.substr(0, marked_at), mark = whole.substr(marked_at, marked_size);
-						const f32 mark_x = value_x + text_width(type.caption, head);
-						out.text(type.caption, text_1, value_x, value_y, head);
-						out.text(type.caption, gold, mark_x, value_y, mark);
-						out.text(type.caption, text_1, mark_x + text_width(type.caption, mark), value_y, whole.substr(marked_at + marked_size));
-					}
+					pbd_panel_value(out, type.caption, lines[i], cell.x + cell.w - inset, baseline(type.caption, centre));
 				}
 			}
 

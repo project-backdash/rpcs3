@@ -15,10 +15,10 @@
 
 #include "Emu/Cell/ErrorCodes.h"
 #include "Emu/Cell/PPUThread.h"
-#include "Emu/RSX/pbd_frame_presentation.h"
-#include "Emu/Cell/pbd_fn_hook.h"
+#include "Emu/PBD/emulator/display/pbd_frame_presentation.h"
+#include "Emu/PBD/emulator/game/pbd_fn_hook.h"
 #include "Emu/Cell/Modules/pbd_input_script_runtime.h"
-#include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/core/util/pbd_env.h"
 #include "Emu/Cell/PPUDisAsm.h"
 #include "Emu/Cell/PPUAnalyser.h"
 #include "Emu/Cell/SPUThread.h"
@@ -67,7 +67,7 @@
 #include <Windows.h>
 #endif
 
-#include "pbd_session_mode.h"
+#include "Emu/PBD/core/session/pbd_session_mode.h"
 
 #include "Utilities/JIT.h"
 

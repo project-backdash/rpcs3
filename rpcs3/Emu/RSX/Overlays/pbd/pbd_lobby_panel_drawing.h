@@ -7,7 +7,7 @@
 // edge with that player's dot. Set complete shows one headline per state and the placement counter with its lamps and flip.
 
 #include "overlay_pbd_notices.h"
-#include "Emu/Cell/pbd_session_wait.h"
+#include "Emu/PBD/core/session/pbd_session_wait.h"
 
 #include <chrono>
 #include <string>

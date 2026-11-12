@@ -3,10 +3,10 @@
 #include "pad_thread.h"
 #include "Emu/Io/PadHandler.h"
 #include "Emu/Io/pad_config.h"
-#include "Emu/PBD/pbd_env.h"
-#include "Emu/PBD/pbd_spectator_channel_model.h"
+#include "Emu/PBD/core/util/pbd_env.h"
+#include "Emu/PBD/core/match/pbd_spectator_channel_model.h"
 #include "Emu/System.h"
-#include "Emu/Cell/pbd_controller_takeover.h"
+#include "Emu/PBD/core/input/pbd_controller_takeover.h"
 
 #include <atomic>
 

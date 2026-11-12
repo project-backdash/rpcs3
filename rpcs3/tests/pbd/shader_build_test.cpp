@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_session_health.h"
-#include "Emu/PBD/pbd_shader_build.h"
+#include "Emu/PBD/core/session/pbd_session_health.h"
+#include "Emu/PBD/core/display/pbd_shader_build.h"
 
 #include <array>
 #include <cstring>

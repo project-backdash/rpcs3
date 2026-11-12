@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "sys_memory.h"
-#include "Emu/Cell/pbd_boot_request.h"
+#include "Emu/PBD/emulator/session/pbd_boot_request.h"
 
 #include "Emu/Memory/vm_locking.h"
 #include "Emu/CPU/CPUThread.h"

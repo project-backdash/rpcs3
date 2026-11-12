@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_input_taps.h"
+#include "Emu/PBD/core/input/pbd_input_taps.h"
 #include "Input/pbd_controller_backend.h"
 #include "Input/pbd_controller_ports.h"
 

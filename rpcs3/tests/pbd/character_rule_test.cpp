@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_character_rule.h"
-#include "Emu/Cell/pbd_hidden_selection.h"
+#include "Emu/PBD/core/match/pbd_character_rule.h"
+#include "Emu/PBD/emulator/match/pbd_hidden_selection.h"
 
 using pbd::test::check;
 

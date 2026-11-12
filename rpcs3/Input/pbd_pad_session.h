@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Emu/Io/pad_types.h"
-#include "Emu/PBD/pbd_match_pad.h"
+#include "Emu/PBD/core/input/pbd_match_pad.h"
 #include "util/types.hpp"
 
 #include <array>
@@ -19,7 +19,7 @@ namespace pbd::pads
 		u16 vendor_id, product_id;
 	};
 
-	// Which of the two game ports this PC's player holds in a lobby match (Emu/PBD/pbd_match_pad.h). The ports swap while
+	// Which of the two game ports this PC's player holds in a lobby match (Emu/PBD/core/input/pbd_match_pad.h). The ports swap while
 	// this PC plays the second side. Called under the pad lock.
 	class match_sides
 	{

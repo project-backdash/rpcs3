@@ -15,7 +15,7 @@ u16 pbd_spectator_pad_word() noexcept;
 
 namespace pbd::pads
 {
-	// Spectating (Emu/Cell/pbd_spectator_ui.h): the watcher's controllers, polled through handler instances of its own
+	// Spectating (Emu/PBD/core/match/pbd_spectator_ui.h): the watcher's controllers, polled through handler instances of its own
 	// (the families a player is likely to hold, as the takeover watches them), each read with its handler's default
 	// mapping. The update latch reads the word for the watcher's screen only; the spectator's game ports stay virtual and
 	// neutral, so nothing here reaches the watched game.

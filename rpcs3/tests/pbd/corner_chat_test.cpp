@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_corner_chat.h"
+#include "Emu/PBD/core/match/pbd_corner_chat.h"
 #include <string>
 
 using pbd::test::check;

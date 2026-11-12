@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_clip_buffer.h"
-#include "Emu/PBD/pbd_clip_hud.h"
+#include "Emu/PBD/core/display/pbd_clip_buffer.h"
+#include "Emu/PBD/core/display/pbd_clip_hud.h"
 
 using pbd::test::check;
 

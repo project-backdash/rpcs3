@@ -5,7 +5,7 @@
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include "Emu/Cell/pbd_peer_endpoint.h"
+#include "Emu/PBD/core/peer/pbd_peer_endpoint.h"
 
 #include <string>
 
@@ -58,8 +58,11 @@ PBD_TEST(PbdPeerEndpoint, Checks)
 	const auto other127 = parse_address("127.0.0.2", port);
 	check(other127 && !is_loopback(*other127)); // Only exactly 127.0.0.1 binds loopback.
 	check(!parse_address("not-an-address", port));
-	check(!parse_address("255.255.255.255", port)); // INADDR_NONE is refused.
-	check(!parse_address("[2001:db8::5]", port));   // The launcher passes IPv6 without brackets.
+	check(!parse_address("255.255.255.255", port)); // The broadcast address is refused.
+	check(!parse_address("127.1", port));           // Only a dotted quad is an IPv4 address.
+	check(!parse_address("1", port));
+	check(!parse_address("0x7f.0.0.1", port));
+	check(!parse_address("[2001:db8::5]", port)); // The launcher passes IPv6 without brackets.
 
 	// IPv6 literals.
 	const auto v6 = parse_address("2001:db8::5", port);

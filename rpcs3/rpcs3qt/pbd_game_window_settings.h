@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Emu/PBD/pbd_settings_runtime.h"
-#include "Emu/PBD/pbd_controller_display.h"
+#include "Emu/PBD/core/display/pbd_settings_runtime.h"
+#include "Emu/PBD/core/input/pbd_controller_display.h"
 #include "util/types.hpp"
 
 #include <QTimer>

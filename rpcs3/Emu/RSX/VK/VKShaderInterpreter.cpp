@@ -11,7 +11,7 @@
 #include "Emu/RSX/Program/ShaderInterpreter.h"
 #include "Emu/RSX/rsx_methods.h"
 #include "Emu/localized_string.h"
-#include "Emu/PBD/pbd_shader_build.h"
+#include "Emu/PBD/core/display/pbd_shader_build.h"
 #include "Emu/RSX/Core/RSXContext.h"
 
 #include "Utilities/File.h"

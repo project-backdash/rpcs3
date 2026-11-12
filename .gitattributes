@@ -1,0 +1,5 @@
+# RPCS3 stores these three files with CRLF line endings. Keep them byte for byte, whatever core.autocrlf says, so a
+# change to one line is a one-line difference from upstream.
+rpcs3/emucore.vcxproj -text
+rpcs3/emucore.vcxproj.filters -text
+rpcs3/Emu/RSX/VK/vkutils/swapchain.cpp -text

@@ -3,7 +3,7 @@
 #ifdef HAVE_SDL3
 
 #include "Emu/Io/PadHandler.h"
-#include "Emu/Cell/pbd_practice_controls.h"
+#include "Emu/PBD/core/practice/pbd_practice_controls.h"
 
 #ifndef _MSC_VER
 #pragma GCC diagnostic push

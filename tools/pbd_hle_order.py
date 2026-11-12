@@ -39,7 +39,7 @@ def convert(raw: bytes) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dump", type=Path)
-    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parents[1] / "rpcs3/Emu/Cell/pbd_hle_pinned_order.inc")
+    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parents[1] / "rpcs3/Emu/PBD/core/game/pbd_hle_pinned_order.inc")
     parser.add_argument("--check", action="store_true", help="compare without writing the include")
     args = parser.parse_args()
     try:

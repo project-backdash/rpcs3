@@ -4,11 +4,11 @@
 #include "overlay_pbd_button_layout.h"
 #include "overlay_pbd_versus.h"
 #include "pbd_clip_drawing.h"
-#include "Emu/Cell/pbd_controller_takeover.h"
-#include "Emu/PBD/pbd_player_seats.h"
-#include "Emu/PBD/pbd_spectator_channel_model.h"
+#include "Emu/PBD/core/input/pbd_controller_takeover.h"
+#include "Emu/PBD/core/match/pbd_player_seats.h"
+#include "Emu/PBD/core/match/pbd_spectator_channel_model.h"
 #include "Emu/System.h"
-#include "Emu/pbd_session_mode.h"
+#include "Emu/PBD/core/session/pbd_session_mode.h"
 
 #include <algorithm>
 #include <chrono>

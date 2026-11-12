@@ -105,6 +105,7 @@ set(PBD_TESTS
     ${CMAKE_CURRENT_LIST_DIR}/practice_recording_guard_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_throw_escape_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_lesson_test.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/advantage_tone_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_readiness_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_punish_test.cpp
     ${CMAKE_CURRENT_LIST_DIR}/practice_startup_test.cpp

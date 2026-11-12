@@ -1,8 +1,8 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_rematch.h"
-#include "Emu/PBD/pbd_rematch_native.h"
-#include "Emu/PBD/pbd_character_rule_native.h"
+#include "Emu/PBD/core/match/pbd_rematch.h"
+#include "Emu/PBD/emulator/match/pbd_rematch_native.h"
+#include "Emu/PBD/emulator/match/pbd_character_rule_native.h"
 
 using pbd::test::check;
 

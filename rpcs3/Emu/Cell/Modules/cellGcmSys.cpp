@@ -11,8 +11,8 @@
 #include "sysPrxForUser.h"
 
 #include "util/asm.hpp"
-#include "Emu/Cell/pbd_owner_timeline.h"
-#include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/core/rollback/pbd_owner_timeline.h"
+#include "Emu/PBD/core/util/pbd_env.h"
 
 LOG_CHANNEL(cellGcmSys);
 

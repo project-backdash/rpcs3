@@ -1,8 +1,8 @@
 # Time sync between the two peers
 
 Switch: `PBD_PEER_SYNC`, on by default (`0` turns it off). Code: the `peer.sync` fields of the session state in
-`rpcs3/Emu/Cell/pbd_rollback_session_storage_peer.h`, the timing adjustment in
-`rpcs3/Emu/PBD/pbd_peer_timing.cpp` and the opening alignment in `rpcs3/Emu/PBD/pbd_peer_boundary_steps.h`.
+`rpcs3/Emu/PBD/emulator/rollback/pbd_rollback_session_storage_peer.h`, the timing adjustment in
+`rpcs3/Emu/PBD/emulator/peer/pbd_peer_timing.cpp` and the opening alignment in `rpcs3/Emu/PBD/emulator/peer/pbd_peer_boundary_steps.h`.
 
 ## Why
 

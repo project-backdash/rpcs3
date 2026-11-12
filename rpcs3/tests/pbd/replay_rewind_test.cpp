@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_replay_rewind.h"
-#include "Emu/PBD/pbd_replay_checkpoint.h"
+#include "Emu/PBD/core/replay/pbd_replay_rewind.h"
+#include "Emu/PBD/core/replay/pbd_replay_checkpoint.h"
 
 #include <array>
 #include <vector>

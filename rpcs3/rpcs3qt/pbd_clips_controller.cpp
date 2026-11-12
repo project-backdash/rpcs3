@@ -8,10 +8,10 @@
 #include "Emu/IdManager.h"
 #include "Emu/system_config.h"
 #include "Emu/RSX/Overlays/overlay_message.h"
-#include "Emu/PBD/pbd_env.h"
-#include "Emu/PBD/pbd_clip_buffer.h"
-#include "Emu/PBD/pbd_clip_hud.h"
-#include "Emu/PBD/pbd_held_presentation.h"
+#include "Emu/PBD/core/util/pbd_env.h"
+#include "Emu/PBD/core/display/pbd_clip_buffer.h"
+#include "Emu/PBD/core/display/pbd_clip_hud.h"
+#include "Emu/PBD/core/display/pbd_held_presentation.h"
 #include <QFile>
 #include <QCoreApplication>
 #include <QFileInfo>

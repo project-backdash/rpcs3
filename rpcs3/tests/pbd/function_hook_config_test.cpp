@@ -1,13 +1,13 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_function_hook_config.h"
-#include "Emu/PBD/pbd_env.h"
-#include "Emu/PBD/pbd_json_reader.h"
-#include "Emu/PBD/pbd_session_policy.h"
-#include "Emu/PBD/pbd_voice_health.h"
-#include "Emu/PBD/pbd_function_hook_state.h"
-#include "Emu/PBD/pbd_function_hook_event.h"
-#include "Emu/PBD/pbd_rank_screens.h"
+#include "Emu/PBD/core/game/pbd_function_hook_config.h"
+#include "Emu/PBD/core/util/pbd_env.h"
+#include "Emu/PBD/core/util/pbd_json_reader.h"
+#include "Emu/PBD/core/session/pbd_session_policy.h"
+#include "Emu/PBD/core/session/pbd_voice_health.h"
+#include "Emu/PBD/emulator/game/pbd_function_hook_state.h"
+#include "Emu/PBD/emulator/game/pbd_function_hook_event.h"
+#include "Emu/PBD/emulator/match/pbd_rank_screens.h"
 #include <cstdlib>
 #include <fstream>
 #include <map>

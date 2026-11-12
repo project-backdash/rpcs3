@@ -16,7 +16,7 @@ fork.
 
 Start with [ARCHITECTURE.md](../ARCHITECTURE.md), the map of what the fork adds and where it hooks into RPCS3.
 
-- [CODE-BAR.md](../CODE-BAR.md) describes the formatting and test commands that run, and the separate review
+- [CHECKS.md](../CHECKS.md) describes the formatting and test commands that run, and the separate review
   guidance. [KNOWN-DEBT.md](../KNOWN-DEBT.md) records open structural work without implying that CI enforces it.
 - Build with the steps in [SOURCE.md](../SOURCE.md#building-windows-what-we-ship).
   `tools\pbd\build-rpcs3.ps1 -CheckOnly` tells you what is missing without building.

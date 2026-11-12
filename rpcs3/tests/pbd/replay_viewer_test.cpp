@@ -1,8 +1,8 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_replay_viewer_menu.h"
-#include "Emu/PBD/pbd_replay_control_buttons.h"
-#include "Emu/PBD/pbd_replay_capture.h"
+#include "Emu/PBD/core/replay/pbd_replay_viewer_menu.h"
+#include "Emu/PBD/core/replay/pbd_replay_control_buttons.h"
+#include "Emu/PBD/core/replay/pbd_replay_capture.h"
 
 using pbd::test::check;
 

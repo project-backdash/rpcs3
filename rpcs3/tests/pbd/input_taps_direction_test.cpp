@@ -1,5 +1,5 @@
 #include "pbd_test.h"
-#include "Emu/PBD/pbd_input_taps.h"
+#include "Emu/PBD/core/input/pbd_input_taps.h"
 
 #include <array>
 

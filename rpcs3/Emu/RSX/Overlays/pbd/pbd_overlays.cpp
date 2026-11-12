@@ -3,13 +3,13 @@
 #include "overlay_pbd_draw.h"
 #include "Emu/RSX/Overlays/overlay_manager.h"
 #include "Emu/Io/pad_config.h"
-#include "Emu/Cell/pbd_set_channel.h"
-#include "Emu/Cell/pbd_direct_match.h"
+#include "Emu/PBD/core/match/pbd_set_channel.h"
+#include "Emu/PBD/emulator/match/pbd_direct_match.h"
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/System.h"
 #include "Emu/system_config.h"
-#include "Emu/pbd_session_mode.h"
-#include "Emu/PBD/pbd_costume_panel.h"
+#include "Emu/PBD/core/session/pbd_session_mode.h"
+#include "Emu/PBD/emulator/customs/pbd_costume_panel.h"
 
 // The PBD overlays' creation order and the helpers they share.
 
@@ -71,6 +71,29 @@ namespace rsx
 			if (line.short_label.empty() || pbd::text_width(f, full) <= space)
 				return pbd::fit_text(f, full, space);
 			return pbd::fit_text(f, utf8_to_u32string(line.short_label), space);
+		}
+
+		// Practice and replay share the value's tone and gold marking for the chosen reaction branch.
+		void pbd_panel_value(pbd::layer& out, font* f, const ::pbd::practice::panel_line& line, f32 right, f32 y)
+		{
+			using namespace pbd;
+			color4f tint = line.value == ::pbd::practice::unknown_value ? text_3 : text_1;
+			if (line.label == "Frame Advantage" && line.value != ::pbd::practice::unknown_value)
+				tint = advantage_colour(::pbd::practice::advantage_tone_of(line.value));
+			const auto value = utf8_to_u32string(line.value);
+			const f32 x = right - text_width(f, value);
+			const usz marked_at = std::min<usz>(line.marked_at, value.size());
+			const usz marked_size = std::min<usz>(line.marked_size, value.size() - marked_at);
+			if (!marked_size)
+			{
+				out.text(f, tint, x, y, value);
+				return;
+			}
+			const std::u32string_view whole = value, head = whole.substr(0, marked_at), mark = whole.substr(marked_at, marked_size);
+			const f32 mark_x = x + text_width(f, head);
+			out.text(f, tint, x, y, head);
+			out.text(f, gold, mark_x, y, mark);
+			out.text(f, tint, mark_x + text_width(f, mark), y, whole.substr(marked_at + marked_size));
 		}
 
 		void create_pbd_overlays(display_manager& manager, bool net_wanted)

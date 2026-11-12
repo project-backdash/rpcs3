@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "Emu/Cell/PPUModule.h"
-#include "Emu/Cell/pbd_fn_hook.h"
+#include "Emu/PBD/emulator/game/pbd_fn_hook.h"
 
 #include "Utilities/bin_patch.h"
 #include "Utilities/StrUtil.h"

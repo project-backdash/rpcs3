@@ -1,8 +1,8 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_practice_presentation.h"
-#include "Emu/PBD/pbd_practice_input_delay.h"
-#include "Emu/PBD/pbd_practice_menu.h"
+#include "Emu/PBD/core/practice/pbd_practice_presentation.h"
+#include "Emu/PBD/core/practice/pbd_practice_input_delay.h"
+#include "Emu/PBD/core/practice/pbd_practice_menu.h"
 
 #include <cstdint>
 #include <string>

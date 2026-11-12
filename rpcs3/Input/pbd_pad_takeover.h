@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Emu/Cell/pbd_controller_takeover.h"
+#include "Emu/PBD/core/input/pbd_controller_takeover.h"
 #include "Emu/Io/pad_types.h"
 #include "Emu/Io/pad_config_types.h"
 #include "util/types.hpp"
@@ -17,7 +17,7 @@ class PadHandlerBase;
 
 namespace pbd::pads
 {
-	// Controller takeover (Emu/Cell/pbd_controller_takeover.h), in Practice, replays and spectating only: a button press
+	// Controller takeover (Emu/PBD/core/input/pbd_controller_takeover.h), in Practice, replays and spectating only: a button press
 	// on another pad hands it Player 1. The other pads are polled through handler instances of its own, since the pad
 	// thread's handlers belong to their own threads.
 	class takeover_watch

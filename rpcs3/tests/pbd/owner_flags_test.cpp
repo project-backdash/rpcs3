@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_owner_flags.h"
+#include "Emu/PBD/emulator/rollback/pbd_owner_flags.h"
 
 #include <array>
 

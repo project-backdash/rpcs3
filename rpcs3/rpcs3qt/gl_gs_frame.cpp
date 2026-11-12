@@ -2,7 +2,7 @@
 
 #include "Emu/System.h"
 #include "Emu/system_config.h"
-#include "Emu/PBD/pbd_held_presentation.h"
+#include "Emu/PBD/core/display/pbd_held_presentation.h"
 
 #include <QOpenGLContext>
 #include <QOffscreenSurface>

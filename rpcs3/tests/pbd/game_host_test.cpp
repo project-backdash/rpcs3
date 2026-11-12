@@ -3,7 +3,7 @@
 #include "rpcs3qt/pbd_game_host_policy.h"
 #include "rpcs3qt/pbd_game_host_visibility.h"
 #include "rpcs3qt/pbd_game_host_shell.h"
-#include "Emu/PBD/pbd_screen_check.h"
+#include "Emu/PBD/core/display/pbd_screen_check.h"
 
 #include <string>
 

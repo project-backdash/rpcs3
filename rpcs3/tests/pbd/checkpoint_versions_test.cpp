@@ -2,7 +2,7 @@
 #include "util/endian.hpp"
 #include "Utilities/File.h"
 #include "../../Emu/savestate_utils.hpp"
-#include "../../Emu/PBD/pbd_checkpoint_compatibility.h"
+#include "Emu/PBD/core/rollback/pbd_checkpoint_compatibility.h"
 #include "pbd_test.h"
 
 #include <span>

@@ -1,6 +1,6 @@
 #include "pbd_test.h"
-#include "Emu/PBD/pbd_practice_lesson.h"
-#include "Emu/PBD/pbd_practice_lesson_channel.h"
+#include "Emu/PBD/core/practice/pbd_practice_lesson.h"
+#include "Emu/PBD/core/practice/pbd_practice_lesson_channel.h"
 
 PBD_TEST(PbdPracticeLesson, RefusesChangedFightersStageAndNonPracticeBeforeInput)
 {

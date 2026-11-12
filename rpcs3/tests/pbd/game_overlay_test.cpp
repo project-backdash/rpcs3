@@ -1,8 +1,8 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_game_overlay.h"
-#include "Emu/Cell/pbd_session_wait.h"
-#include "Emu/PBD/pbd_practice_match_prompt.h"
+#include "Emu/PBD/core/display/pbd_game_overlay.h"
+#include "Emu/PBD/core/session/pbd_session_wait.h"
+#include "Emu/PBD/core/practice/pbd_practice_match_prompt.h"
 
 #include <chrono>
 #include <cstdint>

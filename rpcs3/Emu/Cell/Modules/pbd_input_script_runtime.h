@@ -1,12 +1,12 @@
 #pragma once
 
-#include "Emu/PBD/pbd_env.h"
-#include "pbd_input_script.h"
-#include "Emu/PBD/pbd_fight_tape.h"
+#include "Emu/PBD/core/util/pbd_env.h"
+#include "Emu/PBD/core/input/pbd_input_script.h"
+#include "Emu/PBD/core/session/pbd_fight_tape.h"
 #include "Emu/System.h"
 #include "Utilities/File.h"
 #include "util/logs.hpp"
-#include "Emu/PBD/pbd_t5dr_memory.h"
+#include "Emu/PBD/core/game/pbd_t5dr_memory.h"
 
 #include <cstdlib>
 #include <filesystem>

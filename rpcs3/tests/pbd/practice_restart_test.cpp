@@ -1,9 +1,9 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_practice_presentation.h"
-#include "Emu/PBD/pbd_practice_menu.h"
-#include "Emu/PBD/pbd_practice_position.h"
-#include "Emu/PBD/pbd_practice_store.h"
+#include "Emu/PBD/core/practice/pbd_practice_presentation.h"
+#include "Emu/PBD/core/practice/pbd_practice_menu.h"
+#include "Emu/PBD/emulator/practice/pbd_practice_position.h"
+#include "Emu/PBD/core/practice/pbd_practice_store.h"
 #include "practice_wall_model.h"
 
 #include <bit>

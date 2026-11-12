@@ -1,9 +1,9 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_update_script.h"
-#include "Emu/PBD/pbd_json_reader.h"
-#include "Emu/PBD/pbd_spectator_channel_input.h"
-#include "Emu/PBD/pbd_spectator_standby.h"
+#include "Emu/PBD/core/rollback/pbd_update_script.h"
+#include "Emu/PBD/core/util/pbd_json_reader.h"
+#include "Emu/PBD/core/match/pbd_spectator_channel_input.h"
+#include "Emu/PBD/emulator/match/pbd_spectator_standby.h"
 
 #include <chrono>
 #include <cstdlib>

@@ -3,7 +3,7 @@
 #include "Emu/System.h"
 #include "RSXFIFO.h"
 #include "RSXThread.h"
-#include "pbd_replay_pacing.h"
+#include "Emu/PBD/core/replay/pbd_replay_pacing.h"
 #include "Capture/rsx_capture.h"
 #include "Core/RSXReservationLock.hpp"
 #include "Emu/Memory/vm_reservation.h"

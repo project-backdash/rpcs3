@@ -1,9 +1,9 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_set_notices.h"
-#include "Emu/PBD/pbd_game_overlay_parser.h"
-#include "Emu/Cell/pbd_notice_art.h"
-#include "Emu/Cell/pbd_live_stats.h"
+#include "Emu/PBD/core/match/pbd_set_notices.h"
+#include "Emu/PBD/core/display/pbd_game_overlay_parser.h"
+#include "Emu/PBD/core/match/pbd_notice_art.h"
+#include "Emu/PBD/core/display/pbd_live_stats.h"
 
 #include <chrono>
 #include <cmath>

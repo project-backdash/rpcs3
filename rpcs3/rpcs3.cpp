@@ -19,7 +19,7 @@
 #include "rpcs3qt/gui_application.h"
 #include "rpcs3qt/fatal_error_dialog.h"
 #include "rpcs3qt/pbd_qt_shell.h"
-#include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/core/util/pbd_env.h"
 #include "rpcs3qt/curl_handle.h"
 #include "rpcs3qt/main_window.h"
 #include "rpcs3qt/uuid.h"
@@ -571,9 +571,9 @@ void run_platform_sanity_checks()
 #include "Input/pbd_controller_backend.h"
 #include "util/pbd_install_argument.h"
 #include "util/pbd_clips.h"
-#include "Emu/Cell/pbd_ppu_object_name.h"
-#include "Emu/PBD/pbd_features.h"
-#include "Emu/PBD/pbd_host.h"
+#include "Emu/PBD/emulator/game/pbd_ppu_object_name.h"
+#include "Emu/PBD/core/game/pbd_features.h"
+#include "Emu/PBD/core/util/pbd_host.h"
 
 static QString install_path(const wchar_t* option, const QString& fallback)
 {

@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_json_reader.h"
-#include "Emu/PBD/pbd_presentation_rows.h"
+#include "Emu/PBD/core/util/pbd_json_reader.h"
+#include "Emu/PBD/core/display/pbd_presentation_rows.h"
 
 #include <cstdint>
 #include <filesystem>

@@ -2,9 +2,9 @@
 
 #include "overlay_pbd_draw.h"
 #include "pbd_clip_drawing.h"
-#include "Emu/Cell/pbd_game_overlay.h"
-#include "Emu/PBD/pbd_practice_presentation.h"
-#include "Emu/Cell/pbd_practice_mouse.h"
+#include "Emu/PBD/core/display/pbd_game_overlay.h"
+#include "Emu/PBD/core/practice/pbd_practice_presentation.h"
+#include "Emu/PBD/core/practice/pbd_practice_mouse.h"
 
 #include <cmath>
 #include <span>

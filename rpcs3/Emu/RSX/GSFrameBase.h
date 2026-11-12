@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "display.h"
-#include "pbd_display_rate.h"
+#include "Emu/PBD/core/display/pbd_display_rate.h"
 #include "Emu/system_config_types.h"
 
 class GSFrameBase

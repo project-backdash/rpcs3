@@ -10,11 +10,11 @@
 #include "Emu/System.h"
 #include "Emu/system_config.h"
 #include "Emu/localized_string.h"
-#include "Emu/PBD/pbd_practice_presentation.h"
-#include "Emu/PBD/pbd_spectator_channel_model.h"
-#include "Emu/Cell/pbd_practice_mouse.h"
-#include "Emu/Cell/pbd_player_volume.h"
-#include "Emu/PBD/pbd_controller_settings.h"
+#include "Emu/PBD/core/practice/pbd_practice_presentation.h"
+#include "Emu/PBD/core/match/pbd_spectator_channel_model.h"
+#include "Emu/PBD/core/practice/pbd_practice_mouse.h"
+#include "Emu/PBD/emulator/session/pbd_player_volume.h"
+#include "Emu/PBD/core/input/pbd_controller_settings.h"
 #include "Emu/RSX/Overlays/overlay_message.h"
 
 #include <QEnterEvent>

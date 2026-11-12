@@ -1,4 +1,5 @@
 import io
+import os
 import struct
 import unittest
 import zlib
@@ -120,6 +121,9 @@ class HeaderTests(unittest.TestCase):
         self.assertIn("{31, 0, true, {{{0x2000000000000002ull, 0x0ull}, {0x0ull, 0x0ull}, {0x0ull, 0x2000ull}, "
                       "{0x0ull, 0x8000000000000001ull}}}, {12, 12, 12}},", text)
         self.assertIn("std::array<row, 1> rows", text)
+
+    def test_the_default_output_is_the_header_the_emulator_includes(self):
+        self.assertTrue(os.path.isfile(catalogue.HEADER), catalogue.HEADER)
 
 
 if __name__ == "__main__":

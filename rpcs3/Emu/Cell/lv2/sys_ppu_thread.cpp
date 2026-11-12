@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "sys_ppu_thread.h"
-#include "Emu/Cell/pbd_fn_hook.h"
-#include "Emu/Cell/pbd_boot_request.h"
+#include "Emu/PBD/emulator/game/pbd_fn_hook.h"
+#include "Emu/PBD/emulator/session/pbd_boot_request.h"
 
 #include "Emu/System.h"
 #include "Emu/IdManager.h"

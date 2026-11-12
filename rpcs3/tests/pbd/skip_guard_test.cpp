@@ -1,7 +1,7 @@
 // Checks of the skip guard's history class.
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_skip_guard.h"
+#include "Emu/PBD/core/rollback/pbd_skip_guard.h"
 
 using pbd::test::check;
 

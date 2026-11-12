@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_vs_cards.h"
-#include "Emu/Cell/pbd_stage_names.h"
+#include "Emu/PBD/core/match/pbd_vs_cards.h"
+#include "Emu/PBD/core/match/pbd_stage_names.h"
 
 using pbd::test::check;
 

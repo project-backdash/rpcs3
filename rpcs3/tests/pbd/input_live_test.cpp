@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
 #include "Emu/Cell/Modules/pbd_input_live.h"
-#include "Emu/PBD/pbd_json_reader.h"
+#include "Emu/PBD/core/util/pbd_json_reader.h"
 
 #include <chrono>
 #include <fstream>

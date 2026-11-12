@@ -1,7 +1,7 @@
 #pragma once
 
 #include "hid_pad_handler.h"
-#include "Emu/Cell/pbd_practice_controls.h"
+#include "Emu/PBD/core/practice/pbd_practice_controls.h"
 
 #include <unordered_map>
 

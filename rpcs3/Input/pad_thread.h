@@ -6,7 +6,7 @@
 #include "Emu/Io/pad_config.h"
 #include "Emu/Io/pad_config_types.h"
 #include "Input/mouse_gyro_handler.h"
-#include "Emu/PBD/pbd_input_taps.h"
+#include "Emu/PBD/core/input/pbd_input_taps.h"
 #include "Input/pbd_pad_session.h"
 #include "Input/pbd_controller_ports.h"
 #include "Utilities/mutex.h"

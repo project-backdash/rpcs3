@@ -46,7 +46,7 @@ registration is per process: if another handler takes the keyboard, the sink not
 the child window delivers keys again.
 
 For the launcher's run summary, `game-presentation.jsonl` says how frames and keys travelled
-(`rpcs3/Emu/PBD/pbd_presentation_journal.h`). It lives in the run folder that holds `peer-transport.jsonl`; a run
+(`rpcs3/Emu/PBD/emulator/display/pbd_presentation_journal.h`). It lives in the run folder that holds `peer-transport.jsonl`; a run
 without one writes nothing. A present row (`hosted`, `flip_model`, `present_mode`) is appended when the first swap
 chain is made and again whenever one of the three changes: a swap chain rebuilt in another mode, or the fallback to the
 game's own window. A keyboard row (`raw`) is appended at start and when another handler takes the raw keyboard. A

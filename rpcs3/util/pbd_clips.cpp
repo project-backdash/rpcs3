@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "pbd_clips.h"
-#include "Emu/PBD/pbd_clip_buffer.h"
+#include "Emu/PBD/core/display/pbd_clip_buffer.h"
 #include "Utilities/StrUtil.h"
 
 #include <atomic>
@@ -46,7 +46,7 @@ extern "C"
 #pragma comment(lib, "shell32.lib")
 #endif
 
-#include "Emu/PBD/pbd_clip_destination.h"
+#include "Emu/PBD/emulator/display/pbd_clip_destination.h"
 
 LOG_CHANNEL(clips_log, "PBD Clips");
 

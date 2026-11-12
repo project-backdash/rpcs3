@@ -1,12 +1,12 @@
 #include "pbd_test.h"
-#include "Emu/PBD/pbd_custom_wire.h"
-#include "Emu/PBD/pbd_peer_message.h"
-#include "Emu/PBD/pbd_set_channel_model.h"
-#include "Emu/PBD/pbd_custom_files.h"
-#include "Emu/PBD/pbd_custom_save.h"
-#include "Emu/PBD/pbd_custom_photo.h"
-#include "Emu/PBD/pbd_costume_panel.h"
-#include "Emu/PBD/pbd_picture_facing.h"
+#include "Emu/PBD/core/customs/pbd_custom_wire.h"
+#include "Emu/PBD/core/peer/pbd_peer_message.h"
+#include "Emu/PBD/core/match/pbd_set_channel_model.h"
+#include "Emu/PBD/core/customs/pbd_custom_files.h"
+#include "Emu/PBD/core/customs/pbd_custom_save.h"
+#include "Emu/PBD/emulator/customs/pbd_custom_photo.h"
+#include "Emu/PBD/emulator/customs/pbd_costume_panel.h"
+#include "Emu/PBD/core/customs/pbd_picture_facing.h"
 
 namespace
 {

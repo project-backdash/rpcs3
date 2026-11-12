@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_setup_digest.h"
+#include "Emu/PBD/core/session/pbd_setup_digest.h"
 
 #include <cstring>
 #include <string_view>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "overlay_pbd_draw.h"
-#include "Emu/PBD/pbd_clip_hud.h"
+#include "Emu/PBD/core/display/pbd_clip_hud.h"
 
 #include <array>
 #include <cmath>

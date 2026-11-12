@@ -9,7 +9,7 @@
 #include "util/media_utils.h"
 
 #include "cellAtracXdec.h"
-#include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/core/util/pbd_env.h"
 
 vm::gvar<CellAdecCoreOps> g_cell_adec_core_ops_atracx2ch;
 vm::gvar<CellAdecCoreOps> g_cell_adec_core_ops_atracx6ch;

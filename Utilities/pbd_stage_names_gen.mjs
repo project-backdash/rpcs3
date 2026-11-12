@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates rpcs3/Emu/Cell/pbd_stage_names.h from the launcher's game-data/stage-names-v1.json, so the in-game VS cards name a
+// Generates rpcs3/Emu/PBD/core/match/pbd_stage_names.h from the launcher's game-data/stage-names-v1.json, so the in-game VS cards name a
 // stage exactly as the launcher's lobby does. The JSON maps decimal DR stage ids to display names; the launcher shows only names
 // matching /^[A-Za-z0-9 '.-]{1,40}$/, and the generator refuses anything else rather than drop it, so the two never disagree.
 //
@@ -20,7 +20,7 @@ if (paths.length < 1 || paths.length > 2) {
   process.exit(2);
 }
 const source = paths[0];
-const target = paths[1] ?? fileURLToPath(new URL('../rpcs3/Emu/Cell/pbd_stage_names.h', import.meta.url));
+const target = paths[1] ?? fileURLToPath(new URL('../rpcs3/Emu/PBD/core/match/pbd_stage_names.h', import.meta.url));
 
 const bytes = readFileSync(source);
 const parsed = JSON.parse(bytes.toString('utf8'));

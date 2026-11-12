@@ -4,19 +4,19 @@
 // never reads the pad, a file or guest memory. reset_performance_overlay() creates them in drawing order.
 
 #include "Emu/RSX/Overlays/overlays.h"
-#include "Emu/Cell/pbd_live_stats.h"
-#include "Emu/Cell/pbd_game_overlay.h"
-#include "Emu/Cell/pbd_search_badge.h"
-#include "Emu/PBD/pbd_practice_presentation.h"
-#include "Emu/Cell/pbd_corner_chat.h"
-#include "Emu/PBD/pbd_spectator_channel_input.h"
-#include "Emu/Cell/pbd_spectator_mouse.h"
-#include "Emu/Cell/pbd_session_wait.h"
-#include "Emu/Cell/pbd_select_band.h"
-#include "Emu/Cell/pbd_vs_cards.h"
-#include "Emu/PBD/pbd_set_notices.h"
-#include "Emu/PBD/pbd_settings_runtime.h"
-#include "Emu/PBD/pbd_clip_hud.h"
+#include "Emu/PBD/core/display/pbd_live_stats.h"
+#include "Emu/PBD/core/display/pbd_game_overlay.h"
+#include "Emu/PBD/core/match/pbd_search_badge.h"
+#include "Emu/PBD/core/practice/pbd_practice_presentation.h"
+#include "Emu/PBD/core/match/pbd_corner_chat.h"
+#include "Emu/PBD/core/match/pbd_spectator_channel_input.h"
+#include "Emu/PBD/core/match/pbd_spectator_mouse.h"
+#include "Emu/PBD/core/session/pbd_session_wait.h"
+#include "Emu/PBD/core/match/pbd_select_band.h"
+#include "Emu/PBD/core/match/pbd_vs_cards.h"
+#include "Emu/PBD/core/match/pbd_set_notices.h"
+#include "Emu/PBD/core/display/pbd_settings_runtime.h"
+#include "Emu/PBD/core/display/pbd_clip_hud.h"
 
 #include <string>
 #include <string_view>
@@ -25,6 +25,11 @@ namespace rsx
 {
 	namespace overlays
 	{
+		namespace pbd
+		{
+			class layer;
+		}
+
 		class display_manager;
 
 		// Match status from pbd_live_stats, plus replay controls and Practice pause/leave prompts. PBD_NET_OVERLAY enables
@@ -236,5 +241,6 @@ namespace rsx
 		// Shared by the overlays' own files (pbd_overlays.cpp).
 		bool pbd_xbox_glyphs();
 		std::u32string pbd_panel_label(font* f, const ::pbd::practice::panel_line& line, std::string_view label, f32 room);
+		void pbd_panel_value(pbd::layer& out, font* f, const ::pbd::practice::panel_line& line, f32 right, f32 y);
 	} // namespace overlays
 } // namespace rsx

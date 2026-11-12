@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_peer_message.h"
+#include "Emu/PBD/core/peer/pbd_peer_message.h"
 
 #include <algorithm>
 #include <array>

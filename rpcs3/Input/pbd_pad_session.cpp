@@ -4,13 +4,13 @@
 #include "pbd_controller_ports.h"
 #include "pbd_pad_takeover.h"
 #include "pbd_pad_spectator.h"
-#include "Emu/Cell/pbd_rollback_session.h"
+#include "Emu/PBD/emulator/rollback/pbd_rollback_session.h"
 #include "Emu/System.h"
 #include "Emu/Cell/timers.hpp"
 #include "Emu/Io/PadHandler.h"
 #include "Emu/Io/pad_config.h"
-#include "Emu/PBD/pbd_env.h"
-#include "Emu/pbd_session_mode.h"
+#include "Emu/PBD/core/util/pbd_env.h"
+#include "Emu/PBD/core/session/pbd_session_mode.h"
 
 #include <algorithm>
 #include <chrono>

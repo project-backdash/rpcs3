@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_practice_random.h"
+#include "Emu/PBD/core/practice/pbd_practice_random.h"
 #include "practice_wall_model.h"
 
 namespace

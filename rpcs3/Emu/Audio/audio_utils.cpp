@@ -4,8 +4,8 @@
 #include "Emu/emu_callbacks.h"
 #include "Emu/IdManager.h"
 #include "Emu/RSX/Overlays/overlay_message.h"
-#include "Emu/PBD/pbd_output_gain.h"
-#include "Emu/Cell/pbd_player_volume.h"
+#include "Emu/PBD/core/session/pbd_output_gain.h"
+#include "Emu/PBD/emulator/session/pbd_player_volume.h"
 #include <cmath>
 
 namespace audio

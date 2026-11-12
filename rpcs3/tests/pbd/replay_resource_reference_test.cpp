@@ -1,5 +1,5 @@
-#include "Emu/PBD/pbd_replay_resource_reference.h"
-#include "Emu/PBD/pbd_replay_result_reference.h"
+#include "Emu/PBD/core/replay/pbd_replay_resource_reference.h"
+#include "Emu/PBD/core/replay/pbd_replay_result_reference.h"
 
 #include "pbd_test.h"
 

@@ -4,7 +4,7 @@
 #include <util/logs.hpp>
 #include <deque>
 #include <unordered_map>
-#include "Emu/RSX/pbd_frame_tags.h"
+#include "Emu/PBD/core/rollback/pbd_frame_tags.h"
 
 template <typename T>
 class named_thread;

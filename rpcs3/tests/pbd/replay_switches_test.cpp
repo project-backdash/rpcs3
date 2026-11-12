@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_env.h"
-#include "Emu/PBD/pbd_replay_switches.h"
+#include "Emu/PBD/core/util/pbd_env.h"
+#include "Emu/PBD/core/replay/pbd_replay_switches.h"
 
 #include <cstdlib>
 #include <map>

@@ -12,7 +12,7 @@
 #include "Utilities/JIT.h"
 
 #include "SPUThread.h"
-#include "pbd_spu_checkpoint.h"
+#include "Emu/PBD/emulator/rollback/pbd_spu_checkpoint.h"
 #include "Emu/Cell/lv2/sys_spu.h"
 #include "SPUAnalyser.h"
 #include "SPUInterpreter.h"

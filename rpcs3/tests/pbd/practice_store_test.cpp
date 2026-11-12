@@ -1,9 +1,9 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_practice_store.h"
-#include "Emu/PBD/pbd_practice_memory.h"
-#include "Emu/PBD/pbd_dummy_move_channel.h"
-#include "Emu/PBD/pbd_dummy_move_input.h"
+#include "Emu/PBD/core/practice/pbd_practice_store.h"
+#include "Emu/PBD/emulator/practice/pbd_practice_memory.h"
+#include "Emu/PBD/core/practice/pbd_dummy_move_channel.h"
+#include "Emu/PBD/core/practice/pbd_dummy_move_input.h"
 #include "practice_store_model.h"
 
 #include <future>

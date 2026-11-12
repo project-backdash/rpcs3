@@ -2,8 +2,8 @@
 
 Switches: `PBD_PEER_FIGHT_START` (the first actionable tick) and `PBD_PEER_FIGHT_PREDICT` (the mode, 2 by
 default). Code: the `peer.fight_start`, `peer.live.suppress` and `peer.live.edge_carry` fields of the session state in
-`rpcs3/Emu/Cell/pbd_rollback_session_storage_peer.h`, used by
-`rpcs3/Emu/PBD/pbd_phase_input_steps.h` through `assign_phase_delay()` in
+`rpcs3/Emu/PBD/emulator/rollback/pbd_rollback_session_storage_peer.h`, used by
+`rpcs3/Emu/PBD/emulator/rollback/pbd_phase_input_steps.h` through `assign_phase_delay()` in
 `pbd_rollback_session_correction.cpp`. This builds on [phase delay](netcode-phase-delay.md).
 
 ## Why

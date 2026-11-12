@@ -4,10 +4,10 @@
 #include "pad_thread.h"
 #include "pbd_pad_spectator.h"
 #include "Emu/Io/pad_config.h"
-#include "Emu/PBD/pbd_controller_display.h"
-#include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/core/input/pbd_controller_display.h"
+#include "Emu/PBD/core/util/pbd_env.h"
 #include "Emu/System.h"
-#include "Emu/pbd_session_mode.h"
+#include "Emu/PBD/core/session/pbd_session_mode.h"
 
 #include <algorithm>
 #include <chrono>

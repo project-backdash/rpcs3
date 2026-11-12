@@ -16,7 +16,7 @@
 #include "rpcs3_version.h"
 #include "display_sleep_control.h"
 #include "pbd_qt_shell.h"
-#include "Emu/PBD/pbd_env.h"
+#include "Emu/PBD/core/util/pbd_env.h"
 
 #ifdef WITH_DISCORD_RPC
 #include "_discord_utils.h"
@@ -32,7 +32,7 @@
 #include "Emu/Io/Null/null_music_handler.h"
 #include "Emu/emu_callbacks.h"
 #include "Emu/vfs_config.h"
-#include "Emu/pbd_session_mode.h"
+#include "Emu/PBD/core/session/pbd_session_mode.h"
 #include "util/init_mutex.hpp"
 #include "util/console.h"
 #include "qt_video_source.h"

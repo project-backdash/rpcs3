@@ -1,8 +1,8 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_practice_wakeup.h"
-#include "Emu/PBD/pbd_practice_wakeup_reading.h"
-#include "Emu/PBD/pbd_movement_observation.h"
+#include "Emu/PBD/core/practice/pbd_practice_wakeup.h"
+#include "Emu/PBD/core/practice/pbd_practice_wakeup_reading.h"
+#include "Emu/PBD/core/practice/pbd_movement_observation.h"
 
 #include <algorithm>
 #include <set>

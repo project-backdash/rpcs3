@@ -1,8 +1,8 @@
 #pragma once
 
 #include "overlay_pbd_versus.h"
-#include "Emu/PBD/pbd_costume_panel.h"
-#include "Emu/PBD/pbd_picture_facing.h"
+#include "Emu/PBD/emulator/customs/pbd_costume_panel.h"
+#include "Emu/PBD/core/customs/pbd_picture_facing.h"
 
 namespace rsx::overlays::pbd::costume
 {

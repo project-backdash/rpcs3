@@ -5,8 +5,8 @@
 #endif
 
 #include "lobby_set_driver_model.h"
-#include "Emu/Cell/pbd_rollback_session_boundary.h"
-#include "Emu/PBD/pbd_settings_runtime.h"
+#include "Emu/PBD/emulator/rollback/pbd_rollback_session_boundary.h"
+#include "Emu/PBD/core/display/pbd_settings_runtime.h"
 #include <fstream>
 
 namespace pbd::test

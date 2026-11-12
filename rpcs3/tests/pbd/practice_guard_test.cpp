@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_practice_guard.h"
-#include "Emu/PBD/pbd_dummy_move.h"
+#include "Emu/PBD/core/practice/pbd_practice_guard.h"
+#include "Emu/PBD/core/practice/pbd_dummy_move.h"
 
 #include <vector>
 

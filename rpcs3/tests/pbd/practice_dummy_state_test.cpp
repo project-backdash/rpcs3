@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_practice_presentation.h"
-#include "Emu/PBD/pbd_movement_observation.h"
+#include "Emu/PBD/core/practice/pbd_practice_presentation.h"
+#include "Emu/PBD/core/practice/pbd_movement_observation.h"
 
 #include <array>
 #include <tuple>

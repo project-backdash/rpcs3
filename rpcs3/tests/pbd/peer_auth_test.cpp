@@ -1,12 +1,12 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_peer_auth.h"
-#include "Emu/PBD/pbd_peer_message.h"
-#include "Emu/PBD/pbd_peer_auth_state.h"
-#include "Emu/PBD/pbd_peer_key_pipe.h"
-#include "Emu/PBD/pbd_lobby_set_model.h"
-#include "Emu/PBD/pbd_peer_recovery.h"
-#include "Emu/Cell/pbd_session_wait.h"
+#include "Emu/PBD/core/peer/pbd_peer_auth.h"
+#include "Emu/PBD/core/peer/pbd_peer_message.h"
+#include "Emu/PBD/core/peer/pbd_peer_auth_state.h"
+#include "Emu/PBD/core/peer/pbd_peer_key_pipe.h"
+#include "Emu/PBD/core/match/pbd_lobby_set_model.h"
+#include "Emu/PBD/core/peer/pbd_peer_recovery.h"
+#include "Emu/PBD/core/session/pbd_session_wait.h"
 
 #include <limits>
 #include <string_view>

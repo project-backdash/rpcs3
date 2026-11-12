@@ -1,7 +1,7 @@
 #include "pbd_test.h"
 
-#include "Emu/PBD/pbd_clip_buffer.h"
-#include "Emu/PBD/pbd_held_presentation.h"
+#include "Emu/PBD/core/display/pbd_clip_buffer.h"
+#include "Emu/PBD/core/display/pbd_held_presentation.h"
 #include "util/pbd_frame_copy.h"
 #include <chrono>
 #include <future>

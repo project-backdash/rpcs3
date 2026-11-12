@@ -1,6 +1,6 @@
 # Fetches what build-rpcs3.ps1 needs into this clone: the archives in dependencies.lock.json, each checked against its
 # hash, and the submodules of upstream's Windows build. Every path is inside the repository (build\ and packages\,
-# which git ignores). Nothing is installed system-wide; the Vulkan SDK is the one dependency installed separately.
+# which git ignores). Vulkan's copy-only installer keeps its SDK inside the clone.
 param(
     [switch]$SkipSubmodules,
     [switch]$SkipArchives
@@ -28,6 +28,7 @@ New-Item -ItemType Directory -Force -Path $downloads | Out-Null
 
 function Test-ArtifactHash($path, $artifact) {
     if (-not (Test-Path -LiteralPath $path)) { return $false }
+    if ($artifact.bytes -and (Get-Item -LiteralPath $path).Length -ne $artifact.bytes) { return $false }
     if ($artifact.sha256) {
         return (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash -eq $artifact.sha256
     }
@@ -84,16 +85,29 @@ if (-not $SkipArchives) {
             Write-Host "Already restored $($artifact.name)"
             continue
         }
-        if ($artifact.name -eq 'googletest') {
+        if ($artifact.name -eq 'vulkansdk' -or [IO.Path]::GetExtension($archive) -in @('.zip', '.nupkg')) {
             $destination = [IO.Path]::GetFullPath($destination)
-            $staging = Join-Path $deps ('googletest-' + [Guid]::NewGuid().ToString('N'))
+            $staging = Join-Path $deps ($artifact.name + '-' + [Guid]::NewGuid().ToString('N'))
             foreach ($path in @($destination, $staging)) {
                 if (-not $path.StartsWith($repository + '\', [StringComparison]::OrdinalIgnoreCase)) {
                     throw "Dependency extraction path is outside the repository: $path"
                 }
             }
             try {
-                [System.IO.Compression.ZipFile]::ExtractToDirectory($archive, $staging)
+                if ($artifact.name -eq 'vulkansdk') {
+                    # copy_only leaves the system environment, layers and shortcuts alone.
+                    & $archive --root $staging --cache-path (Join-Path $deps 'installer-cache') `
+                        --accept-licenses --default-answer --confirm-command --max-concurrent-operations 1 install copy_only=1
+                    if ($LASTEXITCODE -ne 0) { throw "Extraction failed: $($artifact.name)" }
+                } else {
+                    [System.IO.Compression.ZipFile]::ExtractToDirectory($archive, $staging)
+                }
+                if ($artifact.name -eq 'ccache') {
+                    $contents = Join-Path $staging "ccache-$($artifact.version)-windows-x86_64"
+                    Get-ChildItem -LiteralPath $contents | Move-Item -Destination $staging
+                    Remove-Item -LiteralPath $contents
+                    Copy-Item -LiteralPath (Join-Path $staging 'ccache.exe') -Destination (Join-Path $staging 'cl.exe')
+                }
                 if (Test-Path -LiteralPath $destination) {
                     Remove-Item -LiteralPath $destination -Recurse -Force
                 }
@@ -104,7 +118,7 @@ if (-not $SkipArchives) {
             }
         } else {
             New-Item -ItemType Directory -Force -Path $destination | Out-Null
-            & $seven x -y '-bso0' '-bsp0' $archive "-o$destination"
+            & $seven x -y '-mmt1' '-bso0' '-bsp0' $archive "-o$destination"
             if ($LASTEXITCODE -ne 0) { throw "Extraction failed: $($artifact.name)" }
         }
         $artifact | ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath $marker
@@ -118,10 +132,12 @@ if (-not $SkipSubmodules) {
     $paths = @(Get-Content -LiteralPath (Join-Path $repository '.gitmodules') |
         Where-Object { $_ -match '^\s*path\s*=' -and $_ -notmatch 'FAudio|llvm|feralinteractive' } |
         ForEach-Object { ($_ -split '=', 2)[1].Trim() })
-    & git -C $repository submodule update --init --depth=1 --jobs=4 -- @paths
+    & git -C $repository submodule update --init --depth=1 --jobs=1 -- @paths
     if ($LASTEXITCODE -ne 0) { throw 'Submodule restoration failed' }
 }
 
-Write-Host "QTDIR=$(Join-Path $deps 'Qt\6.11.2\msvc2022_64')"
-Write-Host "Dependencies restored. Install the Vulkan SDK 1.4.341.1 to $(Join-Path $deps 'VulkanSDK\1.4.341.1'),"
-Write-Host 'or pass its folder to build-rpcs3.ps1 with -VulkanSdk.'
+$qtArtifact = $manifest.artifacts | Where-Object name -eq 'qtbase'
+$vulkanArtifact = $manifest.artifacts | Where-Object name -eq 'vulkansdk'
+if ($qtArtifact) { Write-Host "QTDIR=$(Join-Path $repository $qtArtifact.destination)" }
+if ($vulkanArtifact) { Write-Host "VULKAN_SDK=$(Join-Path $repository $vulkanArtifact.destination)" }
+Write-Host 'Dependencies restored.'

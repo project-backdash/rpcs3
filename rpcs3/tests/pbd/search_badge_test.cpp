@@ -1,6 +1,6 @@
 #include "pbd_test.h"
 
-#include "Emu/Cell/pbd_search_badge.h"
+#include "Emu/PBD/core/match/pbd_search_badge.h"
 
 #include <chrono>
 #include <filesystem>
